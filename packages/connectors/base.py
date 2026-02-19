@@ -58,6 +58,7 @@ class SQLiteCache:
         self._init_db()
 
     def _init_db(self) -> None:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
