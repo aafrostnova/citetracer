@@ -1,0 +1,12 @@
+{
+  "name": "arxiv_rolling_weekly",
+  "description": "Bootstrap rolling arXiv suite. Replace with sampled arXiv papers per week.",
+  "items": [
+    {
+      "paper_id": "sample_pdf",
+      "pipeline": "PDF",
+      "input_path": "data/fixtures/sample_pdf/sample.pdf",
+      "ground_truth_path": "data/gold/sample_pdf_labels.json"
+    }
+  ]
+}

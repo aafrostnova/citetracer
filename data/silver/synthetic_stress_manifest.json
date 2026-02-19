@@ -1,0 +1,18 @@
+{
+  "name": "synthetic_stress",
+  "description": "Synthetic stress benchmark with intentionally perturbed references.",
+  "items": [
+    {
+      "paper_id": "sample_source",
+      "pipeline": "SOURCE",
+      "input_path": "data/fixtures/sample_source",
+      "ground_truth_path": "data/gold/sample_source_labels.json"
+    },
+    {
+      "paper_id": "sample_pdf",
+      "pipeline": "PDF",
+      "input_path": "data/fixtures/sample_pdf/sample.pdf",
+      "ground_truth_path": "data/gold/sample_pdf_labels.json"
+    }
+  ]
+}
