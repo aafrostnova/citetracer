@@ -41,14 +41,18 @@ class FetchArxivSeedTests(unittest.TestCase):
         self.assertEqual(entry.title, "A Useful Paper")
         self.assertEqual(entry.authors, ["Alice Smith", "Bob Jones"])
         self.assertEqual(entry.year, 2025)
-        self.assertEqual(entry.pdf_url, "http://arxiv.org/pdf/2501.01234v1")
+        self.assertEqual(entry.pdf_url, "https://arxiv.org/pdf/2501.01234v1")
+        self.assertEqual(entry.source_url, "https://arxiv.org/e-print/2501.01234v1")
 
     def test_build_manifest(self) -> None:
         entries = parse_feed(SAMPLE_FEED)
-        manifest = build_manifest(entries, Path("/tmp/arxiv"))
+        manifest = build_manifest(entries, Path("/tmp/arxiv_pdfs"), Path("/tmp/arxiv_sources"))
         self.assertEqual(manifest["source"], "arxiv")
         self.assertEqual(len(manifest["items"]), 1)
-        self.assertIn("/tmp/arxiv/2501.01234v1.pdf", manifest["items"][0]["pdf_path"])
+        item = manifest["items"][0]
+        self.assertIn("/tmp/arxiv_pdfs/2501.01234v1.pdf", item["pdf_path"])
+        self.assertIn("/tmp/arxiv_sources/2501.01234v1.tar", item["source_archive_path"])
+        self.assertIn("/tmp/arxiv_sources/2501.01234v1", item["source_extract_dir"])
 
 
 if __name__ == "__main__":

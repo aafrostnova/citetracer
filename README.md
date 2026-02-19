@@ -15,9 +15,9 @@ python3 -m apps.pdf_checker.run --input data/fixtures/sample_pdf/sample.pdf --ou
 python3 -m packages.eval.run --suite synthetic_stress --out artifacts/eval
 ```
 
-## ArXiv Seed Data
+## Real ArXiv Test Data
 
-Fetch initial real-world data from arXiv:
+Fetch real arXiv metadata (and optional PDFs + LaTeX sources):
 
 ```bash
 python3 scripts/fetch_arxiv_seed.py \
@@ -28,14 +28,38 @@ python3 scripts/fetch_arxiv_seed.py \
   --mirror-out data/real_world/arxiv_seed_mirror.jsonl
 ```
 
-Download PDFs and run a smoke pipeline pass:
+Download real PDFs and source archives for local testing:
 
 ```bash
-python3 scripts/fetch_arxiv_seed.py --download-pdfs --output-dir /tmp/arxiv_seed_pdfs
-python3 scripts/run_arxiv_seed_smoke.py --manifest data/real_world/arxiv_seed_manifest.json --out artifacts/arxiv_smoke
+python3 scripts/fetch_arxiv_seed.py \
+  --query "cat:cs.LG" \
+  --max-results 3 \
+  --pdf-output-dir data/seed/arxiv_pdfs \
+  --source-output-dir data/seed/arxiv_sources \
+  --download-pdfs \
+  --download-sources \
+  --extract-sources
 ```
 
-Runtime env knobs:
+Run smoke checks over fetched arXiv assets:
+
+```bash
+python3 scripts/run_arxiv_seed_smoke.py \
+  --manifest data/real_world/arxiv_seed_manifest.json \
+  --out artifacts/arxiv_smoke \
+  --pipelines both
+```
+
+## Synthetic LaTeX Fixture
+
+Generate a mixed verified/flawed/fabricated citation fixture:
+
+```bash
+python3 scripts/generate_synthetic_latex_fixture.py \
+  --output-dir data/fixtures/synthetic_mixed_source
+```
+
+## Runtime Environment Knobs
 
 - `CITATION_CHECKER_OFFLINE_ONLY=1` to disable online connectors
 - `CITATION_CHECKER_CACHE_PATH=/tmp/cache.sqlite` to override cache location
@@ -44,7 +68,7 @@ Runtime env knobs:
 ## GitHub Actions
 
 - `.github/workflows/ci.yml`: unit tests + offline source/PDF smoke on push/PR.
-- `.github/workflows/arxiv-smoke.yml`: scheduled/manual arXiv seed fetch and pipeline smoke run with uploaded artifacts.
+- `.github/workflows/arxiv-smoke.yml`: scheduled/manual/push arXiv seed fetch and PDF+source smoke checks with uploaded artifacts.
 
 ## Project Layout
 

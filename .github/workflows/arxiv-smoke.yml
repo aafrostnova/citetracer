@@ -32,20 +32,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Fetch ArXiv Seed Data
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pypdf
+
+      - name: Fetch ArXiv Seed Data (PDF + Source)
         run: |
           QUERY="${{ github.event.inputs.query || 'cat:cs.LG' }}"
           MAX_RESULTS="${{ github.event.inputs.max_results || '3' }}"
           python scripts/fetch_arxiv_seed.py \
             --query "$QUERY" \
             --max-results "$MAX_RESULTS" \
-            --output-dir /tmp/arxiv_seed_pdfs \
+            --pdf-output-dir /tmp/arxiv_seed_pdfs \
+            --source-output-dir /tmp/arxiv_seed_sources \
             --metadata-out artifacts/arxiv_seed_metadata.jsonl \
             --manifest-out artifacts/arxiv_seed_manifest.json \
             --mirror-out artifacts/arxiv_seed_mirror.jsonl \
-            --download-pdfs
+            --download-pdfs \
+            --download-sources \
+            --extract-sources
 
-      - name: Run ArXiv Pipeline Smoke
+      - name: Run ArXiv Pipeline Smoke (PDF + Source)
         env:
           CITATION_CHECKER_CACHE_PATH: /tmp/arxiv_seed_cache/cache.sqlite
           CITATION_CHECKER_DBLP_MIRROR_PATH: artifacts/arxiv_seed_mirror.jsonl
@@ -53,7 +61,8 @@ jobs:
         run: |
           python scripts/run_arxiv_seed_smoke.py \
             --manifest artifacts/arxiv_seed_manifest.json \
-            --out artifacts/arxiv_smoke
+            --out artifacts/arxiv_smoke \
+            --pipelines both
 
       - name: Upload ArXiv Smoke Artifacts
         uses: actions/upload-artifact@v4
