@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from packages.core.models import CitationRecord
@@ -24,10 +22,7 @@ class ArxivConnector(BaseConnector):
             "start": 0,
             "max_results": 5,
         }
-        target = f"http://export.arxiv.org/api/query?{urlencode(params)}"
-        request = Request(target, headers={"User-Agent": "citation-checker/1.0"})
-        with urlopen(request, timeout=policy.timeout_s) as response:
-            body = response.read().decode("utf-8")
+        body = self._request_text("https://export.arxiv.org/api/query", params, policy)
         return self._parse_feed(body)
 
     @staticmethod
