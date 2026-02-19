@@ -16,6 +16,13 @@ from .ingest.citation_linker import build_citation_records
 from .ingest.tex_parser import parse_tex_directory
 
 
+def _cache_path() -> Path:
+    return Path(os.getenv("CITATION_CHECKER_CACHE_PATH", "data/cache/connector_cache.sqlite"))
+
+
+def _mirror_path() -> Path:
+    return Path(os.getenv("CITATION_CHECKER_DBLP_MIRROR_PATH", "data/cache/dblp_mirror.jsonl"))
+
 
 def run_source_check(
     input_dir: str | Path,
@@ -30,8 +37,8 @@ def run_source_check(
     citations = build_citation_records(key_to_locations, bib_entries)
 
     orchestrator = orchestrator or default_orchestrator(
-        cache_path=Path("data/cache/connector_cache.sqlite"),
-        dblp_mirror_path=Path("data/cache/dblp_mirror.jsonl"),
+        cache_path=_cache_path(),
+        dblp_mirror_path=_mirror_path(),
         semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"),
     )
     verifier = CitationVerifier(orchestrator=orchestrator)

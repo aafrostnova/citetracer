@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 artifacts/
 data/cache/connector_cache.sqlite
+data/seed/

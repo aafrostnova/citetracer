@@ -1,0 +1,63 @@
+name: ArXiv Seed Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "arXiv query (API search_query format)"
+        required: false
+        default: "cat:cs.LG"
+      max_results:
+        description: "Number of seed papers to fetch"
+        required: false
+        default: "3"
+  schedule:
+    - cron: "0 10 * * 1"
+
+jobs:
+  arxiv-seed-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch ArXiv Seed Data
+        run: |
+          QUERY="${{ github.event.inputs.query || 'cat:cs.LG' }}"
+          MAX_RESULTS="${{ github.event.inputs.max_results || '3' }}"
+          python scripts/fetch_arxiv_seed.py \
+            --query "$QUERY" \
+            --max-results "$MAX_RESULTS" \
+            --output-dir /tmp/arxiv_seed_pdfs \
+            --metadata-out artifacts/arxiv_seed_metadata.jsonl \
+            --manifest-out artifacts/arxiv_seed_manifest.json \
+            --mirror-out artifacts/arxiv_seed_mirror.jsonl \
+            --download-pdfs
+
+      - name: Run ArXiv Pipeline Smoke
+        env:
+          CITATION_CHECKER_CACHE_PATH: /tmp/arxiv_seed_cache/cache.sqlite
+          CITATION_CHECKER_DBLP_MIRROR_PATH: artifacts/arxiv_seed_mirror.jsonl
+          CITATION_CHECKER_OFFLINE_ONLY: "0"
+        run: |
+          python scripts/run_arxiv_seed_smoke.py \
+            --manifest artifacts/arxiv_seed_manifest.json \
+            --out artifacts/arxiv_smoke
+
+      - name: Upload ArXiv Smoke Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arxiv-seed-smoke
+          path: |
+            artifacts/arxiv_seed_metadata.jsonl
+            artifacts/arxiv_seed_manifest.json
+            artifacts/arxiv_seed_mirror.jsonl
+            artifacts/arxiv_smoke/summary.json
+            artifacts/arxiv_smoke/reports
