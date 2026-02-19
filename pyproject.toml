@@ -13,8 +13,9 @@ dependencies = []
 [project.optional-dependencies]
 pdf = ["pypdf>=4.0.0"]
 
-[tool.setuptools]
-packages = ["apps", "apps.source_checker", "apps.pdf_checker", "packages", "packages.core", "packages.connectors", "packages.eval"]
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "docs*", "build*", "dist*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
