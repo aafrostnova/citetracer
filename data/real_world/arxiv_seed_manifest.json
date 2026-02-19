@@ -1,5 +1,5 @@
 {
-  "generated_at_unix": 1771514692,
+  "generated_at_unix": 1771516117,
   "source": "arxiv",
   "items": [
     {
@@ -8,7 +8,13 @@
       "title": "Knowledge-Embedded Latent Projection for Robust Representation Learning",
       "published": "2026-02-18T18:58:16Z",
       "pdf_url": "https://arxiv.org/pdf/2602.16709v1",
-      "pdf_path": "data/seed/arxiv_pdfs/2602.16709v1.pdf"
+      "source_url": "https://arxiv.org/e-print/2602.16709v1",
+      "pdf_path": "data/seed/arxiv_pdfs/2602.16709v1.pdf",
+      "source_archive_path": "data/seed/arxiv_sources/2602.16709v1.tar",
+      "source_extract_dir": "data/seed/arxiv_sources/2602.16709v1",
+      "pdf_downloaded": true,
+      "source_downloaded": true,
+      "source_extracted": true
     },
     {
       "paper_id": "2602.16698v1",
@@ -16,7 +22,13 @@
       "title": "Causality is Key for Interpretability Claims to Generalise",
       "published": "2026-02-18T18:45:04Z",
       "pdf_url": "https://arxiv.org/pdf/2602.16698v1",
-      "pdf_path": "data/seed/arxiv_pdfs/2602.16698v1.pdf"
+      "source_url": "https://arxiv.org/e-print/2602.16698v1",
+      "pdf_path": "data/seed/arxiv_pdfs/2602.16698v1.pdf",
+      "source_archive_path": "data/seed/arxiv_sources/2602.16698v1.tar",
+      "source_extract_dir": "data/seed/arxiv_sources/2602.16698v1",
+      "pdf_downloaded": true,
+      "source_downloaded": true,
+      "source_extracted": true
     },
     {
       "paper_id": "2602.16697v1",
@@ -24,23 +36,13 @@
       "title": "Protecting the Undeleted in Machine Unlearning",
       "published": "2026-02-18T18:44:21Z",
       "pdf_url": "https://arxiv.org/pdf/2602.16697v1",
-      "pdf_path": "data/seed/arxiv_pdfs/2602.16697v1.pdf"
-    },
-    {
-      "paper_id": "2602.16696v1",
-      "arxiv_id": "2602.16696v1",
-      "title": "Parameter-free representations outperform single-cell foundation models on downstream benchmarks",
-      "published": "2026-02-18T18:42:29Z",
-      "pdf_url": "https://arxiv.org/pdf/2602.16696v1",
-      "pdf_path": "data/seed/arxiv_pdfs/2602.16696v1.pdf"
-    },
-    {
-      "paper_id": "2602.16690v1",
-      "arxiv_id": "2602.16690v1",
-      "title": "Synthetic-Powered Multiple Testing with FDR Control",
-      "published": "2026-02-18T18:36:24Z",
-      "pdf_url": "https://arxiv.org/pdf/2602.16690v1",
-      "pdf_path": "data/seed/arxiv_pdfs/2602.16690v1.pdf"
+      "source_url": "https://arxiv.org/e-print/2602.16697v1",
+      "pdf_path": "data/seed/arxiv_pdfs/2602.16697v1.pdf",
+      "source_archive_path": "data/seed/arxiv_sources/2602.16697v1.tar",
+      "source_extract_dir": "data/seed/arxiv_sources/2602.16697v1",
+      "pdf_downloaded": true,
+      "source_downloaded": true,
+      "source_extracted": true
     }
   ]
 }
