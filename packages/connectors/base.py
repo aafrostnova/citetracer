@@ -122,7 +122,7 @@ class BaseConnector:
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    def _request_json(self, url: str, params: dict[str, Any], policy: RequestPolicy, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    def _request_text(self, url: str, params: dict[str, Any], policy: RequestPolicy, headers: dict[str, str] | None = None) -> str:
         query = urlencode({k: v for k, v in params.items() if v is not None and v != ""})
         target = f"{url}?{query}" if query else url
         headers = headers or {}
@@ -131,13 +131,19 @@ class BaseConnector:
         for attempt in range(policy.max_retries + 1):
             try:
                 with urlopen(request, timeout=policy.timeout_s) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+                    return response.read().decode("utf-8")
+            except (HTTPError, URLError, TimeoutError) as exc:
                 last_error = exc
                 if attempt >= policy.max_retries:
                     break
                 time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
         raise RuntimeError(f"{self.name} request failed: {last_error}")
+
+    def _request_json(self, url: str, params: dict[str, Any], policy: RequestPolicy, headers: dict[str, str] | None = None) -> dict[str, Any]:
+        try:
+            return json.loads(self._request_text(url, params, policy, headers))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"{self.name} request to {url!r} returned non-JSON response: {exc}") from exc
 
 
 class ConnectorOrchestrator:
