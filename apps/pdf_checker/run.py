@@ -17,6 +17,13 @@ from .ingest.pdf_text_extract import extract_pdf_pages
 from .ingest.reference_segmenter import segment_references
 
 
+def _cache_path() -> Path:
+    return Path(os.getenv("CITATION_CHECKER_CACHE_PATH", "data/cache/connector_cache.sqlite"))
+
+
+def _mirror_path() -> Path:
+    return Path(os.getenv("CITATION_CHECKER_DBLP_MIRROR_PATH", "data/cache/dblp_mirror.jsonl"))
+
 
 def run_pdf_check(
     input_pdf: str | Path,
@@ -35,8 +42,8 @@ def run_pdf_check(
     link_quality = estimate_link_quality(markers, len(citations))
 
     orchestrator = orchestrator or default_orchestrator(
-        cache_path=Path("data/cache/connector_cache.sqlite"),
-        dblp_mirror_path=Path("data/cache/dblp_mirror.jsonl"),
+        cache_path=_cache_path(),
+        dblp_mirror_path=_mirror_path(),
         semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"),
     )
     verifier = CitationVerifier(orchestrator=orchestrator)

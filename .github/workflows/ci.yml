@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Unit And Integration Tests
+        run: |
+          python -m unittest discover -s tests -v
+
+      - name: Run Offline Source Smoke
+        env:
+          CITATION_CHECKER_OFFLINE_ONLY: "1"
+        run: |
+          python -m apps.source_checker.run \
+            --input data/fixtures/sample_source \
+            --out artifacts/gha_source_report.json
+
+      - name: Run Offline PDF Smoke
+        env:
+          CITATION_CHECKER_OFFLINE_ONLY: "1"
+        run: |
+          python -m apps.pdf_checker.run \
+            --input data/fixtures/sample_pdf/sample.pdf \
+            --out artifacts/gha_pdf_report.json
+
+      - name: Upload Smoke Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reports
+          path: |
+            artifacts/gha_source_report.json
+            artifacts/gha_source_report.md
+            artifacts/gha_pdf_report.json
+            artifacts/gha_pdf_report.md
