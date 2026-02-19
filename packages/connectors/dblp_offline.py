@@ -15,34 +15,30 @@ class DblpOfflineConnector(BaseConnector):
 
     def __init__(self, mirror_path: str | Path) -> None:
         self.mirror_path = Path(mirror_path)
-        self._records = self._load_records()
-
-    def _load_records(self) -> list[dict]:
-        if not self.mirror_path.exists():
-            return []
-        records = []
-        for line in self.mirror_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return records
 
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict]:
         del policy
         query = normalize_text(citation.title or citation.raw_text)
-        if not query:
+        if not query or not self.mirror_path.exists():
             return []
+        # Stream the file line-by-line to avoid loading the entire mirror into
+        # memory.  This trades per-query I/O for a bounded memory footprint; for
+        # very high query rates consider building a lightweight SQLite index.
         candidates = []
-        for record in self._records:
-            title = normalize_text(str(record.get("title", "")))
-            if not title:
-                continue
-            if query in title or title in query:
-                candidates.append(record)
-            if len(candidates) >= 5:
-                break
+        with self.mirror_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                title = normalize_text(str(record.get("title", "")))
+                if not title:
+                    continue
+                if query in title or title in query:
+                    candidates.append(record)
+                if len(candidates) >= 5:
+                    break
         return candidates
