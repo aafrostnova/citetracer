@@ -1,6 +1,10 @@
 name: ArXiv Seed Smoke
 
 on:
+  push:
+    branches:
+      - main
+      - "codex/**"
   workflow_dispatch:
     inputs:
       query:
