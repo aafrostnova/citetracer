@@ -11,18 +11,21 @@ from packages.core import CitationVerifier
 from packages.core.models import ExtractionQuality
 from packages.core.report import render_markdown
 
+from .config import load_pdf_checker_config
 from .ingest.citation_marker_linker import estimate_link_quality, extract_inline_markers
 from .ingest.citation_parser import parse_reference_entries
 from .ingest.pdf_text_extract import extract_pdf_pages
-from .ingest.reference_segmenter import segment_references
+from .ingest.reference_segmenter import segment_references_from_pages
 
 
-def _cache_path() -> Path:
-    return Path(os.getenv("CITATION_CHECKER_CACHE_PATH", "data/cache/connector_cache.sqlite"))
+def _env_flag(name: str, default: str = "1") -> bool:
+    value = os.getenv(name, default).strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
-def _mirror_path() -> Path:
-    return Path(os.getenv("CITATION_CHECKER_DBLP_MIRROR_PATH", "data/cache/dblp_mirror.jsonl"))
+def _log(enabled: bool, message: str) -> None:
+    if enabled:
+        print(message, flush=True)
 
 
 def run_pdf_check(
@@ -32,19 +35,51 @@ def run_pdf_check(
 ) -> dict:
     input_pdf = Path(input_pdf)
     out_path = Path(out_path)
+    config = load_pdf_checker_config()
+    verbose = _env_flag("CITATION_CHECKER_VERBOSE", "1")
 
+    _log(verbose, f"[1/7] Reading PDF pages: {input_pdf}")
     pages = extract_pdf_pages(input_pdf)
+    _log(verbose, f"      Loaded {len(pages)} pages")
     combined_text = "\n".join(pages)
-    reference_entries, extraction_quality = segment_references(combined_text)
-    citations = parse_reference_entries(reference_entries)
 
+    _log(verbose, "[2/7] Extracting reference entries")
+    reference_entries, extraction_quality, extraction_metadata = segment_references_from_pages(
+        pages,
+        entry_extraction=config.entry_extraction.mode,
+        model_provider=config.entry_extraction.provider,
+        model_id=config.entry_extraction.bedrock.model_id,
+        region=config.entry_extraction.bedrock.region,
+        entry_chunk_chars=config.entry_extraction.chunk_chars,
+        bearer_token=config.entry_extraction.bedrock.bearer_token,
+        local_model_path=config.entry_extraction.local.model_path,
+        source_pdf_path=input_pdf,
+    )
+    _log(
+        verbose,
+        (
+            f"      Extracted {len(reference_entries)} reference entries "
+            f"(mode={extraction_metadata.get('entry_extraction_mode')}, "
+            f"input={extraction_metadata.get('entry_extraction_input')}, "
+            f"provider={extraction_metadata.get('entry_extraction_provider')})"
+        ),
+    )
+
+    _log(verbose, "[3/7] Parsing references into citation records")
+    citations = parse_reference_entries(reference_entries)
+    _log(verbose, f"      Parsed {len(citations)} citation records")
+
+    _log(verbose, "[4/7] Linking inline citation markers")
     markers = extract_inline_markers(combined_text)
     link_quality = estimate_link_quality(markers, len(citations))
+    _log(verbose, f"      marker_link_quality={round(link_quality, 4)} ({len(markers)} markers)")
 
+    _log(verbose, "[5/7] Initializing bibliographic connectors")
     orchestrator = orchestrator or default_orchestrator(
-        cache_path=_cache_path(),
-        dblp_mirror_path=_mirror_path(),
-        semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"),
+        cache_path=config.connectors.cache_path,
+        dblp_mirror_path=config.connectors.dblp_mirror_path,
+        semantic_scholar_api_key=config.connectors.semantic_scholar_api_key,
+        dblp_sqlite_path=config.connectors.dblp_sqlite_path,
     )
     verifier = CitationVerifier(orchestrator=orchestrator)
 
@@ -55,11 +90,13 @@ def run_pdf_check(
         for citation in citations:
             quality_map[citation.citation_id] = ExtractionQuality.LOW
 
+    _log(verbose, f"[6/7] Verifying citations (progress: n/{len(citations)})")
     report = verifier.verify_paper(
         paper_id=input_pdf.stem,
         pipeline_type="PDF",
         citations=citations,
         extraction_quality_map=quality_map,
+        show_progress=verbose,
         metadata={
             "input_pdf": str(input_pdf),
             "pages": len(pages),
@@ -67,13 +104,16 @@ def run_pdf_check(
             "inline_marker_count": len(markers),
             "marker_link_quality": round(link_quality, 4),
             "extraction_quality": extraction_quality.value,
+            **extraction_metadata,
         },
     )
 
+    _log(verbose, f"[7/7] Writing reports to {out_path} and {out_path.with_suffix('.md')}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
     out_path.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
 
+    _log(verbose, "      Done")
     return report.to_dict()
 
 
