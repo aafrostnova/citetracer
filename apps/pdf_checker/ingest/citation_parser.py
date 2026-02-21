@@ -5,65 +5,120 @@ import re
 from packages.core.models import CitationRecord
 from packages.core.normalize import extract_identifier
 
-YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+YEAR_RE = re.compile(r"\b(19|20)\d{2}[a-z]?\b")
 TITLE_QUOTE_RE = re.compile(r"[\"“](.+?)[\"”]")
+URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
+def _split_reference_segments(entry: str) -> list[str]:
+    # Avoid splitting on initials like "T. J. M." while still splitting sentence boundaries.
+    protected = re.sub(r"\b([A-Z])\.", r"\1§", entry)
+    protected = re.sub(r"\s+", " ", protected).strip()
+    parts = [part.strip(" .;") for part in protected.split(". ") if part.strip(" .;")]
+    segments = [part.replace("§", ".").strip(" .;") for part in parts]
+    return [segment for segment in segments if segment]
 
-def _parse_authors(text: str, year_pos: int) -> list[str]:
-    prefix = text[:year_pos].strip(" .,")
-    if not prefix:
+
+def _parse_authors_from_segment(first_segment: str) -> list[str]:
+    if not first_segment:
         return []
-    prefix = prefix.replace(";", " and ")
-    return [piece.strip() for piece in prefix.split(" and ") if piece.strip()]
+    text = first_segment.replace(";", ",")
+    text = re.sub(r"\s+(?:and|&)\s+", ", ", text, flags=re.IGNORECASE)
+    parts = [piece.strip(" ,.") for piece in text.split(",") if piece.strip(" ,.")]
+    return parts
 
 
-def _parse_title(text: str, year_pos: int) -> str:
-    quoted = TITLE_QUOTE_RE.search(text)
-    if quoted:
-        return quoted.group(1).strip()
-    suffix = text[year_pos + 4 :].strip(" .,;")
-    # Heuristic: title often terminates at first period after year.
-    parts = suffix.split(".")
-    if parts and parts[0].strip():
-        return parts[0].strip()
-    return suffix
+def _parse_title(segments: list[str], raw_entry: str) -> tuple[str, int | None]:
+    if not segments:
+        return "", None
+
+    # Prefer explicit quoted title if present.
+    if raw_entry:
+        quoted = TITLE_QUOTE_RE.search(raw_entry)
+        if quoted:
+            return quoted.group(1).strip(), None
+
+    # Usually segment[0] = authors, segment[1] = title.
+    for idx in range(1, len(segments)):
+        candidate = segments[idx].strip(" .;")
+        lowered = candidate.lower()
+        if not candidate:
+            continue
+        if lowered.startswith(("in ", "doi:", "url:", "http://", "https://")):
+            continue
+        if len(candidate) < 6:
+            continue
+        return candidate, idx
+
+    return "", None
 
 
-def _parse_venue(text: str, title: str, year: int | None) -> str:
-    candidate = text
-    if year:
-        candidate = candidate.split(str(year), maxsplit=1)[-1]
-    if title and title in candidate:
-        candidate = candidate.split(title, maxsplit=1)[-1]
-    candidate = candidate.strip(" .,")
-    pieces = [piece.strip() for piece in candidate.split(".") if piece.strip()]
-    return pieces[0] if pieces else ""
+def _parse_venue(segments: list[str], title_index: int | None) -> str:
+    if not segments:
+        return ""
+
+    start = 1
+    if title_index is not None:
+        start = title_index + 1
+    if start >= len(segments):
+        return ""
+
+    venue_parts: list[str] = []
+    for seg in segments[start:]:
+        lowered = seg.lower().strip()
+        if not lowered:
+            continue
+        if lowered.startswith(("doi:", "url:", "http://", "https://")):
+            break
+        venue_parts.append(seg.strip(" .;"))
+
+    return ". ".join(part for part in venue_parts if part).strip(" .;")
+
+
+def _extract_url(raw_text: str) -> str:
+    match = URL_RE.search(raw_text)
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,);]")
+
+
+def _extract_year(raw_text: str) -> int | None:
+    year_match = YEAR_RE.search(raw_text)
+    if not year_match:
+        return None
+    try:
+        return int(year_match.group(0)[:4])
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_reference_entry(entry: str, citation_id: str) -> CitationRecord:
-    year_match = YEAR_RE.search(entry)
-    year = int(year_match.group(0)) if year_match else None
-    year_pos = year_match.start() if year_match else 0
+    normalized = re.sub(r"\s+", " ", entry).strip()
+    segments = _split_reference_segments(normalized)
 
-    authors = _parse_authors(entry, year_pos) if year_match else []
-    title = _parse_title(entry, year_pos) if year_match else ""
-    venue = _parse_venue(entry, title, year)
+    authors = _parse_authors_from_segment(segments[0]) if segments else []
+    title, title_index = _parse_title(segments, normalized)
+    venue = _parse_venue(segments, title_index)
+    year = _extract_year(normalized)
     doi, arxiv_id = extract_identifier(entry)
+    doi = doi.rstrip(".,;")
+    url = _extract_url(normalized)
 
     return CitationRecord(
         citation_id=citation_id,
-        raw_text=entry,
+        raw_text=normalized,
         title=title,
         authors=authors,
         venue=venue,
         year=year,
         doi=doi,
         arxiv_id=arxiv_id,
+        url=url,
         parsed_fields={
             "parsed_from": "pdf_reference",
             "raw_year": year,
             "raw_authors": authors,
+            "segments": segments,
         },
     )
 

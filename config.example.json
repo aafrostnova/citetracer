@@ -1,0 +1,20 @@
+{
+  "connectors": {
+    "cache_path": "data/cache/connector_cache.sqlite",
+    "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
+    "dblp_sqlite_path": "/project/pi_shiqingma_umass_edu/mingzheli/Ref_Agent/data/dblp.sqlite",
+    "semantic_scholar_api_key": ""
+  },
+  "entry_extraction": {
+    "mode": "model",
+    "provider": "local",
+    "chunk_chars": 12000,
+    "local": {
+      "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/DeepSeek-OCR-2"
+    },
+    "bedrock": {
+      "region": "us-east-1",
+      "bearer_token": "YOUR_AWS_BEARER_TOKEN_BEDROCK"
+    }
+  }
+}
