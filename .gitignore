@@ -4,3 +4,4 @@ __pycache__/
 artifacts/
 data/cache/connector_cache.sqlite
 data/seed/
+config.json

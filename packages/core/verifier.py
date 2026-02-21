@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 from packages.connectors.base import ConnectorOrchestrator, ConnectorResult
@@ -67,16 +68,27 @@ class CitationVerifier:
         citations: list[CitationRecord],
         extraction_quality_map: dict[str, ExtractionQuality] | None = None,
         metadata: dict | None = None,
+        show_progress: bool = False,
     ) -> CheckReport:
         extraction_quality_map = extraction_quality_map or {}
         verdicts = []
-        for citation in citations:
+        total = len(citations)
+        for idx, citation in enumerate(citations, start=1):
             verdicts.append(
                 self.verify_citation(
                     citation,
                     extraction_quality=extraction_quality_map.get(citation.citation_id, self.config.default_extraction_quality),
                 )
             )
+            if show_progress and total > 0:
+                width = 28
+                filled = min(width, int(width * idx / total))
+                bar = "#" * filled + "-" * (width - filled)
+                sys.stdout.write(f"\r[verify] [{bar}] {idx}/{total}")
+                sys.stdout.flush()
+        if show_progress and total > 0:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
         summary = build_summary(verdicts)
         risk_score = compute_risk_score(verdicts)
         requires_human_review = any(verdict.needs_human_review for verdict in verdicts)

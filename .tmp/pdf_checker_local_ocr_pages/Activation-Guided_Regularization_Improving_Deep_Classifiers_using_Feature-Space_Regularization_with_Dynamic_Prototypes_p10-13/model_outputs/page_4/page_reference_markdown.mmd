@@ -1,0 +1,38 @@
+<|ref|>sub_title<|/ref|><|det|>[[173, 103, 265, 118]]<|/det|>
+## APPENDIX
+
+<|ref|>sub_title<|/ref|><|det|>[[172, 135, 590, 152]]<|/det|>
+## A USE OF LARGE LANGUAGE MODELS (LLMs)
+
+<|ref|>text<|/ref|><|det|>[[170, 166, 826, 279]]<|/det|>
+In accordance with ICLR 2026 submission guidelines, we disclose the use of large language models (LLMs) during the preparation of this manuscript. LLMs (OpenAI ChatGPT and Google Gemini) were used to assist with language refinement, tightening of narrative flow, and consistency checks across sections (e.g., unifying model naming conventions, improving readability, and reducing redundancy). All technical content, including experiments, analyses, tables, and figures, was designed, implemented, and validated by the authors. LLMs were not used to generate ideas, perform experiments, or create original results. The authors reviewed and verified all LLM-assisted text to ensure accuracy and alignment with the actual experimental findings.
+
+<|ref|>sub_title<|/ref|><|det|>[[172, 297, 362, 313]]<|/det|>
+## B ABLATION STUDY
+
+<|ref|>text<|/ref|><|det|>[[170, 327, 825, 399]]<|/det|>
+To better understand the contribution of each component in AGR, we conducted an ablation study on CIFAR-100 and ADNI. We removed or altered individual design elements while keeping the rest of the framework intact. Specifically, we considered: (1) removing the prototype consistency term (no consistency loss), (2) replacing adaptive blending with a fixed  \( \alpha \)  (fixed  \( \alpha \) ), and (3) removing prototype momentum updates (no momentum). Table 1 summarizes the results.
+
+<|ref|>text<|/ref|><|det|>[[170, 404, 825, 516]]<|/det|>
+Across all architectures, the full AGR consistently achieves the highest accuracy, validating the synergy of its components. Removing the prototype consistency term causes a mild drop in performance (e.g., from 81.07% to 80.95% on CIFAR-100 InceptionV3, from 95.32% to 93.96% on ADNI), confirming its role in stabilizing representations. Fixing  \( \alpha \)  leads to a similar degradation, indicating that adaptive blending is necessary to balance compactness and separation across classes. Removing momentum produces slightly more stable results on CIFAR-100, but on ADNI yields the sharpest drop (from 95.32% to 92.94%), suggesting that momentum is crucial in low-data or noisy regimes.
+
+<|ref|>text<|/ref|><|det|>[[170, 522, 825, 593]]<|/det|>
+These ablations show that each design element contributes to AGR’s overall effectiveness. The prototype consistency term and adaptive blending both play important roles in aligning class representations, while momentum provides robustness in medical imaging settings where class boundaries are subtle. The results emphasize that AGR’s gains cannot be attributed to a single component, but rather to the integration of all three.
+
+<|ref|>figure_title<|/ref|><|det|>[[171, 603, 824, 630]]<|/det|>
+Table 1: Ablation study on CIFAR-100 and ADNI. Reported values are test accuracy (%). AGR full refers to the complete method. Each ablation demonstrates the contribution of the corresponding component.
+
+<|ref|>table<|/ref|><|det|>[[174, 641, 819, 725]]<|/det|>
+<table><tr><td>Dataset</td><td>Model</td><td>Standard</td><td>AGR (full)</td><td>No Consistency</td><td>Fixed  \( \alpha \)</td><td>No Momentum</td></tr><tr><td rowspan="3">CIFAR-100</td><td>InceptionV3</td><td>77.33</td><td>81.07</td><td>80.95</td><td>80.77</td><td>81.04</td></tr><tr><td>VGG16</td><td>74.02</td><td>77.07</td><td>76.83</td><td>76.88</td><td>76.98</td></tr><tr><td>ResNet50</td><td>76.98</td><td>81.06</td><td>81.03</td><td>80.98</td><td>81.01</td></tr><tr><td>ADNI</td><td>InceptionV3</td><td>85.93</td><td>95.32</td><td>93.96</td><td>93.37</td><td>92.94</td></tr></table>
+
+<|ref|>sub_title<|/ref|><|det|>[[172, 753, 403, 768]]<|/det|>
+## C EXPERIMENTAL SETUP
+
+<|ref|>text<|/ref|><|det|>[[170, 783, 825, 854]]<|/det|>
+This section details datasets, preprocessing, model architectures, feature extraction, model training, and evaluation protocols used to generate all results reported in the main paper. Unless noted otherwise, experiments were run on a single GPU with CUDA_VISIBLE_DEVICES=0. Code was implemented in TensorFlow/Keras; analysis used scikit-learn, umap-learn, numpy, and opencv. See the supplementary documents for the codebase of the project.
+
+<|ref|>sub_title<|/ref|><|det|>[[172, 869, 446, 884]]<|/det|>
+## C.1 DATASETS AND PREPROCESSING
+
+<|ref|>text<|/ref|><|det|>[[171, 895, 825, 925]]<|/det|>
+We evaluate on natural image datasets (MNIST, Fashion-MNIST, CIFAR-10, CIFAR-100, a Small ImageNet subset) and the ADNI medical imaging dataset. The supplementary code provided here

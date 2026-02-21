@@ -1,0 +1,54 @@
+<|ref|>sub_title<|/ref|><|det|>[[115, 84, 416, 101]]<|/det|>
+## A Paper Collection Methodology
+
+<|ref|>text<|/ref|><|det|>[[113, 111, 489, 192]]<|/det|>
+To ensure a comprehensive and reproducible review of the agentic security landscape, we employed a multi-stage paper collection methodology combining automated searches, manual curation, and snowballing techniques.
+
+<|ref|>sub_title<|/ref|><|det|>[[115, 204, 343, 219]]<|/det|>
+## Automated Database Search
+
+<|ref|>text<|/ref|><|det|>[[113, 226, 489, 339]]<|/det|>
+We conducted an automated search across major academic repositories—including ACL Anthology, IEEE Xplore, ACM Digital Library, and arXiv—covering publications from January 2023 to September 2025. Using a Boolean query, we combined two groups keywords related to agentic systems and security concepts.
+
+<|ref|>text<|/ref|><|det|>[[113, 349, 487, 381]]<|/det|>
+Search Query Structure (Group 1 Keywords)
+AND (Group 2 Keywords)
+
+<|ref|>text<|/ref|><|det|>[[137, 394, 488, 458]]<|/det|>
+• Group 1 (Agent-related): ("LLM agent" OR "AI agent" OR "agentic AI" OR "autonomous agent" OR "multi-agent system")
+
+<|ref|>text<|/ref|><|det|>[[137, 471, 488, 584]]<|/det|>
+• Group 2 (Security-related): ("security" OR "threat" OR "vulnerability" OR "attack" OR "defense" OR "red team" OR "blue team" OR "penetration testing" OR "fuzzing" OR "jailbreak" OR "prompt injection" OR "poisoning" OR "hardening" OR "adversarial")
+
+<|ref|>sub_title<|/ref|><|det|>[[115, 597, 260, 612]]<|/det|>
+## Manual Curation
+
+<|ref|>text<|/ref|><|det|>[[113, 618, 489, 699]]<|/det|>
+To identify relevant work that our keyword search may have missed, we manually scanned the proceedings of top-tier security (e.g., USENIX, ACM CCS, Oakland) and AI (e.g., ACL, EMNLP, NeurIPS, ICLR, ICML) conferences from the same period.
+
+<|ref|>sub_title<|/ref|><|det|>[[114, 711, 375, 727]]<|/det|>
+## Inclusion and Exclusion Criteria
+
+<|ref|>text<|/ref|><|det|>[[113, 733, 489, 831]]<|/det|>
+Inclusion Criteria The paper’s primary subject must be LLM-based agents. It must have a substantial focus on a technical security aspect, aligning with one of our three pillars. The work must be a peer-reviewed publication or a highly-cited preprint.
+
+<|ref|>text<|/ref|><|det|>[[113, 840, 489, 921]]<|/det|>
+Exclusion Criteria We excluded papers on general LLM safety that do not address agentic systems, studies on non-LLM agents, works centered on high-level ethics or policy without technical details, and non-technical articles.
+
+<|ref|>sub_title<|/ref|><|det|>[[509, 84, 614, 101]]<|/det|>
+## Snowballing
+
+<|ref|>text<|/ref|><|det|>[[507, 117, 884, 197]]<|/det|>
+Finally, we performed backward and forward snowballing on the curated set of included papers. We reviewed the reference lists of these key papers to identify foundational or related works we might have missed.
+
+<|ref|>sub_title<|/ref|><|det|>[[508, 227, 834, 244]]<|/det|>
+## B Related Works and Gap Analysis
+
+<|ref|>text<|/ref|><|det|>[[507, 267, 886, 605]]<|/det|>
+Although recent works have explored various vulnerabilities in LLM agents, their scope is limited to specific aspects of agentic security or class of threats. Deng et al. (2024c) provide a good overview of prompt injection and data poisoning threats. Li et al. (2025a) demonstrate manipulations of commercial agents. Ma et al. (2025) review safety across several model families, and present many threats, defenses, and benchmarks. We take these findings a step further by treating agentic security as a layered system, covering not only threats but also defenses and downstream security applications. We also situate the threats in a broader taxonomy that explains where (pre-execution, during execution) and how (injection, manipulation, hacking) such failures occur, and explain how defenses are designed. Wang et al. (2025b) describe safety risks during model development pipeline, whereas we focus on what happens after deployment—how agents behave, interact, and defend themselves in the real world.
+
+<|ref|>text<|/ref|><|det|>[[507, 610, 885, 740]]<|/det|>
+On the governance front, Yu et al. (2025) explore trustworthiness, including safety, privacy, fairness, and robustness, while Raza et al. (2025) discuss TRISM (Trust, Risk, and Security Management) compliance. Our survey complements these high-level perspectives by examining the technical architectures and behavioral mechanisms required to enforce such security principles during operation.
+
+<|ref|>text<|/ref|><|det|>[[507, 744, 885, 922]]<|/det|>
+Finally, several studies target specific technical or theoretical domains. He et al. (2024) and Kong et al. (2025a) analyze concrete defenses (e.g., sandboxing) and communication protocols, respectively, while de Witt (2025) establish a theoretical basis for multi-agent risks like collusion. While foundational, these works remain isolated within specific subsystems. We build on them by connecting these isolated defenses into a broader ecosystem, linking communication and system-level protections to higher-level coordination and control strategies.

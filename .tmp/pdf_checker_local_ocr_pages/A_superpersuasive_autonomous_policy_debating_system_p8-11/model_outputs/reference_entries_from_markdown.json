@@ -1,0 +1,124 @@
+{
+  "references": [
+    {
+      "raw_reference": "Khalid Al Khatib, Lukas Trautner, Henning Wachsmuth, Yufang Hou, and Benno Stein. Employing argumentation knowledge graphs for neural argument generation. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 4744–4754, Online, August 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.acl-long.366. URL https://aclanthology.org/2021.acl-long.366."
+    },
+    {
+      "raw_reference": "Sam Altman. I expect ai to be capable of superhuman persuasion well before it is superhuman at general intelligence... Tweet, October 2023. URL https://x.com/sama/status/1716972815960961174."
+    },
+    {
+      "raw_reference": "Ars Technica. Are ais getting dangerously good at persuasion? OpenAI says not yet, February 2025. URL https://arstechnica.com/ai/2025/02/are-ais-getting-dangerously-good-at-persuasion-openai-says-not-yet/."
+    },
+    {
+      "raw_reference": "Roy Bar-Haim, Shachar Bhattacharya, Michal Jacovi, Yosi Mass, Matan Orbach, Eyal Siwowicz, and Noam Slonim. Key point analysis via contrastive learning and extractive argument summarization. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pages 7953–7962, Online and Punta Cana, Dominican Republic, November 2021a. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.629. URL https://aclanthology.org/2021.emnlp-main.629."
+    },
+    {
+      "raw_reference": "Roy Bar-Haim, Liat Ein-Dor, Matan Orbach, Elad Venezian, and Noam Slonim. Advances in debating technologies: Building AI that can debate humans. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing: Tutorial Abstracts, pages 1–5, Online, August 2021b. Association for Computational Linguistics. doi: 10.18653/v1/2021.acl-tutorials.1. URL https://aclanthology.org/2021.acl-tutorials.1."
+    },
+    {
+      "raw_reference": "Beth Barnes. Risks from ai persuasion. AI Alignment Forum, December 2021. URL https://www.alignmentforum.org/posts/5cWtWATHL6KyzChck/risks-from-ai-persuasion."
+    },
+    {
+      "raw_reference": "T. J. M. Bench-Capon. Argument in artificial intelligence and law. Künstliche Intelligenz, 16(4):18–22, 2002. [[PAGE 2]]"
+    },
+    {
+      "raw_reference": "T. J. M. Bench-Capon and P. E. Dunne. Argumentation in artificial intelligence. Artificial Intelligence, 171(10–15):619–641, 2007. doi: 10.1016/j.artint.2007.05.001. URL https://doi.org/10.1016/j.artint.2007.05.001."
+    },
+    {
+      "raw_reference": "Yonatan Bilu, Ariel Gera, Daniel Hershcovich, Benjamin Sznajder, Dan Lahav, Guy Moshkowich, Anael Malet, Assaf Gavron, and Noam Slonim. Argument invention from first principles. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 1013–1026, Florence, Italy, July 2019. Association for Computational Linguistics. doi: 10.18653/v1/P19-1097. URL https://aclanthology.org/P19-1097."
+    },
+    {
+      "raw_reference": "Davide Castelvecchi. As ais become more persuasive, scientists debate the risks. Nature, 2025. doi: 10.1038/d41586-025-01599-7. URL https://www.nature.com/articles/d41586-025-01599-7. News Feature, published May 22, 2025."
+    },
+    {
+      "raw_reference": "Samuel Colvin, Eric Jolibois, Hasan Ramezani, Adrian Garcia Badaracco, Terrence Dorsey, David Montague, Serge Matveenko, Marcelo Trylesinski, Sydney Runkle, David Hewitt, Alex Hall, and Victorien Plot. Pydantic, 2025. URL https://docs.pydantic.dev/latest/."
+    },
+    {
+      "raw_reference": "Eric W. Dolan. Scientists demonstrate that “ai’s superhuman persuasiveness is already a reality”, July 2025. URL https://www.psypost.org/scientists-demonstrate-that-ai-s-superhuman-persuasiveness-is-already-a-reality/. PsyPost."
+    },
+    {
+      "raw_reference": "Phan Minh Dung. On the acceptability of arguments and its fundamental role in nonmonotonic reasoning, logic programming and n-person games. Artificial Intelligence, 77(2):321–357, 1995. doi: 10.1016/0004-3702(94)00041-X."
+    },
+    {
+      "raw_reference": "Maggie Harrison Dupré. Sam altman warns that ai is learning “superhuman persuasion”, October 2023. URL https://futurism.com/sam-altman-ai-superhuman-persuasion. Futurism."
+    },
+    {
+      "raw_reference": "EPFL News. Ai’s new power of persuasion: it can change your mind using only words, November 2023. URL https://actu.epfl.ch/news/ai-s-new-power-of-persuasion-it-can-change-your-mi/."
+    },
+    {
+      "raw_reference": "Luciano Floridi. Hypersuasion – on ai’s persuasive power and how to deal with it. Philosophy & Technology, 37(64), 2024a. doi: 10.1007/s13347-024-00756-6. URL https://link.springer.com/article/10.1007/s13347-024-00756-6."
+    },
+    {
+      "raw_reference": "Luciano Floridi. Hypersuasion – on ai’s persuasive power and how to deal with it. Philosophy & Technology, 2024b. URL https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4815890. Centre for Digital Ethics (CEDE) Research Paper, forthcoming."
+    },
+    {
+      "raw_reference": "Harnessing Hybrid Intelligence Blog. The psychology of ai persuasion, May 2025. URL https://www.psychologytoday.com/us/blog/harnessing-hybrid-intelligence/202505/the-psychology-of-ai-persuasion."
+    },
+    {
+      "raw_reference": "Daniel Kokotajlo, Scott Alexander, Thomas Larsen, Eli Lifland, and Romeo Dean. Ai 2027: Summary, April 2025. URL https://ai-2027.com/summary."
+    },
+    {
+      "raw_reference": "Tamar Lavee, Matan Orbach, Lili Kotlerman, Yoav Kantor, Shai Gretz, Lena Dankin, Michal Jacovi, Yonatan Bilu, Ranit Aharonov, and Noam Slonim. Towards effective rebuttal: Listening comprehension using corpus-wide claim mining. In Proceedings of the 6th Workshop on Argument Mining, pages 58–66, Florence, Italy, August 2019. Association for Computational Linguistics. doi: 10.18653/v1/W19-4507. URL https://aclanthology.org/W19-4507."
+    },
+    {
+      "raw_reference": "Brian S. McGrath. ‘i’m going to say it from the heart.’ america’s reckoning on race has come to high school speech and debate. TIME, 2020. URL https://time.com/5912852/high-school-speech-debate-diversity/."
+    },
+    {
+      "raw_reference": "medtigo News. Ai’s superhuman persuasion: Concerns and controversies, November 2023. URL https://medtigo.com/news/ais-potential-for-superhuman-persuasion-sparks-concerns-about-future-impact/. [[PAGE 3]]"
+    },
+    {
+      "raw_reference": "Parker Molloy. How trump plans to weaponize ai’s “superhuman persuasion”, July 2025. URL https://www.readtpa.com/p/how-trump-plans-to-weaponize-ais. The Present Age (Substack)."
+    },
+    {
+      "raw_reference": "Akiko Murakami and Rudy Raymond. Support or oppose? classifying positions in online debates from reply activities and opinion expressions. In Coling 2010: Posters, pages 869–875, Beijing, China, August 2010. Coling 2010 Organizing Committee. URL https://aclanthology.org/C10-2100."
+    },
+    {
+      "raw_reference": "Hannes Mühleisen and Mark Raasveldt. duckdb: DBI Package for the DuckDB Database Management System, 2025. URL https://r.duckdb.org/. R package version 1.3.2.9014."
+    },
+    {
+      "raw_reference": "John Nosta. Ai’s superhuman persuasion, October 2023. URL https://www.psychologytoday.com/us/blog/the-digital-self/202310/ais-superhuman-persuasion."
+    },
+    {
+      "raw_reference": "NSDA. Policy debate judge training guide, 2025. URL https://sites.google.com/view/judge-training/how-to-judge-debate/policy-debate. Accessed 6 Aug 2025."
+    },
+    {
+      "raw_reference": "Matan Orbach, Yonatan Bilu, Assaf Toledo, Dan Lahav, Michal Jacovi, Ranit Aharonov, and Noam Slonim. Out of the echo chamber: Detecting countering debate speeches. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 7073–7086, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.633. URL https://aclanthology.org/2020.acl-main.633."
+    },
+    {
+      "raw_reference": "JoonSung Park, Joseph C. O'Brien, Carrie J. Cai, Meredith Ringel Morris, Percy Liang, and Michael S. Bernstein. Generative agents: Interactive simulacra of human behavior. In Proceedings of the 36th Annual ACM Symposium on User Interface Software and Technology, pages 1–22, 2023."
+    },
+    {
+      "raw_reference": "Ruty Rinott, Lena Dankin, Carlos Alzate Perez, Mitesh M. Khapra, Ehud Aharoni, and Noam Slonim. Show me your evidence - an automatic method for context dependent evidence detection. In Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 440–450, Lisbon, Portugal, September 2015. Association for Computational Linguistics. doi:10.18653/v1/D15-1050. URL https://aclanthology.org/D15-1050."
+    },
+    {
+      "raw_reference": "Alexander Rogiers, Sander Noels, Maarten Buyl, and Tijl De Bie. Persuasion with large language models: a survey, 2024. URL https://arxiv.org/abs/2411.06837."
+    },
+    {
+      "raw_reference": "Aymeric Roucher, Albert Villanova del Moral, Thomas Wolf, Leandro von Werra, and Erik Kaunismäki. 'smolagents': a smol library to build great agentic systems. https://github.com/huggingface/smolagents, 2025."
+    },
+    {
+      "raw_reference": "Allen Roush, Yusuf Shabazz, Arvind Balaji, Peter Zhang, Stefano Mezza, Markus Zhang, Sanjay Basu, Sriram Vishwanath, Mehdi Fatemi, and Ravid Shwartz Ziv. Opendebateevidence: A massive-scale argument mining and summarization dataset. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Information Processing Systems, volume 37, pages 34270–34293. Curran Associates, Inc., 2024. URL https://proceedings.neurips.cc/paper_files/paper/2024/file/3c630d28df1cff44314d5798f82e02ec-Paper-Datasets_and_Benchmarks_Track.pdf."
+    },
+    {
+      "raw_reference": "Francesco Salvi, Manoel Horta Ribeiro, Riccardo Gallotti, and Robert West. On the conversational persuasiveness of GPT-4. Nature Human Behaviour, 2025. doi: 10.1038/s41562-025-02194-6. URL https://www.nature.com/articles/s41562-025-02194-6."
+    },
+    {
+      "raw_reference": "Keshav Singh, Naoya Inoue, Farjana Sultana, and Kentaro Inui. Conceptualizing and constructing a lexical resource of sentential arguments. In Proceedings of the Eleventh International Conference on Language Resources and Evaluation (LREC 2018), Miyazaki, Japan, May 2018. European Language Resources Association (ELRA). URL https://aclanthology.org/L18-1037."
+    },
+    {
+      "raw_reference": "Noam Slonim, Yonatan Bilu, Carlos Alzate, Roy Bar-Haim, Shay Bogin, Francesca Bonin, Leshem Choshen, Edo Cohen-Karlik, Eyal Dudin, and Liat Ein-Dor. An autonomous debating system. Nature, 591(7850):379–384, 2021. [[PAGE 4]]"
+    },
+    {
+      "raw_reference": "Raphael Sourty. Ducksearch, efficient search with duckdb, 2024. URL https://github.com/lightonai/ducksearch."
+    },
+    {
+      "raw_reference": "Ted Wade. Artificial persuasion takes over the world, June 2022. URL https://hackernoon.com/artificial-persuasion-takes-over-the-world."
+    },
+    {
+      "raw_reference": "Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Shaokun Zhang, Erkang Zhu, Beibin Li, Xinbin Li, Hancheng Ge, and Yanyun Wang. AutoGen: Enabling next-gen LLM applications via multi-agent conversation framework. arXiv preprint arXiv:2308.08155, 2023."
+    },
+    {
+      "raw_reference": "Yale Institution for Social and Policy Studies. Could ai-powered persuasion tools endanger democratic societies? Yale launches a research hub, August 2024. URL https://isps.yale.edu/news/blog/2024/08/could-ai-powered-persuasion-tools-endanger-democratic-societies-yale-launches-a."
+    }
+  ]
+}

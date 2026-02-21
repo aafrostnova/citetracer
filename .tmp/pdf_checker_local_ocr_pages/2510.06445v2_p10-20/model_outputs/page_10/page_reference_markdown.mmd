@@ -1,0 +1,17 @@
+<|ref|>figure_title<|/ref|><|det|>[[214, 82, 783, 97]]<|/det|>
+Table 2: Comparison of Offensive and Defensive LLM Based Cybersecurity Agents
+
+<|ref|>table<|/ref|><|det|>[[116, 107, 886, 449]]<|/det|>
+<table><tr><td>Feature</td><td>Offensive Agents (Red Teaming)</td><td>Defensive Agents (Blue Teaming and SOC)</td></tr><tr><td>Memory Designs</td><td>Context retention focused. Due to long attack chains, offensive agents prioritize architectures that minimize context loss, such as the Reasoning, Generation, Parsing design in PentestGPT. Task graph coordination is commonly used to preserve state across reconnaissance and exploitation phases.</td><td>Retrieval and structure focused. Defensive agents rely heavily on retrieval augmented generation and ontology driven memory to manage large scale telemetry. Examples include CIAF&#x27;s ontology based cloud log structuring and ProvSEEK&#x27;s use of RAG for evidence refinement and verification.</td></tr><tr><td>Tool Governance and Autonomy</td><td>High autonomy. Current trends favor fully autonomous execution for penetration testing, fuzzing, and exploit generation, as seen in systems such as AutoPentest and PentestGPT. Agents operate independently within sandboxed environments.</td><td>Human in the loop and assistive. In operational SOCs, LLMs primarily function as analyst copi-lots. Systems such as IRCopilot and CORTEX emphasize collaborative workflows, alert triage, and approval gated decision making.</td></tr><tr><td>Failure Analysis</td><td>Planning and context failures. Common issues include breakdowns in multi step reasoning, loss of long horizon context, and susceptibility to prompt injection and jailbreaks. Agents can be coerced into unsafe autonomous malware execution.</td><td>False positives and hallucination. Major challenges include alert fatigue driven by false positives, which CORTEX explicitly targets. Additional failures include contradictions in CTI pipelines and hallucinated findings in auditing agents such as RepoAudit.</td></tr><tr><td>Evaluation and Trends</td><td>Evaluations largely rely on synthetic benchmarks such as HackSynth and AutoPenBench. The literature shows heavy dependence on GPT based backbones, approximately 83 percent of studies, raising concerns around reproducibility and generalization.</td><td>Benchmarks such as CyberSOCEval reveal gaps in threat reasoning. Log analysis agents face scalability and robustness challenges. Use of RAG and fine tuning remains limited relative to reliance on pretrained knowledge.</td></tr></table>
+
+<|ref|>sub_title<|/ref|><|det|>[[115, 475, 470, 509]]<|/det|>
+## C Red-Teaming vs Blue Teaming (SOC Agents) analysis
+
+<|ref|>text<|/ref|><|det|>[[114, 517, 489, 582]]<|/det|>
+Table 2 provides the comparative analysis between red-team and blue-teams, including memory design trends, tool governance and autonomy, failure mode analysis, and evaluation gaps.
+
+<|ref|>sub_title<|/ref|><|det|>[[115, 593, 346, 609]]<|/det|>
+## D Benchmark Inventory
+
+<|ref|>text<|/ref|><|det|>[[114, 619, 488, 650]]<|/det|>
+Table 3 provides a detailed analysis of the existing adversarial benchmarks.

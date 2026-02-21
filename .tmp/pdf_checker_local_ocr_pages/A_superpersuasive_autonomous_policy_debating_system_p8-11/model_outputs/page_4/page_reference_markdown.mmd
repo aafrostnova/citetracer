@@ -1,0 +1,41 @@
+<|ref|>text<|/ref|><|det|>[[171, 103, 825, 133]]<|/det|>
+Raphael Sourty. Ducksearch, efficient search with duckdb, 2024. URL https://github.com/lightonai/ducksearch.
+
+<|ref|>text<|/ref|><|det|>[[171, 141, 826, 171]]<|/det|>
+Ted Wade. Artificial persuasion takes over the world, June 2022. URL https://hackernoon.com/artificial-persuasion-takes-over-the-world.
+
+<|ref|>text<|/ref|><|det|>[[171, 180, 825, 224]]<|/det|>
+Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Shaokun Zhang, Erkang Zhu, Beibin Li, Xinbin Li, Hancheng Ge, and Yanyun Wang. AutoGen: Enabling next-gen LLM applications via multi-agent conversation framework. arXiv preprint arXiv:2308.08155, 2023.
+
+<|ref|>text<|/ref|><|det|>[[171, 232, 985, 289]]<|/det|>
+Yale Institution for Social and Policy Studies. Could ai-powered persuasion tools endanger democratic societies? Yale launches a research hub, August 2024. URL https://isps.yale.edu/news/blog/2024/08/could-ai-powered-persuasion-tools-endanger-democratic-societies-yale-launches-a.
+
+<|ref|>sub_title<|/ref|><|det|>[[172, 315, 389, 331]]<|/det|>
+## 7 ACKNOWLEDGMENTS
+
+<|ref|>text<|/ref|><|det|>[[170, 346, 824, 390]]<|/det|>
+This research was supported by National Science Foundation Small Business Innovation Research (NSF-SBIR) Grant No. 2431521. The views expressed are those of the authors and do not necessarily reflect the views of the funding agency.
+
+<|ref|>sub_title<|/ref|><|det|>[[172, 410, 317, 426]]<|/det|>
+## 8 LIMITATIONS
+
+<|ref|>text<|/ref|><|det|>[[170, 441, 824, 484]]<|/det|>
+Our goal is to advance research on structured, evidence-grounded argumentation, not to produce a turnkey persuasion system. While our results are promising, they come with important caveats and risks.
+
+<|ref|>text<|/ref|><|det|>[[170, 490, 825, 547]]<|/det|>
+Our evaluations focus on U.S.-style policy debate using a specialized evidence paradigm and norms (e.g., time pressures, line-by-line refutation, and spreading). This domain is intentionally adversarial and rule-bound. Performance may degrade outside English, outside the policy debate topic areas, or when evidence for a topic is sparse
+
+<|ref|>text<|/ref|><|det|>[[171, 553, 825, 569]]<|/det|>
+Our evidence dataset ends at 2022, so we prompt all debate agents to simulate being in the year 2022.
+
+<|ref|>text<|/ref|><|det|>[[170, 583, 825, 668]]<|/det|>
+Evaluation design and potential biases. Two design choices limit generality. First, part of our assessment uses an LLM-based judge. This introduces the significant possibility of model-family bias, style-matching bias, and "format familiarity" advantages. Second, the human study uses a small panel of expert coaches. Preferences of expert judges do not necessarily track lay persuasion or long-term belief change. We do not claim statistical significance beyond the reported descriptive summaries.
+
+<|ref|>text<|/ref|><|det|>[[170, 682, 826, 768]]<|/det|>
+Reliance on a curated evidence corpus. The system’s factual grounding depends on OpenDebateEvidence and BM25 retrieval. Coverage gaps, topical skew (e.g., U.S.-centric sources), or historical artifacts in the corpus can shape which arguments are discoverable. Retrieval errors, cherry-picking, or over-aggregation of heterogeneous sources can yield "factually referenced but misleading" claims. Although our workflows emphasize tag–card faithfulness, they do not guarantee that the strongest or most current evidence was selected.
+
+<|ref|>text<|/ref|><|det|>[[170, 782, 825, 867]]<|/det|>
+Faithfulness vs. strategy trade-offs. Competitive debate rewards strategic coherence under time constraints, which often correlates with but is not necessarily truth-seeking or calibration. As a result, agents may prefer arguments that are strategically potent but epistemically fragile or ethically contentious (e.g., exploiting low-probability, high-impact scenarios, much as elite human debaters do). Our architecture does not presently optimize for truthfulness under uncertainty or counterfactual robustness as primary objectives.
+
+<|ref|>text<|/ref|><|det|>[[170, 881, 825, 925]]<|/det|>
+Agentic brittleness and non-determinism. Hierarchical multi-agent systems remain sensitive to prompt drift, error propagation across stages, and nondeterministic tool behavior. Failures in early planning or retrieval can cascade into later speeches. Although structured schemas mitigate the

@@ -1,0 +1,118 @@
+{
+  "references": [
+    {
+      "raw_reference": "Martin Arjovsky, Léon Bottou, Ishaan Gulrajani, and David Lopez-Paz. Invariant risk minimization. arXiv preprint arXiv:1907.02893, 2019."
+    },
+    {
+      "raw_reference": "David Bau, Bolei Zhou, Aditya Khosla, Aude Oliva, and Antonio Torralba. Network dissection: Quantifying interpretability of deep visual representations. In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 6541–6549, 2017."
+    },
+    {
+      "raw_reference": "Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hinton. A simple framework for contrastive learning of visual representations. In International conference on machine learning, pp. 1597–1607. PMLR, 2020."
+    },
+    {
+      "raw_reference": "Wentao Cheng and Tong Zhang. Improving deep learning for classification with unknown label noise. In International Conference on Machine Learning, pp. 6059–6081. PMLR, 2023."
+    },
+    {
+      "raw_reference": "Jiankang Deng, Jia Guo, Niannan Xue, and Stefanos Zafeiriou. Arcface: Additive angular margin loss for deep face recognition. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pp. 4690–4699, 2019."
+    },
+    {
+      "raw_reference": "Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth \\( 16 \\times 16 \\) words: Transformers for image recognition at scale. In International Conference on Learning Representations, 2021."
+    },
+    {
+      "raw_reference": "Ronald A Fisher. The use of multiple measurements in taxonomic problems. Annals of eugenics, 7(2):179–188, 1936."
+    },
+    {
+      "raw_reference": "Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q Weinberger. On calibration of modern neural networks. In International Conference on Machine Learning, pp. 1321–1330. PMLR, 2017."
+    },
+    {
+      "raw_reference": "Raia Hadsell, Sumit Chopra, and Yann LeCun. Dimensionality reduction by learning an invariant mapping. In 2006 IEEE computer society conference on computer vision and pattern recognition (CVPR'06), volume 2, pp. 1735–1742. IEEE, 2006."
+    },
+    {
+      "raw_reference": "Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 770–778, 2016."
+    },
+    {
+      "raw_reference": "Kaiming He, Haoqi Fan, Yuxin Wu, Saining Xie, and Ross Girshick. Momentum contrast for unsupervised visual representation learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pp. 9729–9738, 2020."
+    },
+    {
+      "raw_reference": "Dan Hendrycks and Thomas Dietterich. Benchmarking neural network robustness to common corruptions and perturbations. arXiv preprint arXiv:1903.12261, 2019."
+    },
+    {
+      "raw_reference": "Alexander Hermans, Lucas Beyer, and Bastian Leibe. In defense of the triplet loss for person re-identification. arXiv preprint arXiv:1703.07737, 2017."
+    },
+    {
+      "raw_reference": "Prannay Khosla, Piotr Teterwak, Chen Wang, Aaron Sarna, Yonglong Tian, Phillip Isola, Aaron Maschinot, Ce Liu, and Dilip Krishnan. Supervised contrastive learning. In Advances in Neural Information Processing Systems (NeurIPS), 2020."
+    },
+    {
+      "raw_reference": "Been Kim, Martin Wattenberg, Justin Gilmer, Carrie Cai, James Wexler, Fernanda Viegas, and Rory Sayres. Interpretability beyond feature attribution: Quantitative testing with concept activation vectors (tcav). In International Conference on Machine Learning (ICML), 2018."
+    },
+    {
+      "raw_reference": "Simon Kornblith, Mohammad Norouzi, Honglak Lee, and Geoffrey Hinton. Similarity of neural network representations revisited. In International Conference on Machine Learning (ICML), 2019."
+    },
+    {
+      "raw_reference": "M Kumar, Benjamin Packer, and Daphne Koller. Self-paced learning for latent variable models. Advances in neural information processing systems, 23, 2010. [[PAGE 2]]"
+    },
+    {
+      "raw_reference": "Yann LeCun, Yoshua Bengio, and Geoffrey Hinton. Deep learning. Nature, 521(7553):436–444, 2015."
+    },
+    {
+      "raw_reference": "Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Dollár. Focal loss for dense object detection. In Proceedings of the IEEE international conference on computer vision, pp. 2980–2988, 2017."
+    },
+    {
+      "raw_reference": "Weiyang Liu, Yandong Wen, Zhiding Yu, Ming Li, Bhiksha Raj, and Le Song. Sphereface: Deep hypersphere embedding for face recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 212–220, 2017."
+    },
+    {
+      "raw_reference": "Laurens van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of machine learning research, 9(Nov):2579–2605, 2008."
+    },
+    {
+      "raw_reference": "Leland McInnes, John Healy, and James Melville. Umap: Uniform manifold approximation and projection for dimension reduction. arXiv preprint arXiv:1802.03426, 2018."
+    },
+    {
+      "raw_reference": "Maxime Oquab, Timothée Darcet, Théo Moutakami, Huy Vo, Marc Szafraniec, Vasiliki Vasiljevic, Christian Saltori, Mayssa Najibi, Yuxin Bai, Alaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 19796–19807, 2023."
+    },
+    {
+      "raw_reference": "Ronald Carl Petersen, Paul S Aisen, Laurel A Beckett, Michael C Donohue, Anthony Collins Gamst, Danielle J Harvey, CR Jack Jr, William J Jagust, Leslie M Shaw, Arthur W Toga, et al. Alzheimer’s disease neuroimaging initiative (adni) clinical characterization. Neurology, 74(3):201–209, 2010."
+    },
+    {
+      "raw_reference": "Ryan Pope, Zhaoning Li, and Hai-Jun Mao. Understanding artificial neural network’s behavior from neuron activation perspective. In 2023 IEEE International Conference on Big Data (BigData), pp. 1671–1679. IEEE, 2023."
+    },
+    {
+      "raw_reference": "Maithra Raghu, Justin Gilmer, Jason Yosinski, and Jascha Sohl-Dickstein. Svcca: Singular vector canonical correlation analysis for deep learning dynamics and interpretability. In Advances in Neural Information Processing Systems (NeurIPS), 2017."
+    },
+    {
+      "raw_reference": "Y Lakshmisha Rao, B Ganaraja, BV Murlimanju, Teresa Joy, Ashwin Krishnamurthy, and Amit Agrawal. Hippocampus and its involvement in alzheimer's disease: a review. 3 Biotech, 12(2):55, 2022."
+    },
+    {
+      "raw_reference": "Florian Schroff, Dmitry Kalenichenko, and James Philbin. Facenet: A unified embedding for face recognition and clustering. In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 815–823, 2015."
+    },
+    {
+      "raw_reference": "Karen Simonyan and Andrew Zisserman. Very deep convolutional networks for large-scale image recognition. In International Conference on Learning Representations, 2015."
+    },
+    {
+      "raw_reference": "Jake Snell, Kevin Swersky, and Richard Zemel. Prototypical networks for few-shot learning. In Advances in neural information processing systems, pp. 4077–4087, 2017."
+    },
+    {
+      "raw_reference": "Kihyuk Sohn. Improved deep metric learning with multi-class n-pair loss objective. Advances in neural information processing systems, 29, 2016."
+    },
+    {
+      "raw_reference": "Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jon Shlens, and Zbigniew Wojna. Rethinking the inception architecture for computer vision. In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 2818–2826, 2016."
+    },
+    {
+      "raw_reference": "Mingxing Tan and Quoc Le. Efficientnet: Rethinking model scaling for convolutional neural networks. In International Conference on Machine Learning, pp. 6105–6114. PMLR, 2019."
+    },
+    {
+      "raw_reference": "Yandong Wen, Kaipeng Zhang, Zhifeng Li, and Yu Qiao. A discriminative feature learning approach for deep face recognition. In European conference on computer vision, pp. 499–515. Springer, 2016. [[PAGE 3]]"
+    },
+    {
+      "raw_reference": "Raymond Wong, Michael Lee, Chris Lee, et al. Validation of neuron activation patterns for artificial intelligence models in oculomics. Scientific Reports, 14(1):1–10, 2024."
+    },
+    {
+      "raw_reference": "Chao-Yuan Wu, R Manmatha, Alexander J Smola, and Philipp Krahenbuhl. Sampling matters in deep embedding learning. In Proceedings of the IEEE international conference on computer vision, pp. 2840–2848, 2017."
+    },
+    {
+      "raw_reference": "Han Ye, Tianyu Zhang, Yizhuo Li, Wei Liu, and Li Li. How do vision transformers work? arXiv preprint arXiv:2202.06709, 2022."
+    },
+    {
+      "raw_reference": "Michael Zhang, James Lucas, Jimmy Ba, and Geoffrey Hinton. Lookahead optimizer: k steps forward, 1 step back. In Advances in Neural Information Processing Systems, pp. 9593–9604, 2019. [[PAGE 4]]"
+    }
+  ]
+}
