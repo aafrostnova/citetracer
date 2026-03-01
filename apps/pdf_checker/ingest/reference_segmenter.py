@@ -33,6 +33,30 @@ OCR_TAGGED_BLOCK_RE = re.compile(
     r"<\|ref\|>(?P<label>.*?)<\|/ref\|>\s*<\|det\|>.*?<\|/det\|>\s*(?P<content>.*?)(?=(?:\n?\s*<\|ref\|>|$))",
     re.DOTALL,
 )
+APPENDIX_HEADING_KEYWORDS = (
+    "appendix",
+    "supplement",
+    "proof",
+    "proofs",
+    "related work",
+    "experiment",
+    "experimental",
+    "implementation",
+    "details",
+    "additional",
+    "ablation",
+    "theorem",
+    "lemma",
+    "notation",
+)
+NARRATIVE_REF_PREFIXES = (
+    "exact verification approaches",
+    "scalable approximation methods",
+    "abstract interpretation methods",
+    "specialized and geometric approaches",
+    "relaxation-based training",
+    "advanced training strategies",
+)
 
 _LOCAL_MODEL_CACHE: dict[str, tuple[Any, Any]] = {}
 
@@ -46,6 +70,13 @@ def normalize_space(text: str) -> str:
 def _env_flag(name: str, default: str = "0") -> bool:
     value = os.getenv(name, default).strip().lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def _local_ocr_tmp_root() -> Path:
+    explicit = (os.getenv("CITATION_CHECKER_LOCAL_OCR_TMP_ROOT", "") or "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    return Path.cwd() / ".tmp" / "pdf_checker_local_ocr_pages"
 
 
 def _safe_write_text(path: Path, content: str) -> None:
@@ -63,6 +94,114 @@ def _normalize_heading_text(text: str) -> str:
     return heading
 
 
+def _strip_reference_artifacts(text: str, preserve_line_breaks: bool = False) -> str:
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = cleaned.replace("\u00ad", "")
+    # Page separators inserted by our wrapper should not become part of entries.
+    cleaned = re.sub(r"\s*\[\[PAGE\s+\d+\]\]\s*", "\n", cleaned, flags=re.IGNORECASE)
+    # DeepSeek OCR tagged markdown fallback can leak label/detection markers into text.
+    cleaned = re.sub(
+        r"(?im)\btext\s*\[\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]\]",
+        "\n",
+        cleaned,
+    )
+    cleaned = re.sub(r"\[\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]\]", "\n", cleaned)
+    cleaned = re.sub(r"<\|[^|]+\|>", " ", cleaned)
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    if preserve_line_breaks:
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+    return normalize_space(cleaned)
+
+
+def _find_heading_line_index(lines: list[str], heading_re: re.Pattern[str]) -> int | None:
+    for idx, line in enumerate(lines):
+        if heading_re.match(line.strip()):
+            return idx
+    return None
+
+
+def _is_appendix_style_heading(line: str) -> bool:
+    stripped = normalize_space(line)
+    if not stripped or YEAR_RE.search(stripped):
+        return False
+    if "," in stripped or ";" in stripped:
+        return False
+    lowered = stripped.lower()
+    if "http://" in lowered or "https://" in lowered or "doi:" in lowered:
+        return False
+    if "et al" in lowered:
+        return False
+
+    if END_HEADING_RE.match(stripped):
+        return True
+
+    if APPENDIX_STYLE_HEADING_RE.match(stripped):
+        return any(keyword in lowered for keyword in APPENDIX_HEADING_KEYWORDS)
+
+    if re.match(r"^\s*[A-Z](?:\.\d+)*\.?\s+[A-Z][A-Za-z0-9\- ]{2,100}$", stripped):
+        return any(keyword in lowered for keyword in APPENDIX_HEADING_KEYWORDS)
+
+    return False
+
+
+def _find_appendix_style_line_index(lines: list[str]) -> int | None:
+    for idx, line in enumerate(lines):
+        if _is_appendix_style_heading(line):
+            return idx
+    return None
+
+
+def _looks_like_reference_entry(text: str) -> bool:
+    cleaned = normalize_space(text)
+    if len(cleaned) < 20:
+        return False
+    lowered = cleaned.lower()
+    if lowered.startswith(NARRATIVE_REF_PREFIXES):
+        return False
+
+    has_signal = bool(
+        YEAR_RE.search(cleaned)
+        or re.search(r"https?://|doi:\s*|10\.\d{4,9}/|arxiv:", cleaned, flags=re.IGNORECASE)
+    )
+    if not has_signal:
+        return False
+
+    if re.match(r"^(?:\[\d{1,3}\]|\(\d{1,3}\)|\d{1,3}\.)\s+", cleaned):
+        return True
+
+    head = cleaned[:140]
+    if re.search(r",[ ](?:[A-Z]\.|[A-Z][a-z])", head):
+        return True
+    if re.search(r"\b(?:Proceedings|Journal|arXiv|PMLR|NeurIPS|ICLR|ICML)\b", cleaned):
+        return cleaned[0].isupper()
+    return cleaned[0].isupper() and len(cleaned.split()) <= 70
+
+
+def _split_tagged_block_on_reference_boundaries(content: str) -> tuple[str, bool, bool]:
+    """
+    Returns (trimmed_content, has_reference_start, has_reference_end).
+    Handles cases where one OCR `text` block contains preface text + REFERENCES +
+    reference entries (or reference entries + next section heading) together.
+    """
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    start_idx = _find_heading_line_index(lines, START_HEADING_RE)
+
+    has_start = start_idx is not None
+    if start_idx is not None:
+        lines = lines[start_idx + 1 :]
+
+    end_idx = _find_heading_line_index(lines, END_HEADING_RE)
+    if end_idx is None:
+        end_idx = _find_appendix_style_line_index(lines)
+
+    has_end = end_idx is not None
+    if end_idx is not None:
+        lines = lines[:end_idx]
+
+    return "\n".join(lines).strip(), has_start, has_end
+
+
 def _extract_reference_entries_from_tagged_markdown(markdown_text: str) -> list[str]:
     blocks: list[tuple[str, str]] = []
     for match in OCR_TAGGED_BLOCK_RE.finditer(markdown_text):
@@ -72,20 +211,49 @@ def _extract_reference_entries_from_tagged_markdown(markdown_text: str) -> list[
             continue
         blocks.append((label, content))
 
-    in_references = False
-    extracted: list[str] = []
+    has_explicit_start = False
+    prepared_blocks: list[tuple[str, str, str, bool, bool]] = []
     for label, content in blocks:
-        heading = _normalize_heading_text(content)
+        content_clean = _strip_reference_artifacts(content, preserve_line_breaks=True)
+        if not content_clean:
+            continue
+        heading = _normalize_heading_text(content_clean)
+        trimmed_content, has_start_inside, has_end_inside = _split_tagged_block_on_reference_boundaries(content_clean)
+        if has_start_inside:
+            has_explicit_start = True
+        if label in {"sub_title", "title", "section_title", "figure_title"} and START_HEADING_RE.match(heading):
+            has_explicit_start = True
+        prepared_blocks.append((label, heading, trimmed_content, has_start_inside, has_end_inside))
 
-        if label in {"sub_title", "title", "section_title", "figure_title"}:
+    # Some papers start directly from references (no visible REFERENCES heading in OCR blocks).
+    auto_start = False
+    if not has_explicit_start:
+        probe = [item for item in prepared_blocks if item[0] == "text"][:10]
+        if probe:
+            ref_like = sum(1 for _, _, content, _, _ in probe if _looks_like_reference_entry(content))
+            auto_start = ref_like >= 3
+
+    in_references = auto_start
+    extracted: list[str] = []
+    for label, heading, trimmed_content, has_start_inside, has_end_inside in prepared_blocks:
+        if has_start_inside:
+            in_references = True
+            if not trimmed_content:
+                continue
+        elif label in {"sub_title", "title", "section_title", "figure_title"}:
             if START_HEADING_RE.match(heading):
                 in_references = True
                 continue
-            if in_references and heading:
+            if in_references and (_is_appendix_style_heading(heading) or heading):
                 break
 
         if in_references and label == "text":
-            extracted.append(normalize_space(content))
+            if trimmed_content and _looks_like_reference_entry(trimmed_content):
+                extracted.append(trimmed_content)
+            if has_end_inside:
+                break
+        elif in_references and has_end_inside:
+            break
 
     return extracted
 
@@ -100,8 +268,7 @@ def _page_has_heading(page_text: str, heading_re: re.Pattern[str]) -> bool:
 def _page_has_appendix_style_heading(page_text: str) -> bool:
     lines = page_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     for line in lines[:24]:
-        stripped = line.strip()
-        if APPENDIX_STYLE_HEADING_RE.match(stripped) and not YEAR_RE.search(stripped):
+        if _is_appendix_style_heading(line):
             return True
     return False
 
@@ -161,7 +328,7 @@ def find_reference_block(full_text: str) -> tuple[str, bool]:
         if END_HEADING_RE.match(stripped):
             end = idx
             break
-        if APPENDIX_STYLE_HEADING_RE.match(stripped) and not YEAR_RE.search(stripped):
+        if _is_appendix_style_heading(stripped):
             end = idx
             break
 
@@ -196,6 +363,8 @@ def _filter_reference_like_entries(entries: list[str]) -> list[str]:
     for entry in entries:
         cleaned = normalize_space(entry)
         if len(cleaned) < 20:
+            continue
+        if cleaned.lower().startswith(NARRATIVE_REF_PREFIXES):
             continue
 
         has_signal = bool(
@@ -243,9 +412,29 @@ def _split_text_chunks_for_model(text: str, max_chars: int, overlap_lines: int =
 
 
 def _split_after_year_boundary(text: str) -> list[str]:
-    # Python 3.8-compatible boundary split: "<year>. <Author, ...>".
-    boundary_re = re.compile(r"\b(?:19|20)\d{2}[a-z]?\.\s+(?=[A-Z][A-Za-z'`\-]+,\s)")
-    matches = list(boundary_re.finditer(text))
+    # Python 3.8-compatible boundary split:
+    # 1) "<year>. <Surname, A. ...>" (BibTeX-like)
+    # 2) "<year>. <Firstname Lastname ...>" (plain author list)
+    boundary_patterns = [
+        re.compile(r"\b(?:19|20)\d{2}[a-z]?\.\s+(?=[A-Z][A-Za-z'`\-]+,\s)"),
+        re.compile(
+            r"\b(?:19|20)\d{2}[a-z]?\.\s+(?=(?:\[\d{1,3}\]\s*)?"
+            r"[A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){1,4}(?:\s*,|\s+and\s+|\s+[A-Z]))"
+        ),
+    ]
+    matches = []
+    for pattern in boundary_patterns:
+        matches.extend(pattern.finditer(text))
+    matches = sorted(matches, key=lambda m: m.start())
+    # Deduplicate overlapping matches at the same location.
+    unique_matches = []
+    seen_starts: set[int] = set()
+    for match in matches:
+        if match.start() in seen_starts:
+            continue
+        seen_starts.add(match.start())
+        unique_matches.append(match)
+    matches = unique_matches
     if not matches:
         return [text]
 
@@ -328,21 +517,52 @@ def _append_raw_entries_from_json(parsed: Any, target: list[str]) -> None:
             raw = item
         if raw is None:
             continue
-        normalized = normalize_space(str(raw))
-        normalized = re.sub(r"\[\[PAGE \d+\]\]", "", normalized).strip()
+        normalized = _strip_reference_artifacts(str(raw), preserve_line_breaks=False)
         normalized = re.sub(r"\s+\d+(?:\s*,\s*\d+){1,8}\s*$", "", normalized).strip()
         if normalized:
             target.append(normalized)
 
 
 def _finalize_raw_entries(raw_entries: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for entry in raw_entries:
+        cleaned = _strip_reference_artifacts(entry, preserve_line_breaks=True)
+        if not cleaned:
+            continue
+
+        # If OCR leaked box markers or merged many references into one huge string,
+        # try a second-pass split before dedupe/filter.
+        marker_leak = bool(re.search(r"(?i)\btext\s*\[\[|\[\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]\]", entry))
+        many_years = len(re.findall(r"\b(?:19|20)\d{2}[a-z]?\b", cleaned)) >= 3
+        if marker_leak or (many_years and len(cleaned) > 900):
+            split_entries, _ = split_reference_entries(cleaned)
+            if split_entries:
+                for split_entry in split_entries:
+                    flat_split = _strip_reference_artifacts(split_entry, preserve_line_breaks=False)
+                    split_years = len(re.findall(r"\b(?:19|20)\d{2}[a-z]?\b", flat_split))
+                    if split_years >= 3 and len(flat_split) > 500:
+                        finer = [normalize_space(piece) for piece in _split_after_year_boundary(flat_split) if normalize_space(piece)]
+                        if len(finer) > 1:
+                            expanded.extend(finer)
+                            continue
+                    expanded.append(split_entry)
+                continue
+            if many_years:
+                flat_cleaned = _strip_reference_artifacts(cleaned, preserve_line_breaks=False)
+                finer = [normalize_space(piece) for piece in _split_after_year_boundary(flat_cleaned) if normalize_space(piece)]
+                if len(finer) > 1:
+                    expanded.extend(finer)
+                    continue
+        expanded.append(cleaned)
+
     deduped: list[str] = []
     seen: set[str] = set()
-    for entry in raw_entries:
-        key = re.sub(r"\s+", " ", entry).strip().lower()
+    for entry in expanded:
+        normalized_entry = _strip_reference_artifacts(entry, preserve_line_breaks=False)
+        key = re.sub(r"\s+", " ", normalized_entry).strip().lower()
         if key and key not in seen:
             seen.add(key)
-            deduped.append(entry)
+            deduped.append(normalized_entry)
 
     filtered = _filter_reference_like_entries(deduped)
     return filtered if filtered else deduped
@@ -469,6 +689,45 @@ def _render_pdf_reference_pages(
         doc.close()
 
 
+def _extract_entries_from_markdown_pages(markdown_pages: list[str], output_dir: Path) -> list[str]:
+    if not markdown_pages:
+        return []
+
+    combined_markdown = "\n\n".join(markdown_pages).strip()
+    _safe_write_text(output_dir / "reference_pages_markdown.mmd", combined_markdown)
+
+    tagged_entries = _extract_reference_entries_from_tagged_markdown(combined_markdown)
+    tagged_entries = _finalize_raw_entries(tagged_entries)
+    if tagged_entries:
+        _safe_write_text(
+            output_dir / "reference_entries_from_markdown.json",
+            json.dumps({"references": [{"raw_reference": value} for value in tagged_entries]}, indent=2, ensure_ascii=False),
+        )
+        return tagged_entries
+
+    cleaned_markdown = combined_markdown
+    cleaned_markdown = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", cleaned_markdown)
+    cleaned_markdown = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 \2", cleaned_markdown)
+    cleaned_markdown = re.sub(r"`{1,3}", "", cleaned_markdown)
+    cleaned_markdown = re.sub(r"<\|[^|]+\|>", " ", cleaned_markdown)
+    cleaned_markdown = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", cleaned_markdown)
+    cleaned_markdown = re.sub(r"(?m)^\s*[-*+]\s+", "", cleaned_markdown)
+    cleaned_markdown = re.sub(r"(?m)^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$", "", cleaned_markdown)
+    cleaned_markdown = re.sub(r"\r\n|\r", "\n", cleaned_markdown)
+
+    entries, _ = split_reference_entries(cleaned_markdown)
+    entries = _finalize_raw_entries(entries)
+    if not entries:
+        paragraphs = [normalize_space(chunk) for chunk in re.split(r"\n\s*\n", cleaned_markdown) if normalize_space(chunk)]
+        entries = _finalize_raw_entries(paragraphs)
+
+    _safe_write_text(
+        output_dir / "reference_entries_from_markdown.json",
+        json.dumps({"references": [{"raw_reference": value} for value in entries]}, indent=2, ensure_ascii=False),
+    )
+    return entries
+
+
 def _extract_entries_with_local_model_from_images(
     tokenizer: Any,
     model: Any,
@@ -538,42 +797,7 @@ def _extract_entries_with_local_model_from_images(
             markdown_pages.append(f"[[PAGE {idx}]]\n{text_str.strip()}")
             _safe_write_text(page_output_dir / "page_reference_markdown.mmd", text_str.strip())
 
-    if not markdown_pages:
-        return []
-
-    combined_markdown = "\n\n".join(markdown_pages).strip()
-    _safe_write_text(output_dir / "reference_pages_markdown.mmd", combined_markdown)
-
-    tagged_entries = _extract_reference_entries_from_tagged_markdown(combined_markdown)
-    tagged_entries = _finalize_raw_entries(tagged_entries)
-    if tagged_entries:
-        _safe_write_text(
-            output_dir / "reference_entries_from_markdown.json",
-            json.dumps({"references": [{"raw_reference": value} for value in tagged_entries]}, indent=2, ensure_ascii=False),
-        )
-        return tagged_entries
-
-    cleaned_markdown = combined_markdown
-    cleaned_markdown = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", cleaned_markdown)
-    cleaned_markdown = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 \2", cleaned_markdown)
-    cleaned_markdown = re.sub(r"`{1,3}", "", cleaned_markdown)
-    cleaned_markdown = re.sub(r"<\|[^|]+\|>", " ", cleaned_markdown)
-    cleaned_markdown = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", cleaned_markdown)
-    cleaned_markdown = re.sub(r"(?m)^\s*[-*+]\s+", "", cleaned_markdown)
-    cleaned_markdown = re.sub(r"(?m)^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$", "", cleaned_markdown)
-    cleaned_markdown = re.sub(r"\r\n|\r", "\n", cleaned_markdown)
-
-    entries, _ = split_reference_entries(cleaned_markdown)
-    entries = _finalize_raw_entries(entries)
-    if not entries:
-        paragraphs = [normalize_space(chunk) for chunk in re.split(r"\n\s*\n", cleaned_markdown) if normalize_space(chunk)]
-        entries = _finalize_raw_entries(paragraphs)
-
-    _safe_write_text(
-        output_dir / "reference_entries_from_markdown.json",
-        json.dumps({"references": [{"raw_reference": value} for value in entries]}, indent=2, ensure_ascii=False),
-    )
-    return entries
+    return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir)
 
 
 def _extract_entries_with_local_model_from_text(
@@ -650,7 +874,7 @@ def _extract_entries_with_local_model(
         and reference_page_end is not None
     ):
         try:
-            tmp_root = Path.cwd() / ".tmp" / "pdf_checker_local_ocr_pages"
+            tmp_root = _local_ocr_tmp_root()
             tmp_root.mkdir(parents=True, exist_ok=True)
             pdf_stem = Path(source_pdf_path).stem
             safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", pdf_stem).strip("_") or "paper"
@@ -778,6 +1002,13 @@ def segment_references_from_pages(
     local_model_path: str | None = None,
     source_pdf_path: str | Path | None = None,
 ) -> tuple[list[str], ExtractionQuality, dict[str, Any]]:
+    mode = entry_extraction.strip().lower() if entry_extraction else "heuristic"
+    if mode not in {"heuristic", "model"}:
+        mode = "heuristic"
+    provider = model_provider.strip().lower() if model_provider else "bedrock"
+    if provider not in {"bedrock", "local"}:
+        provider = "bedrock"
+
     start_page, end_page, heading_on_pages = find_reference_page_range(page_texts)
     refs_text = build_page_range_text(page_texts, start_page, end_page)
     ref_block, heading_in_block = find_reference_block(refs_text)
@@ -793,15 +1024,14 @@ def segment_references_from_pages(
         "entry_extraction_fallback": False,
     }
 
-    if not ref_block.strip():
+    allow_local_image_ocr = (
+        mode == "model"
+        and provider == "local"
+        and bool(local_model_path)
+        and source_pdf_path is not None
+    )
+    if not ref_block.strip() and not allow_local_image_ocr:
         return [], ExtractionQuality.LOW, metadata
-
-    mode = entry_extraction.strip().lower() if entry_extraction else "heuristic"
-    if mode not in {"heuristic", "model"}:
-        mode = "heuristic"
-    provider = model_provider.strip().lower() if model_provider else "bedrock"
-    if provider not in {"bedrock", "local"}:
-        provider = "bedrock"
 
     numbered_mode = False
     entries: list[str] = []
