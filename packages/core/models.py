@@ -7,6 +7,9 @@ from typing import Any
 
 class VerdictLabel(str, Enum):
     VALID = "VALID"
+    POTENTIAL_REFERENCE = "POTENTIAL_REFERENCE"
+    FAKE_REFERENCE = "FAKE_REFERENCE"
+    # Legacy labels kept for backward compatibility with old datasets/reports.
     FLAWED_CITATION = "FLAWED_CITATION"
     SUSPECTED_HALLUCINATION = "SUSPECTED_HALLUCINATION"
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
@@ -118,9 +121,24 @@ def candidate_match_to_dict(candidate: CandidateMatch) -> dict[str, Any]:
 
 def citation_verdict_to_dict(verdict: CitationVerdict) -> dict[str, Any]:
     payload = asdict(verdict)
-    payload["verdict"] = verdict.verdict.value
+    payload["verdict"] = canonical_verdict_label(verdict.verdict).value
     payload["extraction_quality"] = verdict.extraction_quality.value
     payload["confidence"] = round(float(verdict.confidence), 4)
     if verdict.matched_candidate is not None:
         payload["matched_candidate"] = verdict.matched_candidate
     return payload
+
+
+def canonical_verdict_label(label: VerdictLabel | str) -> VerdictLabel:
+    raw = str(getattr(label, "value", label)).strip().upper()
+    if raw == VerdictLabel.FLAWED_CITATION.value:
+        return VerdictLabel.POTENTIAL_REFERENCE
+    if raw == VerdictLabel.SUSPECTED_HALLUCINATION.value:
+        return VerdictLabel.FAKE_REFERENCE
+    if raw == VerdictLabel.POTENTIAL_REFERENCE.value:
+        return VerdictLabel.POTENTIAL_REFERENCE
+    if raw == VerdictLabel.FAKE_REFERENCE.value:
+        return VerdictLabel.FAKE_REFERENCE
+    if raw == VerdictLabel.VALID.value:
+        return VerdictLabel.VALID
+    return VerdictLabel.INSUFFICIENT_EVIDENCE

@@ -41,6 +41,15 @@ class PDFEntryExtractionConfig:
 class PDFCheckerConfig:
     connectors: ConnectorRuntimeConfig
     entry_extraction: PDFEntryExtractionConfig
+    citation_reparse: "CitationReparseConfig"
+
+
+@dataclass(frozen=True)
+class CitationReparseConfig:
+    enabled: bool
+    model_path: str | None
+    max_new_tokens: int
+    temperature: float
 
 
 def _get_nested(payload: Mapping[str, Any], keys: list[str]) -> Any:
@@ -65,6 +74,17 @@ def _optional_str(env: Mapping[str, str], key: str) -> str | None:
     return value or None
 
 
+def _parse_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _parse_entry_mode(value: Any) -> str:
     mode = str(value).strip().lower()
     if mode in {"heuristic", "model"}:
@@ -77,6 +97,22 @@ def _parse_chunk_chars(value: Any) -> int:
         return max(2000, int(str(value).strip()))
     except (TypeError, ValueError):
         return 12000
+
+
+def _parse_positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _parse_temperature(value: Any, default: float = 0.0) -> float:
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, parsed))
 
 
 def _parse_model_provider(value: Any) -> str:
@@ -191,6 +227,28 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _optional_payload_str(payload, ["entry_extraction", "local", "model_path"])
     )
 
+    reparse_enabled = _parse_bool(
+        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_ENABLED")
+        or _get_nested(payload, ["citation_reparse", "enabled"]),
+        default=False,
+    )
+    reparse_model_path = (
+        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_MODEL_PATH")
+        or _optional_payload_str(payload, ["citation_reparse", "model_path"])
+    )
+    reparse_max_new_tokens = _parse_positive_int(
+        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_MAX_NEW_TOKENS")
+        or _get_nested(payload, ["citation_reparse", "max_new_tokens"])
+        or 32768,
+        default=32768,
+    )
+    reparse_temperature = _parse_temperature(
+        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_TEMPERATURE")
+        or _get_nested(payload, ["citation_reparse", "temperature"])
+        or 0.0,
+        default=0.0,
+    )
+
     return PDFCheckerConfig(
         connectors=ConnectorRuntimeConfig(
             cache_path=Path(cache_path),
@@ -208,5 +266,11 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
                 bearer_token=bearer_token,
             ),
             local=LocalModelConfig(model_path=local_model_path),
+        ),
+        citation_reparse=CitationReparseConfig(
+            enabled=reparse_enabled and bool(reparse_model_path),
+            model_path=reparse_model_path,
+            max_new_tokens=reparse_max_new_tokens,
+            temperature=reparse_temperature,
         ),
     )

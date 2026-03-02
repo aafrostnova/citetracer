@@ -1,22 +1,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from typing import Protocol
 
-from .models import CandidateMatch, CitationRecord, CitationVerdict, EvidenceTrace, ExtractionQuality, VerdictLabel, candidate_match_to_dict
+from .models import (
+    CandidateMatch,
+    CitationRecord,
+    CitationVerdict,
+    EvidenceTrace,
+    ExtractionQuality,
+    VerdictLabel,
+    candidate_match_to_dict,
+    canonical_verdict_label,
+)
 
 
 class LLMResolver(Protocol):
-    def resolve(self, citation: CitationRecord, candidates: list[CandidateMatch], conflicts: list[str]) -> str:
-        """Return a short disambiguation note used in adjudication reason."""
+    def review(
+        self,
+        citation: CitationRecord,
+        candidates: list[CandidateMatch],
+        conflicts: list[str],
+        proposed_verdict: VerdictLabel,
+    ) -> dict[str, Any] | None:
+        """
+        Optional LLM second-opinion for ambiguous/fake references.
+        Expected keys: label_override, confidence_override, note.
+        """
 
 
 @dataclass
 class AdjudicationPolicy:
     valid_threshold: float = 0.85
-    flawed_threshold: float = 0.55
-    hallucination_threshold: float = 0.30
+    potential_threshold: float = 0.55
+    fake_threshold: float = 0.30
     review_confidence_threshold: float = 0.72
+    max_sources_with_identifier: int = 2
+    max_sources_without_identifier: int = 4
 
 
 def _apply_extraction_penalty(confidence: float, extraction_quality: ExtractionQuality) -> float:
@@ -64,23 +85,37 @@ def adjudicate(
     confidence = best.score
     confidence = _apply_extraction_penalty(confidence, extraction_quality)
 
-    if llm_resolver and policy.flawed_threshold <= best.score < policy.valid_threshold:
-        llm_note = llm_resolver.resolve(citation, candidates[:3], conflicts)
-    else:
-        llm_note = ""
+    hard_conflicts = {"doi_mismatch", "arxiv_id_mismatch", "title_mismatch", "author_mismatch", "venue_mismatch"}
+    has_hard_conflict = any(conflict in hard_conflicts for conflict in conflicts)
+    llm_note = ""
 
     if best.score >= policy.valid_threshold and not any(conf in conflicts for conf in ("doi_mismatch", "arxiv_id_mismatch")):
         verdict = VerdictLabel.VALID
         reason = "Strong metadata match across title/authors/year and no hard identifier conflicts."
-    elif best.score >= policy.flawed_threshold:
-        verdict = VerdictLabel.FLAWED_CITATION
-        reason = "Closest match exists but has metadata inconsistencies."
-    elif best.score <= policy.hallucination_threshold and ("title_mismatch" in conflicts or "author_mismatch" in conflicts):
-        verdict = VerdictLabel.SUSPECTED_HALLUCINATION
-        reason = "Closest candidate is weak and contains major title/author mismatches."
+    elif best.score >= policy.potential_threshold:
+        verdict = VerdictLabel.POTENTIAL_REFERENCE
+        reason = "Closest match exists but has metadata ambiguities/inconsistencies."
+    elif best.score <= policy.fake_threshold and has_hard_conflict:
+        verdict = VerdictLabel.FAKE_REFERENCE
+        reason = "Closest candidate is weak and contains major metadata mismatches."
     else:
         verdict = VerdictLabel.INSUFFICIENT_EVIDENCE
         reason = "Evidence is inconclusive and requires manual review."
+
+    if llm_resolver and verdict in {VerdictLabel.POTENTIAL_REFERENCE, VerdictLabel.FAKE_REFERENCE}:
+        try:
+            review = llm_resolver.review(citation, candidates[:3], conflicts, verdict) or {}
+        except Exception as exc:  # noqa: BLE001 - reviewer failure should not crash adjudication
+            review = {"note": f"LLM review failed: {exc}"}
+        override = review.get("label_override")
+        if override:
+            verdict = canonical_verdict_label(override)
+        if review.get("confidence_override") is not None:
+            try:
+                confidence = max(0.0, min(1.0, float(review["confidence_override"])))
+            except (TypeError, ValueError):
+                pass
+        llm_note = str(review.get("note", "")).strip()
 
     if llm_note:
         reason = f"{reason} LLM disambiguation: {llm_note}"

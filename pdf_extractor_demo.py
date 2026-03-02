@@ -55,7 +55,13 @@ def _extract_pdf_to_payload(pdf: Path) -> Dict[str, Any]:
         local_model_path=cfg.entry_extraction.local.model_path,
         source_pdf_path=pdf,
     )
-    parsed_citations = [asdict(record) for record in parse_reference_entries(entries)]
+    parsed_citations = [
+        asdict(record)
+        for record in parse_reference_entries(
+            entries,
+            llm_reparse_config=asdict(cfg.citation_reparse),
+        )
+    ]
 
     return {
         "input_pdf": str(pdf),

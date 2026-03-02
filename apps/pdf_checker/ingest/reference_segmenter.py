@@ -178,6 +178,97 @@ def _looks_like_reference_entry(text: str) -> bool:
     return cleaned[0].isupper() and len(cleaned.split()) <= 70
 
 
+def _has_reference_signal(text: str) -> bool:
+    return bool(
+        YEAR_RE.search(text)
+        or re.search(r"https?://|doi:\s*|10\.\d{4,9}/|arxiv:", text, flags=re.IGNORECASE)
+    )
+
+
+def _looks_like_reference_prefix_fragment(text: str) -> bool:
+    cleaned = normalize_space(text)
+    if len(cleaned) < 25:
+        return False
+    lowered = cleaned.lower()
+    if lowered.startswith(("in proceedings", "proceedings of", "pp.", "volume ", "vol.", "association for", "pmlr", "springer")):
+        return False
+    # Typical author-prefix start: "Surname, A." / "Surname, A., Surname, B."
+    if re.match(r"^[A-Z][A-Za-z'`\-]+,\s+(?:[A-Z]\.\s*){1,4}", cleaned):
+        return True
+    if re.match(r"^[A-Z][A-Za-z'`\-]+,\s+[A-Z][a-z]{1,20}", cleaned):
+        return True
+    return False
+
+
+def _looks_like_reference_continuation_fragment(text: str) -> bool:
+    cleaned = normalize_space(text)
+    if len(cleaned) < 15:
+        return False
+    lowered = cleaned.lower()
+    continuation_prefixes = (
+        "in proceedings",
+        "proceedings of",
+        "findings of",
+        "in advances in",
+        "in international conference",
+        "pp.",
+        "pp ",
+        "volume ",
+        "vol.",
+        "association for",
+        "new york, ny",
+        "florence, italy",
+        "hong kong, china",
+        "abu dhabi",
+        "pmlr",
+    )
+    if lowered.startswith(continuation_prefixes):
+        return True
+    if re.match(r"^[A-Z][a-z]+,\s+[A-Z][a-z]+\s+\d{4}\.", cleaned):
+        return True
+    if re.match(r"^\d{2,6}\s*[-–]\s*\d{2,6}(?:,\s*\d{4})?$", cleaned):
+        return True
+    return False
+
+
+def _looks_like_reference_fragment(text: str) -> bool:
+    cleaned = normalize_space(text)
+    return _looks_like_reference_prefix_fragment(cleaned) or _looks_like_reference_continuation_fragment(cleaned)
+
+
+def _merge_fragmented_entries(entries: list[str]) -> list[str]:
+    merged: list[str] = []
+    for raw in entries:
+        current = normalize_space(raw)
+        if not current:
+            continue
+        if not merged:
+            merged.append(current)
+            continue
+
+        previous = merged[-1]
+        prev_has_signal = _has_reference_signal(previous)
+        curr_has_signal = _has_reference_signal(current)
+        prev_incomplete_tail = bool(
+            re.search(r"(?:,\s*|:\s*|\bpp\.?\s*|\bvolume\s+\d+\s*)$", previous, flags=re.IGNORECASE)
+            or previous.endswith(("In", "in", "In:", "in:"))
+        )
+
+        should_merge = False
+        if _looks_like_reference_continuation_fragment(current) and (_looks_like_reference_prefix_fragment(previous) or prev_incomplete_tail):
+            should_merge = True
+        elif _looks_like_reference_continuation_fragment(current) and not prev_has_signal:
+            should_merge = True
+        elif _looks_like_reference_prefix_fragment(previous) and not prev_has_signal and curr_has_signal:
+            should_merge = True
+
+        if should_merge:
+            merged[-1] = normalize_space(f"{previous} {current}")
+        else:
+            merged.append(current)
+    return merged
+
+
 def _split_tagged_block_on_reference_boundaries(content: str) -> tuple[str, bool, bool]:
     """
     Returns (trimmed_content, has_reference_start, has_reference_end).
@@ -248,7 +339,7 @@ def _extract_reference_entries_from_tagged_markdown(markdown_text: str) -> list[
                 break
 
         if in_references and label == "text":
-            if trimmed_content and _looks_like_reference_entry(trimmed_content):
+            if trimmed_content and (_looks_like_reference_entry(trimmed_content) or _looks_like_reference_fragment(trimmed_content)):
                 extracted.append(trimmed_content)
             if has_end_inside:
                 break
@@ -554,6 +645,8 @@ def _finalize_raw_entries(raw_entries: list[str]) -> list[str]:
                     expanded.extend(finer)
                     continue
         expanded.append(cleaned)
+
+    expanded = _merge_fragmented_entries(expanded)
 
     deduped: list[str] = []
     seen: set[str] = set()

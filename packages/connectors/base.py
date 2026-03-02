@@ -154,9 +154,37 @@ class ConnectorOrchestrator:
         self.policy = policy or RequestPolicy()
         self.source_health = source_health or SourceHealth()
 
-    def query(self, citation: CitationRecord) -> list[ConnectorResult]:
+    @staticmethod
+    def _norm_text(value: str) -> str:
+        return " ".join(str(value or "").lower().split())
+
+    @classmethod
+    def _has_exact_identifier_hit(cls, citation: CitationRecord, records: list[dict[str, Any]]) -> bool:
+        doi = str(citation.doi or "").strip().lower()
+        arxiv_id = str(citation.arxiv_id or "").strip().lower()
+        for record in records:
+            if doi and str(record.get("doi", "") or "").strip().lower() == doi:
+                return True
+            if arxiv_id and str(record.get("arxiv_id", "") or "").strip().lower() == arxiv_id:
+                return True
+        return False
+
+    @classmethod
+    def _has_exact_title_hit(cls, citation: CitationRecord, records: list[dict[str, Any]]) -> bool:
+        title = cls._norm_text(citation.title)
+        if not title:
+            return False
+        return any(cls._norm_text(record.get("title", "")) == title for record in records)
+
+    def query(
+        self,
+        citation: CitationRecord,
+        max_connectors: int | None = None,
+    ) -> list[ConnectorResult]:
         results: list[ConnectorResult] = []
         for connector in self.connectors:
+            if max_connectors is not None and len(results) >= max_connectors:
+                break
             started = time.perf_counter()
             key = cache_key_for(connector.name, citation)
             cached = self.cache.get(key)
@@ -172,6 +200,11 @@ class ConnectorOrchestrator:
                         error=None,
                     )
                 )
+                if cached:
+                    if self._has_exact_identifier_hit(citation, cached):
+                        break
+                    if connector.name.startswith("dblp") and self._has_exact_title_hit(citation, cached):
+                        break
                 continue
 
             error: str | None = None
@@ -195,4 +228,9 @@ class ConnectorOrchestrator:
                     error=error,
                 )
             )
+            if records:
+                if self._has_exact_identifier_hit(citation, records):
+                    break
+                if connector.name.startswith("dblp") and self._has_exact_title_hit(citation, records):
+                    break
         return results

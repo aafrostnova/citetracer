@@ -48,7 +48,11 @@ class CitationVerifier:
 
     def verify_citation(self, citation: CitationRecord, extraction_quality: ExtractionQuality | None = None):
         extraction_quality = extraction_quality or self.config.default_extraction_quality
-        connector_results = self.orchestrator.query(citation)
+        has_identifier = bool((citation.doi or "").strip() or (citation.arxiv_id or "").strip())
+        max_sources = (
+            self.policy.max_sources_with_identifier if has_identifier else self.policy.max_sources_without_identifier
+        )
+        connector_results = self.orchestrator.query(citation, max_connectors=max_sources)
         records = {result.connector: result.records for result in connector_results}
         candidates = rank_candidates(citation, records)
         evidence = [self._result_to_trace(citation, result) for result in connector_results]

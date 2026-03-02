@@ -26,7 +26,7 @@ class SourcePipelineTests(unittest.TestCase):
 
             verdicts = {item["citation_id"]: item["verdict"] for item in report["citations"]}
             self.assertEqual(verdicts["bib:goodpaper"], "VALID")
-            self.assertEqual(verdicts["bib:typoauthor"], "FLAWED_CITATION")
+            self.assertEqual(verdicts["bib:typoauthor"], "POTENTIAL_REFERENCE")
             self.assertEqual(verdicts["bib:fakepaper"], "INSUFFICIENT_EVIDENCE")
             self.assertTrue(output_path.exists())
 

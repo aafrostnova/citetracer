@@ -11,6 +11,15 @@ from .datasets import load_ground_truth, load_manifest
 from .metrics import binary_metrics, expected_calibration_error
 
 
+def _canon(label: str) -> str:
+    value = str(label or "").strip().upper()
+    if value == "FLAWED_CITATION":
+        return "POTENTIAL_REFERENCE"
+    if value == "SUSPECTED_HALLUCINATION":
+        return "FAKE_REFERENCE"
+    return value or "INSUFFICIENT_EVIDENCE"
+
+
 @dataclass
 class SuiteResult:
     suite_name: str
@@ -56,14 +65,14 @@ def run_suite(manifest_path: str | Path, out_dir: str | Path) -> dict:
 
         for citation in report.get("citations", []):
             citation_id = citation["citation_id"]
-            predicted = citation["verdict"]
-            label = truth.get(citation_id, "INSUFFICIENT_EVIDENCE")
+            predicted = _canon(citation["verdict"])
+            label = _canon(truth.get(citation_id, "INSUFFICIENT_EVIDENCE"))
 
-            hall_labels.append(label == "SUSPECTED_HALLUCINATION")
-            hall_preds.append(predicted == "SUSPECTED_HALLUCINATION")
+            hall_labels.append(label == "FAKE_REFERENCE")
+            hall_preds.append(predicted == "FAKE_REFERENCE")
 
-            flawed_labels.append(label == "FLAWED_CITATION")
-            flawed_preds.append(predicted == "FLAWED_CITATION")
+            flawed_labels.append(label == "POTENTIAL_REFERENCE")
+            flawed_preds.append(predicted == "POTENTIAL_REFERENCE")
 
             confidences.append(float(citation.get("confidence", 0.0)))
             correctness.append(predicted == label)

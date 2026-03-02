@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import os
 from pathlib import Path
@@ -66,7 +67,10 @@ def run_pdf_check(
     )
 
     _log(verbose, "[3/7] Parsing references into citation records")
-    citations = parse_reference_entries(reference_entries)
+    citations = parse_reference_entries(
+        reference_entries,
+        llm_reparse_config=asdict(config.citation_reparse),
+    )
     _log(verbose, f"      Parsed {len(citations)} citation records")
 
     _log(verbose, "[4/7] Linking inline citation markers")
