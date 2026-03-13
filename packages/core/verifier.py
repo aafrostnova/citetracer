@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from packages.connectors.base import ConnectorOrchestrator, ConnectorResult
 
 from .adjudicate import AdjudicationPolicy, LLMResolver, adjudicate
-from .matching import rank_candidates
+from .matching import collect_candidates
 from .models import CheckReport, CitationRecord, EvidenceTrace, ExtractionQuality
+from .normalize import extract_identifier
 from .report import build_summary, compute_risk_score
 
 
@@ -38,6 +39,7 @@ class CitationVerifier:
                 "year": citation.year,
                 "doi": citation.doi,
                 "arxiv_id": citation.arxiv_id,
+                "url": citation.url,
             },
             latency_ms=result.latency_ms,
             cache_hit=result.cache_hit,
@@ -46,15 +48,26 @@ class CitationVerifier:
             error=result.error,
         )
 
-    def verify_citation(self, citation: CitationRecord, extraction_quality: ExtractionQuality | None = None):
-        extraction_quality = extraction_quality or self.config.default_extraction_quality
-        has_identifier = bool((citation.doi or "").strip() or (citation.arxiv_id or "").strip())
-        max_sources = (
-            self.policy.max_sources_with_identifier if has_identifier else self.policy.max_sources_without_identifier
+    @staticmethod
+    def _enrich_citation_from_url(citation: CitationRecord) -> CitationRecord:
+        url = str(citation.url or "").strip()
+        if not url:
+            return citation
+        extracted_doi, extracted_arxiv_id = extract_identifier(url)
+        if extracted_doi == (citation.doi or "").strip().lower() and extracted_arxiv_id == (citation.arxiv_id or "").strip().lower():
+            return citation
+        return replace(
+            citation,
+            doi=(citation.doi or "").strip().lower() or extracted_doi,
+            arxiv_id=(citation.arxiv_id or "").strip().lower() or extracted_arxiv_id,
         )
-        connector_results = self.orchestrator.query(citation, max_connectors=max_sources)
+
+    def verify_citation(self, citation: CitationRecord, extraction_quality: ExtractionQuality | None = None):
+        citation = self._enrich_citation_from_url(citation)
+        extraction_quality = extraction_quality or self.config.default_extraction_quality
+        connector_results = self.orchestrator.query(citation, max_connectors=None)
         records = {result.connector: result.records for result in connector_results}
-        candidates = rank_candidates(citation, records)
+        candidates = collect_candidates(citation, records)
         evidence = [self._result_to_trace(citation, result) for result in connector_results]
         return adjudicate(
             citation=citation,
@@ -78,12 +91,22 @@ class CitationVerifier:
         verdicts = []
         total = len(citations)
         for idx, citation in enumerate(citations, start=1):
-            verdicts.append(
-                self.verify_citation(
-                    citation,
-                    extraction_quality=extraction_quality_map.get(citation.citation_id, self.config.default_extraction_quality),
+            if show_progress:
+                print(
+                    f"[verify] citation {idx}/{total} start id={citation.citation_id} title={citation.title[:120]!r}",
+                    flush=True,
                 )
+            verdict = self.verify_citation(
+                citation,
+                extraction_quality=extraction_quality_map.get(citation.citation_id, self.config.default_extraction_quality),
             )
+            verdicts.append(verdict)
+            if show_progress:
+                print(
+                    f"[verify] citation {idx}/{total} result id={citation.citation_id} "
+                    f"verdict={verdict.verdict.value} reason={verdict.adjudication_reason}",
+                    flush=True,
+                )
             if show_progress and total > 0:
                 width = 28
                 filled = min(width, int(width * idx / total))

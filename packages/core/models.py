@@ -74,6 +74,10 @@ class CitationVerdict:
     conflicts: list[str]
     adjudication_reason: str
     matched_candidate: dict[str, Any] | None = None
+    reference_snapshot: dict[str, Any] = field(default_factory=dict)
+    comparison: dict[str, Any] = field(default_factory=dict)
+    candidate_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    llm_recheck_reason: str = ""
     needs_human_review: bool = False
     extraction_quality: ExtractionQuality = ExtractionQuality.UNKNOWN
 

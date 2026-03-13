@@ -61,6 +61,9 @@ def render_markdown(report: CheckReport) -> str:
 
     for verdict in report.citations:
         label = canonical_verdict_label(verdict.verdict).value
+        comparison_summary = ""
+        if getattr(verdict, "comparison", None):
+            comparison_summary = str(verdict.comparison.get("summary", "") or "").strip()
         lines.extend(
             [
                 f"### {verdict.citation_id}",
@@ -68,6 +71,7 @@ def render_markdown(report: CheckReport) -> str:
                 f"- Confidence: `{verdict.confidence:.3f}`",
                 f"- Evidence sources: {', '.join(verdict.evidence_sources) if verdict.evidence_sources else 'none'}",
                 f"- Conflicts: {', '.join(verdict.conflicts) if verdict.conflicts else 'none'}",
+                f"- Field comparison: {comparison_summary or 'n/a'}",
                 f"- Review required: `{verdict.needs_human_review}`",
                 f"- Reason: {verdict.adjudication_reason}",
                 "",

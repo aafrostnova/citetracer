@@ -54,7 +54,14 @@ class PDFCheckerConfigTests(unittest.TestCase):
 	    "cache_path": "/tmp/custom_cache.sqlite",
 	    "dblp_mirror_path": "/tmp/custom_mirror.jsonl",
 	    "dblp_sqlite_path": "/tmp/custom_dblp.sqlite",
-	    "semantic_scholar_api_key": "s2_key"
+	    "semantic_scholar_api_key": "s2_key",
+	    "govinfo_api_key": "govinfo_key",
+	    "searxng_base_url": "http://localhost:8080",
+	    "ncbi_api_key": "ncbi_key",
+	    "ncbi_email": "user@example.com",
+	    "google_api_key": "google_key",
+	    "google_cse_id": "google_cse",
+	    "serpapi_key": "serpapi_key"
 	  },
 	  "entry_extraction": {
 	    "mode": "model",
@@ -77,6 +84,13 @@ class PDFCheckerConfigTests(unittest.TestCase):
         self.assertEqual(str(config.connectors.dblp_mirror_path), "/tmp/custom_mirror.jsonl")
         self.assertEqual(str(config.connectors.dblp_sqlite_path), "/tmp/custom_dblp.sqlite")
         self.assertEqual(config.connectors.semantic_scholar_api_key, "s2_key")
+        self.assertEqual(config.connectors.govinfo_api_key, "govinfo_key")
+        self.assertEqual(config.connectors.searxng_base_url, "http://localhost:8080")
+        self.assertEqual(config.connectors.ncbi_api_key, "ncbi_key")
+        self.assertEqual(config.connectors.ncbi_email, "user@example.com")
+        self.assertEqual(config.connectors.google_api_key, "google_key")
+        self.assertEqual(config.connectors.google_cse_id, "google_cse")
+        self.assertEqual(config.connectors.serpapi_key, "serpapi_key")
         self.assertEqual(config.entry_extraction.mode, "model")
         self.assertEqual(config.entry_extraction.provider, "bedrock")
         self.assertEqual(config.entry_extraction.chunk_chars, 9000)

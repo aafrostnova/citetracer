@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 from .models import CandidateMatch, CitationRecord
-from .normalize import author_overlap_score, similarity, venue_match_score, year_consistency
+from .normalize import (
+    author_overlap_score,
+    normalize_arxiv_id,
+    normalize_title,
+    similarity,
+    venue_match_score,
+    year_consistency,
+)
 
 
 def _to_int(value: Any) -> int | None:
@@ -26,19 +33,74 @@ def _normalize_authors(value: Any) -> list[str]:
     return []
 
 
+def _extract_version_years(record: dict[str, Any]) -> list[int]:
+    raw = record.get("version_years")
+    if not isinstance(raw, list):
+        return []
+    years: list[int] = []
+    for item in raw:
+        year = _to_int(item)
+        if year is not None and year not in years:
+            years.append(year)
+    return years
+
+
+def _edit_distance_at_most(left: str, right: str, max_distance: int) -> bool:
+    if max_distance < 0:
+        return False
+    if left == right:
+        return True
+    if abs(len(left) - len(right)) > max_distance:
+        return False
+
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, start=1):
+        current = [i]
+        row_min = current[0]
+        for j, right_char in enumerate(right, start=1):
+            insertion = current[j - 1] + 1
+            deletion = previous[j] + 1
+            substitution = previous[j - 1] + (0 if left_char == right_char else 1)
+            value = min(insertion, deletion, substitution)
+            current.append(value)
+            if value < row_min:
+                row_min = value
+        if row_min > max_distance:
+            return False
+        previous = current
+    return previous[-1] <= max_distance
+
+
+def _title_is_candidate_eligible(citation_title: str, record_title: str) -> bool:
+    if not citation_title or not record_title:
+        return False
+    return _edit_distance_at_most(citation_title, record_title, max_distance=10)
+
+
+def _year_is_candidate_eligible(citation_year: int | None, record: dict[str, Any]) -> bool:
+    if citation_year is None:
+        return True
+    record_year = _to_int(record.get("year"))
+    if record_year == citation_year:
+        return True
+    version_years = _extract_version_years(record)
+    return citation_year in version_years
+
+
 def build_candidate_match(citation: CitationRecord, connector: str, record: dict[str, Any]) -> CandidateMatch:
     title = str(record.get("title", "") or "")
     authors = _normalize_authors(record.get("authors"))
     venue = str(record.get("venue", "") or "")
     year = _to_int(record.get("year"))
     doi = str(record.get("doi", "") or "").lower()
-    arxiv_id = str(record.get("arxiv_id", "") or "").lower()
+    arxiv_id = normalize_arxiv_id(str(record.get("arxiv_id", "") or ""))
     url = str(record.get("url", "") or "")
+    version_years = _extract_version_years(record)
 
     title_score = similarity(citation.title, title)
     author_score = author_overlap_score(citation.authors, authors)
     venue_score = venue_match_score(citation.venue, venue)
-    year_score = year_consistency(citation.year, year)
+    year_score = 1.0 if citation.year and citation.year in version_years else year_consistency(citation.year, year)
 
     identifier_boost = 0.0
     matched_fields: list[str] = []
@@ -51,8 +113,9 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
         else:
             conflicts.append("doi_mismatch")
 
-    if citation.arxiv_id and arxiv_id:
-        if citation.arxiv_id.lower() == arxiv_id.lower():
+    citation_arxiv_id = normalize_arxiv_id(citation.arxiv_id)
+    if citation_arxiv_id and arxiv_id:
+        if citation_arxiv_id == arxiv_id:
             identifier_boost += 0.25
             matched_fields.append("arxiv_id")
         else:
@@ -75,7 +138,7 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
 
     if year_score >= 1.0:
         matched_fields.append("year")
-    elif year_score == 0.0 and citation.year and year:
+    elif year_score == 0.0 and citation.year and (year or version_years):
         conflicts.append("year_mismatch")
 
     score = (
@@ -103,10 +166,24 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
     )
 
 
-def rank_candidates(citation: CitationRecord, connector_records: dict[str, list[dict[str, Any]]]) -> list[CandidateMatch]:
+def collect_candidates(citation: CitationRecord, connector_records: dict[str, list[dict[str, Any]]]) -> list[CandidateMatch]:
     matches: list[CandidateMatch] = []
+    citation_title = normalize_title(citation.title)
     for connector, records in connector_records.items():
         for record in records:
+            if connector == "google_search":
+                matches.append(build_candidate_match(citation, connector, record))
+                continue
+            record_title = normalize_title(str(record.get("title", "") or ""))
+            if not _title_is_candidate_eligible(citation_title, record_title):
+                continue
+            if not _year_is_candidate_eligible(citation.year, record):
+                continue
             matches.append(build_candidate_match(citation, connector, record))
+    return matches
+
+
+def rank_candidates(citation: CitationRecord, connector_records: dict[str, list[dict[str, Any]]]) -> list[CandidateMatch]:
+    matches = collect_candidates(citation, connector_records)
     matches.sort(key=lambda match: match.score, reverse=True)
     return matches

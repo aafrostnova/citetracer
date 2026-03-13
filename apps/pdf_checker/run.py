@@ -54,6 +54,7 @@ def run_pdf_check(
         entry_chunk_chars=config.entry_extraction.chunk_chars,
         bearer_token=config.entry_extraction.bedrock.bearer_token,
         local_model_path=config.entry_extraction.local.model_path,
+        local_inference_backend=config.entry_extraction.local.inference_backend,
         source_pdf_path=input_pdf,
     )
     _log(
@@ -84,6 +85,14 @@ def run_pdf_check(
         dblp_mirror_path=config.connectors.dblp_mirror_path,
         semantic_scholar_api_key=config.connectors.semantic_scholar_api_key,
         dblp_sqlite_path=config.connectors.dblp_sqlite_path,
+        enabled_sources=config.connectors.enabled_sources,
+        govinfo_api_key=config.connectors.govinfo_api_key,
+        searxng_base_url=config.connectors.searxng_base_url,
+        ncbi_api_key=config.connectors.ncbi_api_key,
+        ncbi_email=config.connectors.ncbi_email,
+        google_api_key=config.connectors.google_api_key,
+        google_cse_id=config.connectors.google_cse_id,
+        serpapi_key=config.connectors.serpapi_key,
     )
     verifier = CitationVerifier(orchestrator=orchestrator)
 

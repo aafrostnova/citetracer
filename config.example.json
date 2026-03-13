@@ -3,24 +3,88 @@
     "cache_path": "data/cache/connector_cache.sqlite",
     "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
     "dblp_sqlite_path": "/project/pi_shiqingma_umass_edu/mingzheli/Ref_Agent/data/dblp.sqlite",
-    "semantic_scholar_api_key": ""
+    "enabled_sources": [
+      "dblp_sqlite",
+      "url_direct",
+      "dblp_online",
+      "crossref",
+      "arxiv",
+      "acl_anthology",
+      "europepmc",
+      "pubmed",
+      "openalex",
+      "semantic_scholar",
+      "govinfo",
+      "google_scholar",
+      "google_search",
+      "web_search"
+    ],
+    "semantic_scholar_api_key": "YOUR_SEMANTIC_SCHOLAR_API_KEY",
+    "govinfo_api_key": "",
+    "searxng_base_url": "",
+    "ncbi_api_key": "",
+    "ncbi_email": "",
+    "google_api_key": "",
+    "google_cse_id": "",
+    "serpapi_key": ""
   },
   "entry_extraction": {
     "mode": "model",
     "provider": "local",
     "chunk_chars": 12000,
     "local": {
-      "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/DeepSeek-OCR-2"
+      "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/DeepSeek-OCR-2",
+      "inference_backend": "hf"
     },
     "bedrock": {
       "region": "us-east-1",
-      "bearer_token": "YOUR_AWS_BEARER_TOKEN_BEDROCK"
+      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
     }
   },
   "citation_reparse": {
     "enabled": false,
+    "provider": "local",
     "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/Qwen3-0.6B",
     "max_new_tokens": 32768,
-    "temperature": 0.0
+    "temperature": 0.0,
+    "bedrock": {
+      "region": "us-east-1",
+      "model_id": "",
+      "bearer_token": "YOUR_AWS_BEARER_TOKEN_BEDROCK"
+    }
+  },
+  "ocr_llm_extract": {
+    "enabled": false,
+    "max_new_tokens": 4096,
+    "temperature": 0.0,
+    "force_all_entries": true,
+    "entry_extraction": {
+      "mode": "model",
+      "provider": "local",
+      "chunk_chars": 12000,
+      "local": {
+        "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/DeepSeek-OCR-2",
+        "inference_backend": "hf"
+      },
+      "bedrock": {
+        "region": "us-east-1",
+        "bearer_token": "YOUR_AWS_BEARER_TOKEN_BEDROCK"
+      }
+    },
+    "bedrock": {
+      "region": "us-east-1",
+      "model_id": "qwen.qwen3-vl-235b-a22b",
+      "bearer_token": "YOUR_AWS_BEARER_TOKEN_BEDROCK"
+    }
+  },
+  "verification_llm": {
+    "enabled": false,
+    "provider": "bedrock",
+    "max_candidates": 5,
+    "bedrock": {
+      "region": "us-east-1",
+      "model_id": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
+    }
   }
 }

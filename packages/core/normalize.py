@@ -45,8 +45,34 @@ def normalize_text(value: str) -> str:
     return value
 
 
+def _normalize_math_markup(value: str) -> str:
+    if not value:
+        return ""
+    value = value.replace("\\times", " x ")
+    value = value.replace("\\cdot", " x ")
+    value = value.replace("×", " x ")
+    value = value.replace("\\(", " ")
+    value = value.replace("\\)", " ")
+    value = value.replace("\\[", " ")
+    value = value.replace("\\]", " ")
+    value = value.replace("$", " ")
+    value = value.replace("`", " ")
+    return value
+
+
 def normalize_title(title: str) -> str:
-    return normalize_text(title)
+    return normalize_text(_normalize_math_markup(title)).replace(" ", "")
+
+
+def normalize_arxiv_id(value: str) -> str:
+    if not value:
+        return ""
+    text = str(value).strip().lower()
+    text = re.sub(r"^https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/", "", text)
+    text = re.sub(r"\.pdf$", "", text)
+    text = re.sub(r"^arxiv:", "", text)
+    text = re.sub(r"v\d+$", "", text)
+    return text.strip()
 
 
 def normalize_venue(venue: str) -> str:

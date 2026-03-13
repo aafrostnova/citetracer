@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
 import re
+import sys
 import tempfile
 import traceback
+import types
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +63,7 @@ NARRATIVE_REF_PREFIXES = (
 )
 
 _LOCAL_MODEL_CACHE: dict[str, tuple[Any, Any]] = {}
+_LOCAL_VLLM_MODEL_CACHE: dict[str, tuple[Any, Any, Any, Any, Any]] = {}
 
 
 def normalize_space(text: str) -> str:
@@ -77,6 +82,37 @@ def _local_ocr_tmp_root() -> Path:
     if explicit:
         return Path(explicit).expanduser()
     return Path.cwd() / ".tmp" / "pdf_checker_local_ocr_pages"
+
+
+def _normalize_local_inference_backend(backend: str | None) -> str:
+    value = (backend or "").strip().lower()
+    if value in {"hf", "vllm"}:
+        return value
+    return "hf"
+
+
+def _resolve_deepseek_ocr2_vllm_code_dir(model_path: str) -> Path:
+    explicit = (os.getenv("CITATION_CHECKER_DEEPSEEK_OCR2_VLLM_CODE_PATH", "") or "").strip()
+    if explicit:
+        path = Path(explicit).expanduser()
+        if path.exists():
+            return path.resolve()
+
+    candidates: list[Path] = []
+    model_as_path = Path(model_path).expanduser()
+    candidates.append(model_as_path / "DeepSeek-OCR2-master" / "DeepSeek-OCR2-vllm")
+    candidates.append(model_as_path / "DeepSeek-OCR2-vllm")
+    candidates.append(Path.cwd() / "DeepSeek-OCR-2" / "DeepSeek-OCR2-master" / "DeepSeek-OCR2-vllm")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    raise RuntimeError(
+        "Cannot locate DeepSeek-OCR-2 vLLM code directory. "
+        "Set CITATION_CHECKER_DEEPSEEK_OCR2_VLLM_CODE_PATH to "
+        ".../DeepSeek-OCR2-master/DeepSeek-OCR2-vllm."
+    )
 
 
 def _safe_write_text(path: Path, content: str) -> None:
@@ -550,17 +586,8 @@ def _build_bedrock_client(region: str, bearer_token: str | None = None):
     except ImportError as exc:
         raise RuntimeError("boto3 is not installed. Install boto3 to enable model entry extraction.") from exc
 
-    # Support bearer-token-only auth environments for Bedrock runtime calls.
-    token = (bearer_token or "").strip()
-    has_standard_creds = bool(os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
-    if token and not has_standard_creds:
-        return boto3.client(
-            service_name="bedrock-runtime",
-            region_name=region,
-            aws_access_key_id="BEDROCK_TOKEN",
-            aws_secret_access_key="BEDROCK_TOKEN",
-            aws_session_token=token,
-        )
+    if bearer_token:
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = str(bearer_token)
 
     return boto3.client(service_name="bedrock-runtime", region_name=region)
 
@@ -742,6 +769,119 @@ def _load_local_model_bundle(model_path: str) -> tuple[Any, Any]:
     return bundle
 
 
+def _load_local_vllm_bundle(model_path: str) -> tuple[Any, Any, Any, Any, Any]:
+    model_path = str(Path(model_path).expanduser().resolve())
+    if not Path(model_path).exists():
+        raise RuntimeError(f"Local model path does not exist: {model_path}")
+
+    code_dir = _resolve_deepseek_ocr2_vllm_code_dir(model_path)
+    cache_key = f"{model_path}::{code_dir}"
+    cached = _LOCAL_VLLM_MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        import torch
+    except ImportError as exc:
+        raise RuntimeError("torch is not installed. Install torch to enable local vLLM extraction.") from exc
+    if not torch.cuda.is_available():
+        raise RuntimeError("Local DeepSeek-OCR-2 vLLM extraction currently requires CUDA.")
+
+    try:
+        from transformers import AutoTokenizer
+    except ImportError as exc:
+        raise RuntimeError("transformers is not installed. Install transformers to enable local vLLM extraction.") from exc
+
+    try:
+        from vllm import LLM, SamplingParams
+        from vllm.model_executor.models.registry import ModelRegistry
+    except ImportError as exc:
+        raise RuntimeError("vllm is not installed. Install vllm to enable local vLLM extraction.") from exc
+
+    os.environ.setdefault("VLLM_USE_V1", "0")
+    if getattr(torch.version, "cuda", "") == "11.8":
+        os.environ.setdefault("TRITON_PTXAS_PATH", "/usr/local/cuda-11.8/bin/ptxas")
+
+    if str(code_dir) not in sys.path:
+        sys.path.insert(0, str(code_dir))
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    config_module = types.ModuleType("config")
+    config_module.BASE_SIZE = 1024
+    config_module.IMAGE_SIZE = 768
+    config_module.CROP_MODE = True
+    config_module.MIN_CROPS = 2
+    config_module.MAX_CROPS = 6
+    config_module.PRINT_NUM_VIS_TOKENS = False
+    config_module.PROMPT = "<image>\n<|grounding|>Convert the document to markdown."
+    config_module.MODEL_PATH = model_path
+    config_module.INPUT_PATH = ""
+    config_module.OUTPUT_PATH = ""
+    config_module.MAX_CONCURRENCY = 32
+    config_module.NUM_WORKERS = 8
+    config_module.SKIP_REPEAT = True
+    config_module.TOKENIZER = tokenizer
+    sys.modules["config"] = config_module
+
+    deepseek_ocr2_module = importlib.import_module("deepseek_ocr2")
+    image_process_module = importlib.import_module("process.image_process")
+    ngram_module = importlib.import_module("process.ngram_norepeat")
+
+    try:
+        ModelRegistry.register_model("DeepseekOCR2ForCausalLM", deepseek_ocr2_module.DeepseekOCR2ForCausalLM)
+    except Exception:
+        pass
+
+    max_num_seqs = max(1, int(os.getenv("CITATION_CHECKER_LOCAL_OCR_VLLM_MAX_NUM_SEQS", "32")))
+    tensor_parallel_size = max(1, int(os.getenv("CITATION_CHECKER_LOCAL_OCR_VLLM_TP_SIZE", "1")))
+    max_tokens = max(256, int(os.getenv("CITATION_CHECKER_LOCAL_OCR_VLLM_MAX_TOKENS", "8192")))
+    gpu_memory_utilization = float(os.getenv("CITATION_CHECKER_LOCAL_OCR_VLLM_GPU_MEMORY_UTILIZATION", "0.8"))
+    gpu_memory_utilization = min(0.95, max(0.1, gpu_memory_utilization))
+
+    llm_kwargs = {
+        "model": model_path,
+        "hf_overrides": {"architectures": ["DeepseekOCR2ForCausalLM"]},
+        "block_size": 256,
+        "enforce_eager": False,
+        "trust_remote_code": True,
+        "max_model_len": 8192,
+        "swap_space": 0,
+        "max_num_seqs": max_num_seqs,
+        "tensor_parallel_size": tensor_parallel_size,
+        "gpu_memory_utilization": gpu_memory_utilization,
+    }
+    try:
+        llm = LLM(disable_mm_preprocessor_cache=True, **llm_kwargs)
+    except TypeError:
+        llm = LLM(**llm_kwargs)
+
+    logits_processors = []
+    try:
+        logits_processors = [
+            ngram_module.NoRepeatNGramLogitsProcessor(
+                ngram_size=20,
+                window_size=50,
+                whitelist_token_ids={128821, 128822},
+            )
+        ]
+    except Exception:
+        logits_processors = []
+
+    sampling_kwargs = {
+        "temperature": 0.0,
+        "max_tokens": max_tokens,
+        "skip_special_tokens": False,
+    }
+    if logits_processors:
+        sampling_kwargs["logits_processors"] = logits_processors
+    sampling_params = SamplingParams(**sampling_kwargs)
+
+    processor = image_process_module.DeepseekOCR2Processor()
+    bundle = (llm, sampling_params, processor, image_process_module, config_module)
+    _LOCAL_VLLM_MODEL_CACHE[cache_key] = bundle
+    return bundle
+
+
 def _render_pdf_reference_pages(
     pdf_path: str | Path,
     start_page: int,
@@ -821,6 +961,39 @@ def _extract_entries_from_markdown_pages(markdown_pages: list[str], output_dir: 
     return entries
 
 
+def _run_local_vllm_ocr_on_images(
+    model_path: str,
+    image_paths: list[Path],
+    prompt: str,
+) -> list[str]:
+    from PIL import Image
+
+    llm, sampling_params, processor, image_process_module, config_module = _load_local_vllm_bundle(model_path)
+    image_process_module.PROMPT = prompt
+    config_module.PROMPT = prompt
+
+    batch_inputs: list[dict[str, Any]] = []
+    for image_path in image_paths:
+        with Image.open(image_path) as image:
+            image_rgb = image.convert("RGB")
+            multimodal = processor.tokenize_with_images(images=[image_rgb], bos=True, eos=True, cropping=True)
+            batch_inputs.append(
+                {
+                    "prompt": prompt,
+                    "multi_modal_data": {"image": multimodal},
+                }
+            )
+
+    outputs = llm.generate(batch_inputs, sampling_params=sampling_params)
+    texts: list[str] = []
+    for output in outputs:
+        if output.outputs:
+            texts.append(str(output.outputs[0].text or ""))
+        else:
+            texts.append("")
+    return texts
+
+
 def _extract_entries_with_local_model_from_images(
     tokenizer: Any,
     model: Any,
@@ -828,20 +1001,63 @@ def _extract_entries_with_local_model_from_images(
     output_dir: Path,
     debug: bool = False,
     debug_raise: bool = False,
+    backend: str = "hf",
+    model_path: str | None = None,
 ) -> list[str]:
+    backend = _normalize_local_inference_backend(backend)
     markdown_pages: list[str] = []
 
     markdown_prompt = "<image>\n<|grounding|>Convert the document to markdown."
     fallback_prompt = "<image>\nFree OCR."
 
+    if backend == "vllm":
+        if not model_path:
+            raise RuntimeError("vLLM backend requires local model_path.")
+
+        markdown_outputs = _run_local_vllm_ocr_on_images(
+            model_path=model_path,
+            image_paths=image_paths,
+            prompt=markdown_prompt,
+        )
+        page_texts = [str(value or "").strip() for value in markdown_outputs]
+        empty_indexes = [idx for idx, text in enumerate(page_texts) if not text]
+
+        if empty_indexes:
+            fallback_outputs = _run_local_vllm_ocr_on_images(
+                model_path=model_path,
+                image_paths=[image_paths[idx] for idx in empty_indexes],
+                prompt=fallback_prompt,
+            )
+            for pos, page_idx in enumerate(empty_indexes):
+                page_texts[page_idx] = str(fallback_outputs[pos] or "").strip()
+
+        for idx, image_path in enumerate(image_paths, start=1):
+            page_output_dir = output_dir / f"page_{idx}"
+            page_output_dir.mkdir(parents=True, exist_ok=True)
+
+            _safe_write_text(page_output_dir / "prompt_markdown.txt", markdown_prompt)
+            _safe_write_text(page_output_dir / "prompt_free_ocr.txt", fallback_prompt)
+            _safe_write_text(page_output_dir / "image_path.txt", str(image_path))
+
+            text_str = page_texts[idx - 1]
+            _safe_write_text(page_output_dir / "raw_markdown_output.txt", text_str)
+            _safe_write_text(page_output_dir / "raw_markdown_output_repr.txt", repr(text_str))
+            if not text_str:
+                _safe_write_text(page_output_dir / "empty_markdown_output.flag", "vllm markdown output is empty")
+            else:
+                _safe_write_text(page_output_dir / "probe_free_ocr.txt", text_str)
+                markdown_pages.append(f"[[PAGE {idx}]]\n{text_str}")
+            _safe_write_text(page_output_dir / "page_reference_markdown.mmd", text_str)
+
+        return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir)
+
     for idx, image_path in enumerate(image_paths, start=1):
         page_output_dir = output_dir / f"page_{idx}"
         page_output_dir.mkdir(parents=True, exist_ok=True)
 
-        if debug:
-            _safe_write_text(page_output_dir / "debug_prompt_markdown.txt", markdown_prompt)
-            _safe_write_text(page_output_dir / "debug_prompt_free_ocr.txt", fallback_prompt)
-            _safe_write_text(page_output_dir / "debug_image_path.txt", str(image_path))
+        _safe_write_text(page_output_dir / "prompt_markdown.txt", markdown_prompt)
+        _safe_write_text(page_output_dir / "prompt_free_ocr.txt", fallback_prompt)
+        _safe_write_text(page_output_dir / "image_path.txt", str(image_path))
 
         try:
             text = model.infer(
@@ -863,32 +1079,30 @@ def _extract_entries_with_local_model_from_images(
             continue
 
         text_str = str(text) if text is not None else ""
-        if debug:
-            _safe_write_text(page_output_dir / "debug_raw_markdown_output.txt", text_str)
-            _safe_write_text(page_output_dir / "debug_raw_markdown_output_repr.txt", repr(text))
+        _safe_write_text(page_output_dir / "raw_markdown_output.txt", text_str)
+        _safe_write_text(page_output_dir / "raw_markdown_output_repr.txt", repr(text))
 
         if not text_str.strip():
-            if debug:
-                _safe_write_text(page_output_dir / "debug_empty_markdown_output.flag", "model.infer returned empty text")
-                try:
-                    probe_text = model.infer(
-                        tokenizer,
-                        prompt=fallback_prompt,
-                        image_file=str(image_path),
-                        output_path=str(page_output_dir),
-                        base_size=1024,
-                        image_size=768,
-                        crop_mode=True,
-                        save_results=False,
-                        eval_mode=True,
-                    )
-                    text_str = str(probe_text or "").strip()
-                    _safe_write_text(page_output_dir / "debug_probe_free_ocr.txt", text_str)
-                except Exception:
-                    _safe_write_text(page_output_dir / "debug_probe_free_ocr_exception.txt", traceback.format_exc())
+            _safe_write_text(page_output_dir / "empty_markdown_output.flag", "model.infer returned empty text")
+            try:
+                probe_text = model.infer(
+                    tokenizer,
+                    prompt=fallback_prompt,
+                    image_file=str(image_path),
+                    output_path=str(page_output_dir),
+                    base_size=1024,
+                    image_size=768,
+                    crop_mode=True,
+                    save_results=False,
+                    eval_mode=True,
+                )
+                text_str = str(probe_text or "").strip()
+                _safe_write_text(page_output_dir / "probe_free_ocr.txt", text_str)
+            except Exception:
+                _safe_write_text(page_output_dir / "probe_free_ocr_exception.txt", traceback.format_exc())
         if text_str.strip():
             markdown_pages.append(f"[[PAGE {idx}]]\n{text_str.strip()}")
-            _safe_write_text(page_output_dir / "page_reference_markdown.mmd", text_str.strip())
+        _safe_write_text(page_output_dir / "page_reference_markdown.mmd", text_str.strip())
 
     return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir)
 
@@ -897,13 +1111,23 @@ def _extract_entries_with_local_model_from_text(
     ref_block: str,
     model_path: str,
     chunk_chars: int,
+    output_dir: Path | None = None,
+    backend: str = "hf",
 ) -> list[str]:
+    backend = _normalize_local_inference_backend(backend)
     try:
         from PIL import Image
     except ImportError as exc:
         raise RuntimeError("Pillow is not installed. Install pillow to enable local model extraction.") from exc
 
-    tokenizer, model = _load_local_model_bundle(model_path)
+    tokenizer = None
+    model = None
+    if backend == "hf":
+        tokenizer, model = _load_local_model_bundle(model_path)
+    elif backend == "vllm":
+        _load_local_vllm_bundle(model_path)
+    else:
+        raise RuntimeError(f"Unsupported local inference backend: {backend}")
 
     cleaned = ref_block
     cleaned = re.sub(r"\u00ad", "", cleaned)
@@ -913,8 +1137,17 @@ def _extract_entries_with_local_model_from_text(
     chunks = _split_text_chunks_for_model(cleaned, max_chars=max(2000, chunk_chars))
     raw_entries: list[str] = []
 
-    with tempfile.TemporaryDirectory(prefix="pdf_checker_local_model_") as tempdir:
-        temp_dir = Path(tempdir)
+    if output_dir is None:
+        temp_ctx = tempfile.TemporaryDirectory(prefix="pdf_checker_local_model_")
+        temp_dir = Path(temp_ctx.__enter__())
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        temp_ctx = None
+        temp_dir = output_dir
+        _safe_write_text(output_dir / "reference_text_block.txt", cleaned)
+        _safe_write_text(output_dir / "reference_chunks_count.txt", str(len(chunks)))
+
+    try:
         dummy_image = temp_dir / "dummy.png"
         Image.new("RGB", (32, 32), color="white").save(dummy_image)
 
@@ -927,24 +1160,46 @@ def _extract_entries_with_local_model_from_text(
                 '{"references":[{"raw_reference":"..."}]}\n\n'
                 f"Chunk {idx}/{len(chunks)}:\n{chunk}"
             )
-            text = model.infer(
-                tokenizer,
-                prompt=prompt,
-                image_file=str(dummy_image),
-                output_path=str(temp_dir),
-                # DeepSeek-OCR-2 only supports query sizes mapped from 768/1024 inputs.
-                # Using 512 can trigger `param_img` unbound errors in deepencoderv2.
-                base_size=1024,
-                image_size=768,
-                crop_mode=True,
-                save_results=False,
-                eval_mode=True,
-            )
+            if output_dir is not None:
+                _safe_write_text(output_dir / f"chunk_{idx:03d}_prompt.txt", prompt)
+            if backend == "hf":
+                text = model.infer(
+                    tokenizer,
+                    prompt=prompt,
+                    image_file=str(dummy_image),
+                    output_path=str(temp_dir),
+                    # DeepSeek-OCR-2 only supports query sizes mapped from 768/1024 inputs.
+                    # Using 512 can trigger `param_img` unbound errors in deepencoderv2.
+                    base_size=1024,
+                    image_size=768,
+                    crop_mode=True,
+                    save_results=False,
+                    eval_mode=True,
+                )
+            else:
+                text = _run_local_vllm_ocr_on_images(
+                    model_path=model_path,
+                    image_paths=[dummy_image],
+                    prompt=prompt,
+                )[0]
             if not text:
+                if output_dir is not None:
+                    _safe_write_text(output_dir / f"chunk_{idx:03d}_raw_output.txt", "")
                 continue
 
-            parsed = _parse_json_from_text(str(text))
+            raw_text = str(text)
+            if output_dir is not None:
+                _safe_write_text(output_dir / f"chunk_{idx:03d}_raw_output.txt", raw_text)
+            parsed = _parse_json_from_text(raw_text)
+            if output_dir is not None and parsed:
+                _safe_write_text(
+                    output_dir / f"chunk_{idx:03d}_parsed_json.json",
+                    json.dumps(parsed, indent=2, ensure_ascii=False),
+                )
             _append_raw_entries_from_json(parsed, raw_entries)
+    finally:
+        if temp_ctx is not None:
+            temp_ctx.__exit__(None, None, None)
 
     return _finalize_raw_entries(raw_entries)
 
@@ -956,11 +1211,22 @@ def _extract_entries_with_local_model(
     source_pdf_path: str | Path | None = None,
     reference_page_start: int | None = None,
     reference_page_end: int | None = None,
-) -> tuple[list[str], str]:
-    tokenizer, model = _load_local_model_bundle(model_path)
+    local_inference_backend: str = "hf",
+) -> tuple[list[str], str, str | None]:
+    backend = _normalize_local_inference_backend(local_inference_backend)
+    tokenizer = None
+    model = None
+    if backend == "hf":
+        tokenizer, model = _load_local_model_bundle(model_path)
+    elif backend == "vllm":
+        _load_local_vllm_bundle(model_path)
+    else:
+        raise RuntimeError(f"Unsupported local inference backend: {backend}")
+
     debug = _env_flag("CITATION_CHECKER_LOCAL_OCR_DEBUG")
     debug_raise = _env_flag("CITATION_CHECKER_LOCAL_OCR_DEBUG_RAISE")
 
+    local_run_dir: Path | None = None
     if (
         source_pdf_path is not None
         and reference_page_start is not None
@@ -971,26 +1237,13 @@ def _extract_entries_with_local_model(
             tmp_root.mkdir(parents=True, exist_ok=True)
             pdf_stem = Path(source_pdf_path).stem
             safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", pdf_stem).strip("_") or "paper"
-            run_dir = tmp_root / f"{safe_stem}_p{reference_page_start + 1}-{reference_page_end + 1}"
+            run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            run_dir = tmp_root / f"{safe_stem}_p{reference_page_start + 1}-{reference_page_end + 1}_{run_id}"
+            local_run_dir = run_dir
             image_dir = run_dir / "images"
             model_output_dir = run_dir / "model_outputs"
             image_dir.mkdir(parents=True, exist_ok=True)
             model_output_dir.mkdir(parents=True, exist_ok=True)
-
-            if any(image_dir.iterdir()):
-                for stale in image_dir.glob("reference_page_*.png"):
-                    try:
-                        stale.unlink()
-                    except OSError:
-                        pass
-
-            if any(model_output_dir.iterdir()):
-                for stale in model_output_dir.rglob("*"):
-                    if stale.is_file():
-                        try:
-                            stale.unlink()
-                        except OSError:
-                            pass
 
             page_images = _render_pdf_reference_pages(
                 pdf_path=source_pdf_path,
@@ -1006,19 +1259,24 @@ def _extract_entries_with_local_model(
                     output_dir=model_output_dir,
                     debug=debug,
                     debug_raise=debug_raise,
+                    backend=backend,
+                    model_path=model_path,
                 )
                 if entries:
-                    return entries, "reference_page_images_markdown"
+                    return entries, "reference_page_images_markdown", str(run_dir)
         except Exception:
             if debug_raise:
                 raise
             pass
 
-    return _extract_entries_with_local_model_from_text(
+    entries = _extract_entries_with_local_model_from_text(
         ref_block=ref_block,
         model_path=model_path,
         chunk_chars=chunk_chars,
-    ), "reference_text_block"
+        output_dir=(local_run_dir / "text_fallback") if local_run_dir is not None else None,
+        backend=backend,
+    )
+    return entries, "reference_text_block", (str(local_run_dir) if local_run_dir is not None else None)
 
 
 def split_reference_entries(ref_block: str) -> tuple[list[str], bool]:
@@ -1093,6 +1351,7 @@ def segment_references_from_pages(
     entry_chunk_chars: int = 12000,
     bearer_token: str | None = None,
     local_model_path: str | None = None,
+    local_inference_backend: str = "hf",
     source_pdf_path: str | Path | None = None,
 ) -> tuple[list[str], ExtractionQuality, dict[str, Any]]:
     mode = entry_extraction.strip().lower() if entry_extraction else "heuristic"
@@ -1131,17 +1390,21 @@ def segment_references_from_pages(
     if mode == "model":
         try:
             if provider == "local" and local_model_path:
-                entries, input_mode = _extract_entries_with_local_model(
+                entries, input_mode, local_ocr_run_dir = _extract_entries_with_local_model(
                     ref_block=ref_block,
                     model_path=local_model_path,
                     chunk_chars=entry_chunk_chars,
                     source_pdf_path=source_pdf_path,
                     reference_page_start=start_page,
                     reference_page_end=end_page,
+                    local_inference_backend=local_inference_backend,
                 )
                 metadata["entry_extraction_mode"] = "model"
                 metadata["entry_extraction_provider"] = "local"
+                metadata["entry_extraction_local_backend"] = _normalize_local_inference_backend(local_inference_backend)
                 metadata["entry_extraction_input"] = input_mode
+                if local_ocr_run_dir:
+                    metadata["ocr_intermediate_dir"] = local_ocr_run_dir
                 numbered_mode = len(NUMBERED_REF_RE.findall(ref_block)) >= 3
             elif provider == "bedrock" and model_id:
                 entries = _extract_entries_with_bedrock(
@@ -1155,8 +1418,9 @@ def segment_references_from_pages(
                 metadata["entry_extraction_provider"] = "bedrock"
                 metadata["entry_extraction_input"] = "reference_text_block"
                 numbered_mode = len(NUMBERED_REF_RE.findall(ref_block)) >= 3
-        except Exception:
+        except Exception as exc:
             metadata["entry_extraction_fallback"] = True
+            metadata["entry_extraction_error"] = f"{type(exc).__name__}: {exc}"
 
     if not entries:
         entries, numbered_mode = split_reference_entries(ref_block)

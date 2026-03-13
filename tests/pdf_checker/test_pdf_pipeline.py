@@ -19,7 +19,7 @@ class PDFPipelineTests(unittest.TestCase):
             )
 
             report = run_pdf_check(
-                input_pdf="data/fixtures/sample_pdf/sample.pdf",
+                input_pdf="data/fixtures/pdf_papers/sample_pdf/sample.pdf",
                 out_path=output_path,
                 orchestrator=orchestrator,
             )

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import random
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -12,6 +14,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from packages.core.adjudicate import AdjudicationPolicy
+from packages.core.matching import build_candidate_match
 from packages.core.models import CitationRecord
 
 
@@ -140,6 +144,36 @@ class BaseConnector:
                 time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
+    def _request_text(
+        self,
+        url: str,
+        params: dict[str, Any],
+        policy: RequestPolicy,
+        headers: dict[str, str] | None = None,
+    ) -> str:
+        query = urlencode({k: v for k, v in params.items() if v is not None and v != ""})
+        target = f"{url}?{query}" if query else url
+        headers = headers or {}
+        request = Request(target, headers={"User-Agent": "citation-checker/1.0", **headers})
+        last_error: Exception | None = None
+        for attempt in range(policy.max_retries + 1):
+            try:
+                with urlopen(request, timeout=policy.timeout_s) as response:
+                    charset = response.headers.get_content_charset() or "utf-8"
+                    return response.read().decode(charset, errors="replace")
+            except (HTTPError, URLError, TimeoutError) as exc:
+                last_error = exc
+                if attempt >= policy.max_retries:
+                    break
+                time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
+        raise RuntimeError(f"{self.name} request failed: {last_error}")
+
+    @staticmethod
+    def _clean_text(value: str) -> str:
+        text = html.unescape(str(value or ""))
+        text = re.sub(r"<[^>]+>", " ", text)
+        return " ".join(text.split()).strip()
+
 
 class ConnectorOrchestrator:
     def __init__(
@@ -200,18 +234,14 @@ class ConnectorOrchestrator:
                         error=None,
                     )
                 )
-                if cached:
-                    if self._has_exact_identifier_hit(citation, cached):
-                        break
-                    if connector.name.startswith("dblp") and self._has_exact_title_hit(citation, cached):
-                        break
                 continue
 
             error: str | None = None
             records: list[dict[str, Any]] = []
             try:
                 records = connector.search(citation, self.policy)
-                self.cache.set(key, records, connector.ttl_s)
+                if self._should_cache_records(citation, connector.name, records):
+                    self.cache.set(key, records, connector.ttl_s)
                 health = self.source_health.success(connector.name, self.policy)
             except Exception as exc:  # noqa: BLE001 - connector failures should not crash the paper run
                 error = str(exc)
@@ -228,9 +258,22 @@ class ConnectorOrchestrator:
                     error=error,
                 )
             )
-            if records:
-                if self._has_exact_identifier_hit(citation, records):
-                    break
-                if connector.name.startswith("dblp") and self._has_exact_title_hit(citation, records):
-                    break
         return results
+
+    @staticmethod
+    def _should_cache_records(
+        citation: CitationRecord,
+        connector_name: str,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not records:
+            return False
+        policy = AdjudicationPolicy()
+        for record in records:
+            candidate = build_candidate_match(citation, connector_name, record)
+            if candidate.score < policy.valid_threshold:
+                continue
+            if "doi_mismatch" in candidate.conflicts or "arxiv_id_mismatch" in candidate.conflicts:
+                continue
+            return True
+        return False

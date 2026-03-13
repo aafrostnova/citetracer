@@ -75,7 +75,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate synthetic LaTeX fixture with mixed citation integrity.")
     parser.add_argument(
         "--output-dir",
-        default="data/fixtures/synthetic_mixed_source",
+        default="data/fixtures/latex_papers/synthetic_mixed_source",
         help="Where to write the synthetic LaTeX fixture.",
     )
     return parser

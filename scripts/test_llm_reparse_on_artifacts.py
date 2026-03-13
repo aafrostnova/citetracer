@@ -64,6 +64,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Override citation_reparse.model_path from config.",
     )
     parser.add_argument(
+        "--reparse-provider",
+        default="",
+        choices=["", "local", "bedrock"],
+        help="Override citation_reparse.provider from config.",
+    )
+    parser.add_argument(
+        "--bedrock-model-id",
+        default="",
+        help="Override citation_reparse.bedrock.model_id from config.",
+    )
+    parser.add_argument(
+        "--bedrock-region",
+        default="",
+        help="Override citation_reparse.bedrock.region from config.",
+    )
+    parser.add_argument(
+        "--bedrock-bearer-token",
+        default="",
+        help="Override citation_reparse.bedrock.bearer_token from config.",
+    )
+    parser.add_argument(
         "--max-new-tokens",
         type=int,
         default=0,
@@ -93,18 +114,40 @@ def main() -> None:
     llm_cfg = asdict(cfg.citation_reparse)
     llm_cfg["enabled"] = True
 
+    if args.reparse_provider:
+        llm_cfg["provider"] = args.reparse_provider
     if args.model_path:
         llm_cfg["model_path"] = args.model_path
+    if args.bedrock_model_id:
+        llm_cfg.setdefault("bedrock", {})
+        llm_cfg["bedrock"]["model_id"] = args.bedrock_model_id
+    if args.bedrock_region:
+        llm_cfg.setdefault("bedrock", {})
+        llm_cfg["bedrock"]["region"] = args.bedrock_region
+    if args.bedrock_bearer_token:
+        llm_cfg.setdefault("bedrock", {})
+        llm_cfg["bedrock"]["bearer_token"] = args.bedrock_bearer_token
     if args.max_new_tokens > 0:
         llm_cfg["max_new_tokens"] = int(args.max_new_tokens)
     if args.temperature >= 0:
         llm_cfg["temperature"] = float(args.temperature)
 
+    provider = str(llm_cfg.get("provider", "local") or "local").strip().lower()
     model_path = str(llm_cfg.get("model_path") or "").strip()
-    if not model_path:
-        raise RuntimeError(
-            "LLM reparse model path is empty. Set citation_reparse.model_path in config or pass --model-path."
-        )
+    bedrock_cfg = llm_cfg.get("bedrock") or {}
+    bedrock_model_id = str(getattr(bedrock_cfg, "get", lambda *_: "")("model_id", "") or "").strip()
+    if provider == "bedrock":
+        if not bedrock_model_id:
+            raise RuntimeError(
+                "citation_reparse.provider=bedrock but bedrock.model_id is empty. "
+                "Set it in config or pass --bedrock-model-id."
+            )
+    else:
+        if not model_path:
+            raise RuntimeError(
+                "citation_reparse.provider=local but model_path is empty. "
+                "Set citation_reparse.model_path in config or pass --model-path."
+            )
 
     input_dir = Path(args.input_dir)
     if not input_dir.exists():

@@ -139,5 +139,5 @@ class DblpSQLiteConnector(BaseConnector):
             records = self._query_prefix(prefix)
 
         if records:
-            return records[:5]
+            return records
         return []

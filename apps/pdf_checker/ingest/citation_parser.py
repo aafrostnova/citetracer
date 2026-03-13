@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
 from packages.core.models import CitationRecord
@@ -73,6 +75,26 @@ VENUE_HEAD_RE = re.compile(
 _LLM_REPARSE_MODEL_CACHE: dict[str, tuple[Any, Any]] = {}
 _LLM_REPARSE_MODEL_CACHE_LOCK = threading.Lock()
 _QWEN3_THINK_END_TOKEN_ID = 151668
+
+
+def _build_bedrock_client(region: str, bearer_token: str | None = None):
+    try:
+        import boto3
+    except ImportError as exc:
+        raise RuntimeError("boto3 is not installed. Install boto3 to enable bedrock citation_reparse.") from exc
+
+    if bearer_token:
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = str(bearer_token)
+    return boto3.client(service_name="bedrock-runtime", region_name=region)
+
+
+def _extract_text_from_converse_response(response: dict[str, Any]) -> str:
+    content = response.get("output", {}).get("message", {}).get("content", [])
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, dict) and "text" in item:
+            parts.append(str(item["text"]))
+    return "\n".join(parts).strip()
 
 
 def _split_reference_segments(entry: str) -> list[str]:
@@ -951,21 +973,72 @@ def _run_llm_reparse_on_raw(
     return _normalize_llm_reparse_result(payload)
 
 
+def _run_llm_reparse_on_raw_bedrock(
+    raw_text: str,
+    model_id: str,
+    region: str,
+    bearer_token: str | None,
+    max_new_tokens: int,
+    temperature: float,
+) -> dict[str, Any] | None:
+    client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+    prompt = (
+        "You are a strict bibliography parser. "
+        "Extract only title, authors, venue, year, doi, arxiv_id, url from a raw reference string.\n"
+        "Return only valid JSON with exact keys:\n"
+        '{"title": "", "authors": [], "venue": "", "year": null, "doi": "", "arxiv_id": "", "url": ""}\n'
+        "Rules:\n"
+        "- authors must be an array of strings.\n"
+        "- year must be integer or null.\n"
+        "- doi/arxiv_id/url should be plain strings (empty if unknown).\n"
+        "- if uncertain, leave empty string / [] / null.\n"
+        "- do not output explanations.\n\n"
+        f"Reference:\n{raw_text}"
+    )
+    response = client.converse(
+        modelId=model_id,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={
+            "temperature": max(0.0, float(temperature)),
+            "maxTokens": max(64, int(max_new_tokens)),
+        },
+    )
+    text = _extract_text_from_converse_response(response)
+    payload = _extract_llm_json_payload(text)
+    if payload is None:
+        return None
+    return _normalize_llm_reparse_result(payload)
+
+
 def _apply_llm_reparse_if_needed(
     record: CitationRecord,
+    provider: str,
     model_path: str,
+    bedrock_model_id: str,
+    bedrock_region: str,
+    bedrock_bearer_token: str | None,
     max_new_tokens: int,
     temperature: float,
 ) -> None:
     parsed_fields = dict(record.parsed_fields or {})
     parsed_fields["llm_reparse_attempted"] = True
     try:
-        parsed = _run_llm_reparse_on_raw(
-            raw_text=record.raw_text,
-            model_path=model_path,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-        )
+        if provider == "bedrock":
+            parsed = _run_llm_reparse_on_raw_bedrock(
+                raw_text=record.raw_text,
+                model_id=bedrock_model_id,
+                region=bedrock_region,
+                bearer_token=bedrock_bearer_token,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+            )
+        else:
+            parsed = _run_llm_reparse_on_raw(
+                raw_text=record.raw_text,
+                model_path=model_path,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+            )
     except Exception as exc:
         parsed_fields["llm_reparse_error"] = str(exc)
         record.parsed_fields = parsed_fields
@@ -1169,17 +1242,58 @@ def parse_reference_entries(
         get_value = lambda key, default=None: getattr(cfg, key, default)
 
     enabled = bool(get_value("enabled", False))
+    provider = str(get_value("provider", "local") or "local").strip().lower()
     model_path = str(get_value("model_path", "") or "").strip()
+    bedrock_cfg = get_value("bedrock", {}) or {}
+    if isinstance(bedrock_cfg, Mapping):
+        bedrock_get = bedrock_cfg.get
+    else:
+        bedrock_get = lambda key, default=None: getattr(bedrock_cfg, key, default)
+    bedrock_model_id = str(bedrock_get("model_id", "") or "").strip()
+    bedrock_region = str(bedrock_get("region", "") or "").strip() or "us-east-1"
+    bedrock_bearer_token = str(bedrock_get("bearer_token", "") or "").strip() or None
     max_new_tokens = int(get_value("max_new_tokens", 32768) or 32768)
     temperature = float(get_value("temperature", 0.0) or 0.0)
+    force_all_entries = bool(get_value("force_all_entries", False))
+    parallel_workers = int(get_value("parallel_workers", 1) or 1)
+    parallel_workers = max(1, parallel_workers)
 
-    if enabled and model_path:
-        for record in records:
-            if _citation_has_missing_core_fields(record):
+    can_run = bool(model_path) if provider != "bedrock" else bool(bedrock_model_id)
+    if enabled and can_run:
+        targets = [
+            record
+            for record in records
+            if force_all_entries or _citation_has_missing_core_fields(record)
+        ]
+        if parallel_workers <= 1 or len(targets) <= 1:
+            for record in targets:
                 _apply_llm_reparse_if_needed(
                     record=record,
+                    provider=provider,
                     model_path=model_path,
+                    bedrock_model_id=bedrock_model_id,
+                    bedrock_region=bedrock_region,
+                    bedrock_bearer_token=bedrock_bearer_token,
                     max_new_tokens=max_new_tokens,
                     temperature=temperature,
                 )
+        else:
+            max_workers = min(parallel_workers, len(targets))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {
+                    executor.submit(
+                        _apply_llm_reparse_if_needed,
+                        record=record,
+                        provider=provider,
+                        model_path=model_path,
+                        bedrock_model_id=bedrock_model_id,
+                        bedrock_region=bedrock_region,
+                        bedrock_bearer_token=bedrock_bearer_token,
+                        max_new_tokens=max_new_tokens,
+                        temperature=temperature,
+                    ): record.citation_id
+                    for record in targets
+                }
+                for fut in as_completed(future_map):
+                    fut.result()
     return records

@@ -31,7 +31,7 @@ python3 -m apps.source_checker.run \
   --out artifacts/sample_source_report.json
 
 python3 -m apps.pdf_checker.run \
-  --input data/pdf_papers/sample_pdf/2510.06445v2.pdf \
+  --input /project/pi_shiqingma_umass_edu/mingzheli/Citation_Hallucination_Detection/data/pdf_papers/hallucinated_iclr_2026/A_superpersuasive_autonomous_policy_debating_system.pdf \
   --out artifacts/sample_pdf_report.json
 
 python3 -m apps.pdf_checker.run \

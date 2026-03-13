@@ -19,7 +19,7 @@ class SourcePipelineTests(unittest.TestCase):
             )
 
             report = run_source_check(
-                input_dir="data/fixtures/sample_source",
+                input_dir="data/fixtures/latex_papers/sample_source",
                 out_path=output_path,
                 orchestrator=orchestrator,
             )
