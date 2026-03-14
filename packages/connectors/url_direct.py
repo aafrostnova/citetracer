@@ -10,8 +10,9 @@ from packages.core.normalize import extract_identifier
 from .base import BaseConnector, RequestPolicy
 
 
-META_RE = re.compile(
-    r"<meta[^>]+(?:name|property)\s*=\s*[\"'](?P<key>[^\"']+)[\"'][^>]+content\s*=\s*[\"'](?P<value>[^\"']*)[\"'][^>]*>",
+META_TAG_RE = re.compile(r"<meta\b[^>]*>", flags=re.IGNORECASE)
+META_ATTR_RE = re.compile(
+    r"(?P<attr>[a-zA-Z_:][\w:.-]*)\s*=\s*(?:(?P<dq>\"[^\"]*\")|(?P<sq>'[^']*')|(?P<bare>[^\s>]+))",
     flags=re.IGNORECASE,
 )
 TITLE_RE = re.compile(r"<title[^>]*>(?P<title>.*?)</title>", flags=re.IGNORECASE | re.DOTALL)
@@ -21,6 +22,7 @@ YEAR_RE = re.compile(r"(19|20)\d{2}")
 class URLDirectConnector(BaseConnector):
     name = "url_direct"
     ttl_s = 60 * 60 * 24
+
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, object]]:
         url = str(citation.url or "").strip()
         if not url or not urlsplit(url).scheme:
@@ -38,9 +40,10 @@ class URLDirectConnector(BaseConnector):
 
     def _extract_record(self, url: str, body: str) -> dict[str, object]:
         meta: dict[str, list[str]] = {}
-        for match in META_RE.finditer(body):
-            key = match.group("key").strip().lower()
-            value = _clean(match.group("value"))
+        for tag_match in META_TAG_RE.finditer(body):
+            attributes = _parse_meta_attributes(tag_match.group(0))
+            key = str(attributes.get("name") or attributes.get("property") or "").strip().lower()
+            value = _clean(str(attributes.get("content") or ""))
             if not key or not value:
                 continue
             meta.setdefault(key, []).append(value)
@@ -86,6 +89,19 @@ class URLDirectConnector(BaseConnector):
             "arxiv_id": str(arxiv_id or "").lower(),
             "url": url,
         }
+
+
+def _parse_meta_attributes(tag_text: str) -> dict[str, str]:
+    attrs: dict[str, str] = {}
+    for match in META_ATTR_RE.finditer(tag_text):
+        attr = str(match.group("attr") or "").strip().lower()
+        raw_value = match.group("dq") or match.group("sq") or match.group("bare") or ""
+        value = str(raw_value).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        if attr:
+            attrs[attr] = value
+    return attrs
 
 
 def _clean(value: str) -> str:

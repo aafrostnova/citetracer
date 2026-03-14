@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.pdf_checker.config import load_pdf_checker_config
-from packages.connectors import default_orchestrator
+from packages.connectors import ConnectorOrchestrator, default_orchestrator
 from packages.core import CitationVerifier
 from packages.core.adjudicate import LLMResolver
 from packages.core.models import CandidateMatch, VerdictLabel
@@ -68,6 +68,17 @@ def _parse_args() -> argparse.Namespace:
         "--skip-healthcheck",
         action="store_true",
         help="Skip startup connector accessibility checks.",
+    )
+    parser.add_argument(
+        "--enable-llm-source-router",
+        action="store_true",
+        help="Use a Bedrock LLM-based router to rank sources and cap the number of sources queried per citation.",
+    )
+    parser.add_argument(
+        "--source-router-max-sources",
+        type=int,
+        default=0,
+        help="Optional hard cap for the LLM source router. 0 means trust the router's suggested budget.",
     )
     return parser.parse_args()
 
@@ -371,6 +382,152 @@ def _strict_venue_ok(citation_venue: str, candidate_venue: str) -> bool:
     return left == right
 
 
+class BedrockSourceSuitabilityRouter:
+    _SOURCE_GUIDE = {
+        "dblp_sqlite": "Very fast local CS bibliography source. Strong for computer science conference and journal papers.",
+        "dblp_offline": "Fast local DBLP mirror. Useful for CS papers when sqlite is unavailable.",
+        "url_direct": "Directly fetches the citation URL and extracts page metadata. Best when the citation already has a trustworthy URL.",
+        "dblp_online": "Online DBLP search. Good for CS venues but slower than local DBLP.",
+        "crossref": "Strong DOI and publisher metadata source. Good when DOI or formal publication metadata is likely.",
+        "arxiv": "Strong for arXiv preprints and papers with arXiv identifiers or arXiv URLs.",
+        "acl_anthology": "Useful for NLP papers that may appear in ACL Anthology.",
+        "europepmc": "Useful for biomedical and life-science papers.",
+        "pubmed": "Useful for biomedical and medical citations.",
+        "openalex": "Broad structured scholarly metadata source. Good generic fallback.",
+        "semantic_scholar": "Broad scholarly metadata source with identifiers and venue coverage.",
+        "govinfo": "Only useful for government and legal documents.",
+        "google_scholar": "Expensive but broad scholarly search. Strong fallback when structured sources may miss a paper.",
+        "google_search": "Broad web search fallback. Useful when the work may only be mentioned on the web. High latency and noisier.",
+        "searxng_search": "General web search fallback through SearxNG. Broad but noisy.",
+    }
+
+    def __init__(
+        self,
+        model_id: str,
+        region: str,
+        bearer_token: str | None = None,
+        max_sources_cap: int = 0,
+    ) -> None:
+        self.model_id = model_id
+        self.region = region
+        self.max_sources_cap = max(0, max_sources_cap)
+        self.client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+
+    def route(self, citation: CitationRecord, available_sources: list[str]) -> dict[str, Any]:
+        prompt = self._build_prompt(citation, available_sources)
+        try:
+            response = self.client.converse(
+                modelId=self.model_id,
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"temperature": 0},
+            )
+            text = _extract_text_from_converse_response(response)
+            parsed = _parse_json_from_text(text)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ordered_sources": list(available_sources),
+                "max_sources": self._fallback_budget(citation, len(available_sources)),
+                "note": f"LLM source router failed: {exc}",
+            }
+
+        proposed = [str(item).strip() for item in (parsed.get("ordered_sources") or []) if str(item).strip()]
+        ordered = [name for name in proposed if name in available_sources]
+        for source in available_sources:
+            if source not in ordered:
+                ordered.append(source)
+
+        max_sources = parsed.get("max_sources")
+        try:
+            max_sources = int(max_sources) if max_sources is not None else None
+        except (TypeError, ValueError):
+            max_sources = None
+        if max_sources is None or max_sources <= 0:
+            max_sources = self._fallback_budget(citation, len(available_sources))
+        if self.max_sources_cap > 0:
+            max_sources = min(max_sources, self.max_sources_cap)
+        max_sources = max(1, min(max_sources, len(available_sources)))
+
+        return {
+            "ordered_sources": ordered,
+            "max_sources": max_sources,
+            "note": str(parsed.get("reason", "")).strip(),
+        }
+
+    def _build_prompt(self, citation: CitationRecord, available_sources: list[str]) -> str:
+        source_docs = []
+        for name in available_sources:
+            source_docs.append(f"- {name}: {self._SOURCE_GUIDE.get(name, 'General source.')}")
+        source_block = "\n".join(source_docs)
+        return f"""You are a source suitability router for citation verification.
+            Choose which sources should be queried first for the current citation.
+            Optimize for: (1) higher probability of finding a VALID match, (2) fewer source queries, (3) lower latency, and (4) lower rate-limit pressure.
+            Use citation metadata and source characteristics only. Be pragmatic and conservative.
+            Citation: title={citation.title!r} authors={citation.authors!r} venue={citation.venue!r} year={citation.year!r} doi={citation.doi!r} arxiv_id={citation.arxiv_id!r} url={citation.url!r}
+            Available sources:
+            {source_block}
+            Return JSON only:
+            {{
+            "ordered_sources": ["source1", "source2"],
+            "max_sources": <positive integer>,
+            "reason": "brief routing rationale"
+            }}
+            ROUTING RULES:
+            1. Prefer sources that fit the citation metadata best.
+            2. Prefer low-latency, high-yield sources earlier.
+            3. If DOI is present, prioritize structured metadata sources.
+            4. If arXiv ID or arXiv URL is present, prioritize arXiv and direct URL retrieval.
+            5. For CS/ML venues, prioritize DBLP-like sources and Google Scholar before generic web search.
+            6. For biomedical venues, prioritize PubMed and EuropePMC.
+            7. For government or legal documents, prioritize GovInfo.
+            8. Use Google Search and SearxNG later unless the citation is sparse and structured sources are unlikely to work.
+            9. Return only source names from the available source list.
+            10. Suggest a small but sufficient max_sources budget.
+            """
+
+    @staticmethod
+    def _fallback_budget(citation: CitationRecord, total: int) -> int:
+        if citation.doi or citation.arxiv_id:
+            return min(4, total)
+        if citation.url and citation.title:
+            return min(5, total)
+        if citation.title and citation.authors:
+            return min(6, total)
+        return min(8, total)
+
+
+class RoutedConnectorOrchestrator:
+    def __init__(self, base_orchestrator: Any, router: BedrockSourceSuitabilityRouter):
+        self._base = base_orchestrator
+        self._router = router
+        self.connectors = getattr(base_orchestrator, "connectors", [])
+
+    def query(self, citation: CitationRecord, max_connectors: int | None = None) -> list[Any]:
+        connectors = list(getattr(self._base, "connectors", []) or [])
+        if not connectors:
+            return self._base.query(citation, max_connectors=max_connectors)
+        available_sources = [str(getattr(connector, "name", connector.__class__.__name__)).strip() for connector in connectors]
+        plan = self._router.route(citation, available_sources)
+        by_name = {str(getattr(connector, "name", connector.__class__.__name__)).strip(): connector for connector in connectors}
+        ordered = [by_name[name] for name in plan["ordered_sources"] if name in by_name]
+        seen = {str(getattr(connector, "name", connector.__class__.__name__)).strip() for connector in ordered}
+        ordered.extend(connector for connector in connectors if str(getattr(connector, "name", connector.__class__.__name__)).strip() not in seen)
+        delegated = ConnectorOrchestrator(
+            connectors=ordered,
+            cache=self._base.cache,
+            policy=self._base.policy,
+            source_health=self._base.source_health,
+        )
+        limit = plan.get("max_sources")
+        if max_connectors is not None and limit is not None:
+            limit = min(max_connectors, limit)
+        elif max_connectors is not None:
+            limit = max_connectors
+        return delegated.query(citation, max_connectors=limit)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+
 class BedrockStrictMatchResolver(LLMResolver):
     def __init__(
         self,
@@ -647,6 +804,27 @@ def main() -> None:
         )
     else:
         print("[setup] verification_llm disabled; using rule-based adjudication only", flush=True)
+
+    if args.enable_llm_source_router:
+        if cfg.verification_llm.enabled and cfg.verification_llm.provider == "bedrock":
+            source_router = BedrockSourceSuitabilityRouter(
+                model_id=str(cfg.verification_llm.bedrock.model_id),
+                region=cfg.verification_llm.bedrock.region,
+                bearer_token=cfg.verification_llm.bedrock.bearer_token,
+                max_sources_cap=args.source_router_max_sources,
+            )
+            orchestrator = RoutedConnectorOrchestrator(orchestrator, source_router)
+            print(
+                "[setup] llm_source_router enabled "
+                f"model_id={cfg.verification_llm.bedrock.model_id} "
+                f"region={cfg.verification_llm.bedrock.region} "
+                f"max_sources_cap={args.source_router_max_sources or '<router>'}",
+                flush=True,
+            )
+        else:
+            print("[setup] llm_source_router requested but verification_llm bedrock is unavailable; router disabled", flush=True)
+    else:
+        print("[setup] llm_source_router disabled", flush=True)
 
     verifier = CitationVerifier(orchestrator=orchestrator, llm_resolver=llm_resolver)
 
