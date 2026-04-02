@@ -68,7 +68,6 @@ def render_markdown(report: CheckReport) -> str:
             [
                 f"### {verdict.citation_id}",
                 f"- Verdict: `{label}`",
-                f"- Confidence: `{verdict.confidence:.3f}`",
                 f"- Evidence sources: {', '.join(verdict.evidence_sources) if verdict.evidence_sources else 'none'}",
                 f"- Conflicts: {', '.join(verdict.conflicts) if verdict.conflicts else 'none'}",
                 f"- Field comparison: {comparison_summary or 'n/a'}",

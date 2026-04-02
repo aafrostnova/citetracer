@@ -14,14 +14,18 @@ class ConnectorRuntimeConfig:
     dblp_mirror_path: Path
     dblp_sqlite_path: Path | None
     enabled_sources: tuple[str, ...] | None
+    acl_anthology_data_dir: Path | None
+    acl_anthology_repo_path: Path | None
     semantic_scholar_api_key: str | None
     govinfo_api_key: str | None
     searxng_base_url: str | None
     ncbi_api_key: str | None
     ncbi_email: str | None
+    web_search_provider: str
     google_api_key: str | None
     google_cse_id: str | None
     serpapi_key: str | None
+    tavily_api_key: str | None
 
 
 @dataclass(frozen=True)
@@ -174,6 +178,36 @@ def _parse_reparse_provider(value: Any) -> str:
     return "local"
 
 
+def _parse_web_search_provider(value: Any) -> str | None:
+    provider = str(value).strip().lower().replace("-", "_")
+    if provider in {"", "auto"}:
+        return "auto"
+    if provider in {"serpapi", "tavily", "google_cse"}:
+        return provider
+    if provider in {"google", "google_custom_search", "cse"}:
+        return "google_cse"
+    return None
+
+
+def _resolve_web_search_provider(
+    explicit_provider: Any,
+    google_api_key: str | None,
+    google_cse_id: str | None,
+    serpapi_key: str | None,
+    tavily_api_key: str | None,
+) -> str:
+    parsed = _parse_web_search_provider(explicit_provider)
+    if parsed is not None:
+        return parsed
+    if google_api_key and google_cse_id:
+        return "google_cse"
+    if serpapi_key:
+        return "serpapi"
+    if tavily_api_key:
+        return "tavily"
+    return "auto"
+
+
 def _parse_enabled_sources(value: Any) -> tuple[str, ...] | None:
     if value is None:
         return None
@@ -254,6 +288,14 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _optional_payload_str(payload, ["connectors", "dblp_mirror_path"])
         or "data/cache/dblp_mirror.jsonl"
     )
+    acl_anthology_data_dir = (
+        _optional_str(env, "CITATION_CHECKER_ACL_ANTHOLOGY_DATA_DIR")
+        or _optional_payload_str(payload, ["connectors", "acl_anthology_data_dir"])
+    )
+    acl_anthology_repo_path = (
+        _optional_str(env, "CITATION_CHECKER_ACL_ANTHOLOGY_REPO_PATH")
+        or _optional_payload_str(payload, ["connectors", "acl_anthology_repo_path"])
+    )
     semantic_scholar_api_key = (
         _optional_str(env, "SEMANTIC_SCHOLAR_API_KEY")
         or _optional_payload_str(payload, ["connectors", "semantic_scholar_api_key"])
@@ -277,6 +319,11 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _optional_str(env, "CITATION_CHECKER_NCBI_EMAIL")
         or _optional_payload_str(payload, ["connectors", "ncbi_email"])
     )
+    tavily_api_key = (
+        _optional_str(env, "TAVILY_API_KEY")
+        or _optional_str(env, "CITATION_CHECKER_TAVILY_API_KEY")
+        or _optional_payload_str(payload, ["connectors", "tavily_api_key"])
+    )
     google_api_key = (
         _optional_str(env, "GOOGLE_API_KEY")
         or _optional_str(env, "CITATION_CHECKER_GOOGLE_API_KEY")
@@ -291,6 +338,14 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         _optional_str(env, "SERPAPI_KEY")
         or _optional_str(env, "CITATION_CHECKER_SERPAPI_KEY")
         or _optional_payload_str(payload, ["connectors", "serpapi_key"])
+    )
+    web_search_provider = _resolve_web_search_provider(
+        _optional_str(env, "CITATION_CHECKER_WEB_SEARCH_PROVIDER")
+        or _optional_payload_str(payload, ["connectors", "web_search_provider"]),
+        google_api_key=google_api_key,
+        google_cse_id=google_cse_id,
+        serpapi_key=serpapi_key,
+        tavily_api_key=tavily_api_key,
     )
     dblp_sqlite_path = (
         _optional_str(env, "CITATION_CHECKER_DBLP_SQLITE_PATH")
@@ -492,14 +547,18 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
             dblp_mirror_path=Path(dblp_mirror_path),
             dblp_sqlite_path=Path(dblp_sqlite_path) if dblp_sqlite_path else None,
             enabled_sources=enabled_sources,
+            acl_anthology_data_dir=Path(acl_anthology_data_dir) if acl_anthology_data_dir else None,
+            acl_anthology_repo_path=Path(acl_anthology_repo_path) if acl_anthology_repo_path else None,
             semantic_scholar_api_key=semantic_scholar_api_key,
             govinfo_api_key=govinfo_api_key,
             searxng_base_url=searxng_base_url,
             ncbi_api_key=ncbi_api_key,
             ncbi_email=ncbi_email,
+            web_search_provider=web_search_provider,
             google_api_key=google_api_key,
             google_cse_id=google_cse_id,
             serpapi_key=serpapi_key,
+            tavily_api_key=tavily_api_key,
         ),
         entry_extraction=PDFEntryExtractionConfig(
             mode=_resolve_entry_mode(explicit_mode, bearer_token, local_model_path),

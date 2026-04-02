@@ -33,6 +33,10 @@ class CitationRecord:
     doi: str = ""
     arxiv_id: str = ""
     url: str = ""
+    volume: str = ""
+    pages: str = ""
+    publisher: str = ""
+    location: str = ""
     source_span: str = ""
     provenance: dict[str, Any] = field(default_factory=dict)
     parsed_fields: dict[str, Any] = field(default_factory=dict)
@@ -41,7 +45,6 @@ class CitationRecord:
 @dataclass
 class CandidateMatch:
     connector: str
-    score: float
     title: str = ""
     authors: list[str] = field(default_factory=list)
     venue: str = ""
@@ -52,6 +55,17 @@ class CandidateMatch:
     matched_fields: list[str] = field(default_factory=list)
     conflicts: list[str] = field(default_factory=list)
     raw_record: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DiscrepancyEvidence:
+    """Evidence gathered to explain a single field discrepancy during secondary verification."""
+    field: str
+    discrepancy_type: str
+    evidence_found: bool
+    explanation: str
+    evidence_sources: list[str] = field(default_factory=list)
+    raw_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -69,7 +83,6 @@ class EvidenceTrace:
 class CitationVerdict:
     citation_id: str
     verdict: VerdictLabel
-    confidence: float
     evidence_sources: list[str]
     conflicts: list[str]
     adjudication_reason: str
@@ -80,6 +93,7 @@ class CitationVerdict:
     llm_recheck_reason: str = ""
     needs_human_review: bool = False
     extraction_quality: ExtractionQuality = ExtractionQuality.UNKNOWN
+    secondary_evidence: list[DiscrepancyEvidence] = field(default_factory=list)
 
 
 @dataclass
@@ -118,16 +132,13 @@ def citation_record_to_query(record: CitationRecord) -> dict[str, Any]:
 
 
 def candidate_match_to_dict(candidate: CandidateMatch) -> dict[str, Any]:
-    payload = asdict(candidate)
-    payload["score"] = round(float(candidate.score), 4)
-    return payload
+    return asdict(candidate)
 
 
 def citation_verdict_to_dict(verdict: CitationVerdict) -> dict[str, Any]:
     payload = asdict(verdict)
     payload["verdict"] = canonical_verdict_label(verdict.verdict).value
     payload["extraction_quality"] = verdict.extraction_quality.value
-    payload["confidence"] = round(float(verdict.confidence), 4)
     if verdict.matched_candidate is not None:
         payload["matched_candidate"] = verdict.matched_candidate
     return payload

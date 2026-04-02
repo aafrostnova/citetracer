@@ -740,6 +740,80 @@ def _backfill_venue_from_title_and_raw(title: str, raw_text: str) -> tuple[str, 
     return title_clean, "", ""
 
 
+_PAGES_RE = re.compile(r",?\s*pages?\s+([\d]+\s*[-–]+\s*[\d]+)", re.IGNORECASE)
+_PUBLISHER_PATTERNS = [
+    "Association for Computational Linguistics",
+    "Springer",
+    "IEEE",
+    "ACM",
+    "PMLR",
+    "Elsevier",
+    "MIT Press",
+    "Morgan Kaufmann",
+    "AAAI Press",
+    "Cambridge University Press",
+    "Oxford University Press",
+    "Wiley",
+    "World Scientific",
+    "IOS Press",
+]
+_CITY_COUNTRY = r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)"
+_CITY_STATE = r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z]{2}"
+_LOCATION_RE = re.compile(
+    r",\s*("
+    r"(?:(?:Online|Virtual)\s+and\s+" + _CITY_COUNTRY + r")"  # Online and City, Country
+    r"|(?:Online|Virtual)"                                      # Online / Virtual
+    r"|(?:" + _CITY_COUNTRY + r")"                              # City, Country
+    r"|(?:" + _CITY_STATE + r")"                                # City, STATE
+    r")\s*[.,]?"
+)
+
+
+def _split_venue_fields(venue: str) -> tuple[str, str, str, str]:
+    """Split a raw venue string into (venue, pages, publisher, location)."""
+    if not venue:
+        return "", "", "", ""
+
+    remaining = venue
+    pages = ""
+    publisher = ""
+    location = ""
+
+    # Extract pages
+    pages_match = _PAGES_RE.search(remaining)
+    if pages_match:
+        pages = pages_match.group(1).strip()
+        remaining = remaining[:pages_match.start()] + remaining[pages_match.end():]
+
+    # Extract publisher (known patterns) — only if it appears as a standalone
+    # trailing/separated part, not embedded in the venue name itself.
+    for pub in _PUBLISHER_PATTERNS:
+        idx = remaining.find(pub)
+        if idx < 0:
+            continue
+        # Check that publisher is at a sentence/clause boundary (preceded by ". " or ", " or start)
+        before_char = remaining[idx - 1] if idx > 0 else ""
+        before_2 = remaining[max(0, idx - 2):idx]
+        is_standalone = idx == 0 or before_2 in (". ", ", ") or before_char in (".", ",", ";")
+        if is_standalone:
+            publisher = pub
+            before = remaining[:idx].rstrip(", .")
+            after = remaining[idx + len(pub):].lstrip(", .")
+            remaining = (before + " " + after).strip() if after else before
+            break
+
+    # Extract location
+    loc_match = _LOCATION_RE.search(remaining)
+    if loc_match:
+        location = loc_match.group(1).strip(" .,")
+        remaining = remaining[:loc_match.start()] + remaining[loc_match.end():]
+
+    # Clean up remaining venue
+    remaining = re.sub(r"\s+", " ", remaining).strip(" ,;.")
+
+    return remaining, pages, publisher, location
+
+
 def _extract_url(raw_text: str) -> str:
     match = URL_RE.search(raw_text)
     if not match:
@@ -829,11 +903,20 @@ def _normalize_llm_reparse_result(payload: Mapping[str, Any]) -> dict[str, Any]:
     if year is not None and not (1800 <= year <= 2035):
         year = None
 
+    volume = str(payload.get("volume", "") or "").strip(" .;")
+    pages = str(payload.get("pages", "") or "").strip(" .;")
+    publisher = str(payload.get("publisher", "") or "").strip(" .;")
+    location = str(payload.get("location", "") or "").strip(" .;")
+
     return {
         "title": title,
         "authors": authors,
         "venue": venue,
         "year": year,
+        "volume": volume,
+        "pages": pages,
+        "publisher": publisher,
+        "location": location,
         "doi": doi,
         "arxiv_id": arxiv_id,
         "url": url,
@@ -894,17 +977,21 @@ def _run_llm_reparse_on_raw(
 
     system_prompt = (
         "You are a strict bibliography parser. "
-        "Extract only title, authors, venue, year, doi, arxiv_id, url from a raw reference string. "
+        "Extract structured fields from a raw reference string. "
         "Return JSON only."
     )
     user_prompt = (
         "Reference:\n"
         f"{raw_text}\n\n"
         "Return only valid JSON with exact keys:\n"
-        '{"title": "", "authors": [], "venue": "", "year": null, "doi": "", "arxiv_id": "", "url": ""}\n'
+        '{"title": "", "authors": [], "venue": "", "year": null, "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
         "Rules:\n"
         "- authors must be an array of strings.\n"
         "- year must be integer or null.\n"
+        "- venue is ONLY the journal or conference name (e.g., 'NeurIPS', 'Nature', 'Proceedings of EMNLP 2021'). Do NOT include pages, volume, issue, location, or publisher in venue.\n"
+        "- pages is the page range (e.g., '1234-1245'). Empty if not present.\n"
+        "- publisher is the publishing organization (e.g., 'Association for Computational Linguistics', 'Springer'). Empty if not present.\n"
+        "- location is the conference location (e.g., 'Online', 'Seoul, Korea'). Empty if not present.\n"
         "- doi/arxiv_id/url should be plain strings (empty if unknown).\n"
         "- if uncertain, leave empty string / [] / null.\n"
         "- do not output explanations."
@@ -984,12 +1071,17 @@ def _run_llm_reparse_on_raw_bedrock(
     client = _build_bedrock_client(region=region, bearer_token=bearer_token)
     prompt = (
         "You are a strict bibliography parser. "
-        "Extract only title, authors, venue, year, doi, arxiv_id, url from a raw reference string.\n"
+        "Extract structured fields from a raw reference string.\n"
         "Return only valid JSON with exact keys:\n"
-        '{"title": "", "authors": [], "venue": "", "year": null, "doi": "", "arxiv_id": "", "url": ""}\n'
+        '{"title": "", "authors": [], "venue": "", "year": null, "volume": "", "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
         "Rules:\n"
         "- authors must be an array of strings.\n"
         "- year must be integer or null.\n"
+        "- venue is ONLY the journal or conference name (e.g., 'NeurIPS', 'Nature', 'Proceedings of the Indian Academy of Sciences'). Do NOT include volume, pages, issue, location, or publisher in venue.\n"
+        "- volume is the volume number (e.g., '104', '15'). Empty if not present.\n"
+        "- pages is the page range (e.g., '483-494', '1234-1245'). Recognize 'pp.' as pages. Empty if not present.\n"
+        "- publisher is the publishing organization (e.g., 'Association for Computational Linguistics', 'Springer'). Empty if not present.\n"
+        "- location is the conference location (e.g., 'Online', 'Seoul, Korea'). Empty if not present.\n"
         "- doi/arxiv_id/url should be plain strings (empty if unknown).\n"
         "- if uncertain, leave empty string / [] / null.\n"
         "- do not output explanations.\n\n"
@@ -1053,6 +1145,10 @@ def _apply_llm_reparse_if_needed(
     new_authors = [str(item).strip() for item in parsed.get("authors", []) if str(item).strip()]
     new_venue = str(parsed.get("venue", "") or "").strip()
     new_year = parsed.get("year")
+    new_volume = str(parsed.get("volume", "") or "").strip()
+    new_pages = str(parsed.get("pages", "") or "").strip()
+    new_publisher = str(parsed.get("publisher", "") or "").strip()
+    new_location = str(parsed.get("location", "") or "").strip()
     new_doi = str(parsed.get("doi", "") or "").strip().rstrip(".,;")
     new_arxiv_id = str(parsed.get("arxiv_id", "") or "").strip(" .;")
     new_url = str(parsed.get("url", "") or "").strip().rstrip(".,);]")
@@ -1076,6 +1172,10 @@ def _apply_llm_reparse_if_needed(
         "authors": list(record.authors),
         "venue": record.venue,
         "year": record.year,
+        "volume": record.volume,
+        "pages": record.pages,
+        "publisher": record.publisher,
+        "location": record.location,
         "doi": record.doi,
         "arxiv_id": record.arxiv_id,
         "url": record.url,
@@ -1086,6 +1186,10 @@ def _apply_llm_reparse_if_needed(
     record.authors = new_authors
     record.venue = new_venue
     record.year = int(new_year) if new_year is not None else None
+    record.volume = new_volume
+    record.pages = new_pages
+    record.publisher = new_publisher
+    record.location = new_location
     record.doi = new_doi
     record.arxiv_id = new_arxiv_id
     record.url = new_url
@@ -1099,6 +1203,14 @@ def _apply_llm_reparse_if_needed(
         applied.append("venue")
     if before["year"] != record.year:
         applied.append("year")
+    if before["volume"] != record.volume:
+        applied.append("volume")
+    if before["pages"] != record.pages:
+        applied.append("pages")
+    if before["publisher"] != record.publisher:
+        applied.append("publisher")
+    if before["location"] != record.location:
+        applied.append("location")
     if before["doi"] != record.doi:
         applied.append("doi")
     if before["arxiv_id"] != record.arxiv_id:
@@ -1206,6 +1318,9 @@ def parse_reference_entry(entry: str, citation_id: str) -> CitationRecord:
         if venue_backfilled:
             venue = venue_backfilled
 
+    # Split venue into clean venue + pages + publisher + location.
+    venue, pages, publisher, location = _split_venue_fields(venue)
+
     return CitationRecord(
         citation_id=citation_id,
         raw_text=normalized,
@@ -1216,6 +1331,9 @@ def parse_reference_entry(entry: str, citation_id: str) -> CitationRecord:
         doi=doi,
         arxiv_id=arxiv_id,
         url=url,
+        pages=pages,
+        publisher=publisher,
+        location=location,
         parsed_fields={
             "parsed_from": "pdf_reference",
             "raw_year": year,

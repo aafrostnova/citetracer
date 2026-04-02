@@ -14,17 +14,14 @@
       "pubmed",
       "openalex",
       "semantic_scholar",
-      "google_scholar",
-      "google_search"
+      "web_search"
     ],
     "semantic_scholar_api_key": "Mm5WI8VQmU1hayDWsRRXs7kWbYpW8uvGaVFiiIuX",
-    "govinfo_api_key": "Sx7HMPJWgm0pArU3ubc23SoquBdtWNX9Cbnt1ldx",
-    "searxng_base_url": "",
+    "serpapi_key": "4bdae1714233f7e463087d19c43d822560d90d99adc251aeb01c924a1e7e6af4",
     "ncbi_api_key": "1fef1dfc0b188aa506a959632f62ad3fa609",
     "ncbi_email": "mingzhel@umass.edu",
-    "google_api_key": "",
-    "google_cse_id": "",
-    "serpapi_key": "5c0c243b680439aae80e2745ae3bd8ede906c486ec795fafee773150bdca0ac3"
+    "web_search_provider": "tavily",
+    "tavily_api_key": "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"
   },
   "entry_extraction": {
     "mode": "model",
@@ -36,20 +33,18 @@
     },
     "bedrock": {
       "region": "us-east-1",
-      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
+      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS04dHNxLWF0LTgzMjAxNjAxNDQyNTp5WklsNlFVaCtQR05YVUYwZTNsOHNVTzJYaWp6M2FWNGxhaTFkN0o4NzJkems2TXU1UjdXL0NBV3lVVT0="
 
     }
   },
   "citation_reparse": {
     "enabled": true,
-    "provider": "bedrock", 
-    "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/Qwen3.5-2B",
+    "provider": "bedrock",
     "max_new_tokens": 4048,
     "temperature": 0.0,
     "bedrock": {
       "region": "us-east-1",
-      "model_id": "qwen.qwen3-vl-235b-a22b",
-      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
+      "model_id": "qwen.qwen3-vl-235b-a22b"
     }
   },
   "ocr_llm_extract": {
@@ -57,23 +52,9 @@
     "max_new_tokens": 4048,
     "temperature": 0.0,
     "force_all_entries": true,
-    "entry_extraction": {
-      "mode": "model",
-      "provider": "local",
-      "chunk_chars": 12000,
-      "local": {
-        "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/DeepSeek-OCR-2",
-        "inference_backend": "vllm"
-      },
-      "bedrock": {
-        "region": "us-east-1",
-        "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
-      }
-    },
     "bedrock": {
       "region": "us-east-1",
-      "model_id": "qwen.qwen3-32b-v1:0",
-      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
+      "model_id": "qwen.qwen3-vl-235b-a22b"
     }
   },
   "verification_llm": {
@@ -82,8 +63,7 @@
     "max_candidates": 5,
     "bedrock": {
       "region": "us-east-1",
-      "model_id": "qwen.qwen3-32b-v1:0",
-      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS1ia2FxLWF0LTgzMjAxNjAxNDQyNTpyYkhFVzgzUjdnM09PcmNRVlQ3cFFJa2t0WnZmQldMYXNDT0NockR5dURuaVlyN3FINFNtVDBGSWZVND0="
+      "model_id": "qwen.qwen3-vl-235b-a22b"
     }
   }
 }

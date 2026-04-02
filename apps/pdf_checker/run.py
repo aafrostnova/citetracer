@@ -86,13 +86,17 @@ def run_pdf_check(
         semantic_scholar_api_key=config.connectors.semantic_scholar_api_key,
         dblp_sqlite_path=config.connectors.dblp_sqlite_path,
         enabled_sources=config.connectors.enabled_sources,
+        acl_anthology_data_dir=config.connectors.acl_anthology_data_dir,
+        acl_anthology_repo_path=config.connectors.acl_anthology_repo_path,
         govinfo_api_key=config.connectors.govinfo_api_key,
         searxng_base_url=config.connectors.searxng_base_url,
         ncbi_api_key=config.connectors.ncbi_api_key,
         ncbi_email=config.connectors.ncbi_email,
+        web_search_provider=config.connectors.web_search_provider,
         google_api_key=config.connectors.google_api_key,
         google_cse_id=config.connectors.google_cse_id,
         serpapi_key=config.connectors.serpapi_key,
+        tavily_api_key=config.connectors.tavily_api_key,
     )
     verifier = CitationVerifier(orchestrator=orchestrator)
 

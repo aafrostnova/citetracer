@@ -80,6 +80,12 @@ def _parse_args() -> argparse.Namespace:
         default=0,
         help="Optional hard cap for the LLM source router. 0 means trust the router's suggested budget.",
     )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=0,
+        help="Process at most N input files. 0 means all files.",
+    )
     return parser.parse_args()
 
 
@@ -142,8 +148,12 @@ def _print_connector_health(orchestrator: Any, probe: CitationRecord) -> None:
         records_count = 0
         cache_status = "-"
         try:
+            connector_probe = probe
+            if connector.name == "arxiv":
+                # arXiv id lookup is more reliable than broad title search against the legacy API.
+                connector_probe = CitationRecord(citation_id="probe:arxiv", arxiv_id="1706.03762v5")
             # Run raw connector.search here to check source availability directly.
-            records = connector.search(probe, orchestrator.policy)
+            records = connector.search(connector_probe, orchestrator.policy)
             records_count = len(records or [])
 
             # Add connector-specific sanity hints.
@@ -207,12 +217,78 @@ def _parse_json_from_text(text: str) -> dict[str, Any]:
     raise RuntimeError("Failed to parse JSON from verification_llm response.")
 
 
+def _slim_candidate(cand_eval: dict[str, Any]) -> dict[str, Any]:
+    """Remove empty fields and trim large content from a candidate evaluation."""
+    candidate = cand_eval.get("candidate", {})
+    if not isinstance(candidate, dict):
+        return cand_eval
+
+    # Slim the candidate: remove empty fields
+    slim_cand: dict[str, Any] = {}
+    for k, v in candidate.items():
+        if k == "raw_record":
+            continue  # Handle separately
+        if v is None or v == "" or v == [] or v == {}:
+            continue
+        slim_cand[k] = v
+
+    # Slim raw_record: keep only non-empty fields, truncate large text
+    raw = candidate.get("raw_record", {})
+    if isinstance(raw, dict):
+        slim_raw: dict[str, Any] = {}
+        for k, v in raw.items():
+            if v is None or v == "" or v == [] or v == {}:
+                continue
+            if k == "raw_content" and isinstance(v, str) and len(v) > 2000:
+                slim_raw[k] = v[:2000] + "...[truncated]"
+            elif k == "search_result_json":
+                continue  # Redundant with other fields
+            elif isinstance(v, str) and len(v) > 1000:
+                slim_raw[k] = v[:1000] + "...[truncated]"
+            else:
+                slim_raw[k] = v
+        if slim_raw:
+            slim_cand["raw_record"] = slim_raw
+
+    # Slim comparison: remove empty fields from field_status
+    comparison = cand_eval.get("comparison", {})
+    if isinstance(comparison, dict):
+        field_status = comparison.get("field_status", {})
+        slim_fs = {}
+        for fname, info in field_status.items():
+            status = info.get("status", "")
+            if status == "both_missing":
+                continue  # Skip entirely empty fields
+            slim_fs[fname] = info
+        comparison = {k: v for k, v in comparison.items() if k != "field_status"}
+        comparison["field_status"] = slim_fs
+    else:
+        comparison = {}
+
+    result = {
+        "connector": cand_eval.get("connector", ""),
+        "candidate": slim_cand,
+        "verdict": cand_eval.get("verdict", ""),
+        "reason": cand_eval.get("reason", ""),
+    }
+    llm_reason = cand_eval.get("llm_recheck_reason", "")
+    if llm_reason:
+        result["llm_recheck_reason"] = llm_reason
+    if comparison:
+        result["comparison"] = comparison
+    sec = cand_eval.get("secondary_evidence", [])
+    if sec:
+        result["secondary_evidence"] = sec
+    return result
+
+
 def _slim_report(report_dict: dict[str, Any]) -> dict[str, Any]:
     slim_citations: list[dict[str, Any]] = []
     for citation in report_dict.get("citations", []) or []:
         if not isinstance(citation, dict):
             continue
         candidate_evaluations = citation.get("candidate_evaluations", []) or []
+        slim_evals = [_slim_candidate(ev) for ev in candidate_evaluations if isinstance(ev, dict)]
         candidate_sources = sorted(
             {
                 str(item.get("connector", "")).strip()
@@ -237,7 +313,7 @@ def _slim_report(report_dict: dict[str, Any]) -> dict[str, Any]:
                     "llm_rechecked": bool(llm_reason),
                     "final_adjudication_reason": final_reason,
                 },
-                "all_candidates_compared": candidate_evaluations,
+                "all_candidates_compared": slim_evals,
                 "llm_recheck_adjudication_reason": llm_reason,
             }
         )
@@ -397,6 +473,7 @@ class BedrockSourceSuitabilityRouter:
         "semantic_scholar": "Broad scholarly metadata source with identifiers and venue coverage.",
         "govinfo": "Only useful for government and legal documents.",
         "google_scholar": "Expensive but broad scholarly search. Strong fallback when structured sources may miss a paper.",
+        "web_search": "Broad web search fallback. Provider is configurable (for example SerpAPI or Tavily). High latency and noisier.",
         "google_search": "Broad web search fallback. Useful when the work may only be mentioned on the web. High latency and noisier.",
         "searxng_search": "General web search fallback through SearxNG. Broad but noisy.",
     }
@@ -528,6 +605,77 @@ class RoutedConnectorOrchestrator:
         return getattr(self._base, name)
 
 
+class BedrockWebSearchEnricher:
+    """Uses Bedrock LLM to extract structured fields from web search snippets."""
+
+    def __init__(
+        self,
+        model_id: str,
+        region: str,
+        bearer_token: str | None = None,
+    ) -> None:
+        self.model_id = model_id
+        self.client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+
+    def enrich(self, citation: CitationRecord, candidate: CandidateMatch) -> CandidateMatch:
+        raw = candidate.raw_record if isinstance(candidate.raw_record, dict) else {}
+        snippet = str(raw.get("search_result_text", "") or "").strip()
+        raw_json = str(raw.get("search_result_json", "") or "").strip()
+        evidence = snippet or raw_json
+        if not evidence:
+            return candidate
+
+        prompt = (
+            "Extract structured metadata from the following web search result.\n"
+            "Return ONLY valid JSON with these exact keys:\n"
+            '{"title": "", "authors": [], "venue": "", "year": null}\n'
+            "Rules:\n"
+            "- Extract ONLY information that is EXPLICITLY present in the search result text.\n"
+            "- title: the paper/work title as shown in the result. Remove prefixes like '[PDF]', '[Re]'.\n"
+            "- authors: list of author names found in the result. Empty list if none found.\n"
+            "- venue: journal or conference name if mentioned. Empty string if not found.\n"
+            "- year: publication year as integer if found, null if not.\n"
+            "- Do NOT guess or infer missing information.\n"
+            "- Do NOT copy information from the query — only from the result content.\n\n"
+            f"Web search result:\n{evidence[:2000]}"
+        )
+
+        try:
+            response = self.client.converse(
+                modelId=self.model_id,
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"temperature": 0, "maxTokens": 512},
+            )
+            text = _extract_text_from_converse_response(response)
+            parsed = _parse_json_from_text(text)
+        except Exception:
+            return candidate
+
+        if not parsed:
+            return candidate
+
+        new_title = str(parsed.get("title", "") or "").strip()
+        new_authors = [str(a).strip() for a in parsed.get("authors", []) if str(a).strip()]
+        new_venue = str(parsed.get("venue", "") or "").strip()
+        new_year = parsed.get("year")
+        if isinstance(new_year, str):
+            try:
+                new_year = int(new_year)
+            except ValueError:
+                new_year = None
+
+        # Update candidate fields (keep raw_record intact for auditability)
+        from dataclasses import replace as _replace
+        enriched = _replace(
+            candidate,
+            title=new_title or candidate.title,
+            authors=new_authors or candidate.authors,
+            venue=new_venue or candidate.venue,
+            year=new_year if new_year is not None else candidate.year,
+        )
+        return enriched
+
+
 class BedrockStrictMatchResolver(LLMResolver):
     def __init__(
         self,
@@ -540,6 +688,7 @@ class BedrockStrictMatchResolver(LLMResolver):
         self.region = region
         self.max_candidates = max(1, max_candidates)
         self.client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+        self.source_paper_title: str = ""  # Set per-paper before verification
 
     @staticmethod
     def _build_documents(candidates: list[CandidateMatch], max_candidates: int) -> str:
@@ -547,13 +696,13 @@ class BedrockStrictMatchResolver(LLMResolver):
         docs: list[str] = []
         for i, cand in enumerate(top, start=1):
             payload = cand.raw_record if isinstance(cand.raw_record, dict) else {}
-            if cand.connector == "google_search":
+            if cand.connector in {"google_search", "web_search"}:
                 raw_text = str(payload.get("search_result_text", "") or "").strip()
                 raw_json = str(payload.get("search_result_json", "") or "").strip()
                 docs.append(
                     "\n".join(
                         [
-                            f"[{i}] connector={cand.connector} score={cand.score:.4f}",
+                            f"[{i}] connector={cand.connector}",
                             "raw_search_result:",
                             raw_text or "(missing)",
                             f"raw_search_result_json: {raw_json}" if raw_json else "",
@@ -575,7 +724,7 @@ class BedrockStrictMatchResolver(LLMResolver):
             docs.append(
                 "\n".join(
                     [
-                        f"[{i}] connector={cand.connector} score={cand.score:.4f}",
+                        f"[{i}] connector={cand.connector}",
                         f"title: {payload.get('title', cand.title)}",
                         f"authors: {payload.get('authors', cand.authors)}",
                         f"venue: {payload.get('venue', cand.venue)}",
@@ -624,13 +773,21 @@ class BedrockStrictMatchResolver(LLMResolver):
         )
 
     @staticmethod
-    def _build_google_existence_prompt(citation: CitationRecord, documents: str) -> str:
+    def _build_google_existence_prompt(citation: CitationRecord, documents: str, source_paper_title: str = "") -> str:
         citation_author_count = len([author for author in citation.authors if str(author or "").strip()])
+        source_line = ""
+        if source_paper_title:
+            source_line = (
+                f"IMPORTANT — The citing paper (the paper that contains this citation) is titled: "
+                f"\"{source_paper_title}\". If a search result IS this citing paper or contains "
+                f"its reference list, that is NOT independent evidence. You must reject such results.\n"
+            )
         return (
-            "Determine whether the citation appears to correspond to a real cited work based on Google search results.\n"
+            "Determine whether the citation corresponds to a real cited work based on search results.\n"
+            f"{source_line}"
             f"Citation to verify: Title: {citation.title} Authors: {citation.authors} "
             f"AuthorCount: {citation_author_count} Venue: {citation.venue} Year: {citation.year}\n"
-            f"Google search evidence: {documents}\n"
+            f"Search evidence:\n{documents}\n"
             "Return JSON:\n"
             "{\n"
             '  "match": true/false,\n'
@@ -638,27 +795,26 @@ class BedrockStrictMatchResolver(LLMResolver):
             '  "note": "brief reason"\n'
             "}\n"
             "EXISTENCE CHECK RULES:\n"
-            "1. Use ONLY the raw Google search result evidence provided below. Do not rely on any extracted metadata fields or external knowledge.\n"
-            "2. The result does NOT need to be a formal paper page. It may be a dataset page, GitHub repository, Hugging Face page, Google Scholar profile, bibliography page, personal site, tool page, book page, commercial site, or another page that explicitly mentions the cited work.\n"
-            "3. Judge existence by metadata alignment only, not by page type.\n"
-            "4. Title must match strongly and refer to the same work.\n"
-            "5. Authors must align in content and order. Treat 'et al' as an omission marker, not an author name.\n"
-            "6. If the citation does NOT contain 'et al', ALL listed authors must be explicitly supported by the raw search result in the correct order, and the supported author count must equal AuthorCount. Partial author matches are NOT sufficient.\n"
-            "7. If the citation contains 'et al', compare only the explicit authors before 'et al'; those explicit authors must match the leading authors in the result one-by-one and in the same order.\n"
-            "8. Venue must align when the citation provides a venue. If the citation omits venue, lack of venue evidence must NOT by itself cause rejection.\n"
-            "9. Year must align when the citation provides a year. If the citation provides a year and the raw search result does not explicitly support that year, then match=false.\n"
-            "10. A direct paper landing page is NOT required. The result does NOT need to prove the work is a standalone publication entity.\n"
-            "11. If title, authors, and year align strongly in the raw search result and there is no conflicting information, that is sufficient evidence of existence.\n"
-            "12. If the result is generic, off-topic, weakly related, or plausibly about a different work, match=false.\n"
-            "13. Be strict and conservative. Do not infer missing authors or venue from likely coauthorship, background knowledge, or thematic similarity.\n"
-            "IMPORTANT:\n"
-            "- Do not reject solely because the page is not a formal paper page.\n"
-            "- Do not reject solely because venue is absent when the citation itself omits venue.\n"
-            "- When the citation does not use 'et al', ANY missing author forces match=false.\n"
-            "- First count how many citation authors are explicitly supported by the raw search result. If that supported author count is not EXACTLY equal to AuthorCount and the citation does not use 'et al', then you MUST return match=false.\n"
-            "- If the citation provides a year, the result MUST explicitly support that same year. Missing or implied year evidence forces match=false.\n"
-            "- Do not say that the year is unnecessary when the citation includes a year.\n"
-            "- Do not describe incomplete author support as a minor issue; incomplete authors are a decisive reason for match=false.\n"
+            "1. Use ONLY info EXPLICITLY PRESENT in the search result text. Do not infer or assume.\n"
+            "2. CRITICAL — CIRCULAR REFERENCE: If the search result is a DIFFERENT paper/document whose content "
+            "merely cites or references the work in a bibliography, reference list, or footnote, that is NOT "
+            "evidence the cited work exists independently. The search result must be the cited work ITSELF "
+            "(its own landing page, database entry, or a page primarily ABOUT it). "
+            "Clue: if the search result title differs from the citation title, it is likely another work — match=false.\n"
+            "3. Citations can be tweets, blog posts, news articles, software packages, forum posts — not just "
+            "academic papers. A social media repost or quote of a tweet/post confirms the original exists.\n"
+            "4. Title of the search result must match or directly correspond to the cited work's title. "
+            "If the search result has a completely different title, match=false.\n"
+            "5. When citation is a tweet or social media post: if the search result quotes the exact text and "
+            "attributes it to the same person, that confirms existence even without formal publication metadata.\n"
+            "6. Authors must align in content and order. Treat 'et al', 'Others' as omission markers.\n"
+            "7. If the citation does NOT contain 'et al' or 'Others', ALL listed authors must be explicitly "
+            "supported by the search result. Partial author matches are NOT sufficient.\n"
+            "8. If the citation uses 'et al' or 'Others', compare only the explicitly listed authors.\n"
+            "9. Venue must align when provided. If citation omits venue, absence of venue is acceptable.\n"
+            "10. Year must align when provided. Missing year evidence forces match=false.\n"
+            "11. If title, authors, and year align in the search result with no conflicting info, match=true.\n"
+            "12. If the result is generic, off-topic, or about a different work, match=false.\n"
             "Return JSON only."
         )
 
@@ -668,6 +824,7 @@ class BedrockStrictMatchResolver(LLMResolver):
         candidates: list[CandidateMatch],
         conflicts: list[str],
         proposed_verdict: VerdictLabel,
+        secondary_evidence=None,
     ) -> dict[str, Any] | None:
         if not candidates:
             return {
@@ -676,10 +833,24 @@ class BedrockStrictMatchResolver(LLMResolver):
             }
         candidate = candidates[0]
         documents = self._build_documents(candidates, self.max_candidates)
-        if candidate.connector == "google_search":
-            prompt = self._build_google_existence_prompt(citation, documents)
+        if candidate.connector in {"google_search", "web_search"}:
+            prompt = self._build_google_existence_prompt(citation, documents, self.source_paper_title)
         else:
             prompt = self._build_strict_match_prompt(citation, documents)
+
+        # Append secondary evidence context if available
+        if secondary_evidence:
+            evidence_lines = []
+            for ev in secondary_evidence:
+                status = "EXPLAINED" if ev.evidence_found else "UNEXPLAINED"
+                evidence_lines.append(f"  - {ev.field} ({ev.discrepancy_type}): [{status}] {ev.explanation}")
+            prompt += (
+                "\n\nSECONDARY VERIFICATION EVIDENCE:\n"
+                + "\n".join(evidence_lines)
+                + "\n\nIMPORTANT: Only upgrade to POTENTIAL_REFERENCE if ALL discrepancies above "
+                "are marked EXPLAINED with concrete evidence. If ANY discrepancy is UNEXPLAINED, "
+                "maintain FAKE_REFERENCE.\n"
+            )
 
         response = self.client.converse(
             modelId=self.model_id,
@@ -695,7 +866,6 @@ class BedrockStrictMatchResolver(LLMResolver):
         if match:
             return {
                 "label_override": "VALID",
-                "confidence_override": 0.9,
                 "note": f"Bedrock strict match=true matched_result={matched_result}. {note}".strip(),
             }
         return {
@@ -729,6 +899,8 @@ def main() -> None:
     json_files = sorted(p for p in input_dir.glob("*.json") if not p.name.startswith("_"))
     if not json_files:
         raise RuntimeError(f"No JSON files found in {input_dir}")
+    if args.max_files > 0:
+        json_files = json_files[:args.max_files]
 
     print("[setup] Verification-only pipeline start", flush=True)
     print(f"[setup] input_dir={input_dir}", flush=True)
@@ -762,9 +934,11 @@ def main() -> None:
         f"govinfo_api_key={'<set>' if cfg.connectors.govinfo_api_key else '<empty>'} "
         f"searxng_base_url={cfg.connectors.searxng_base_url or '<empty>'} "
         f"ncbi_api_key={'<set>' if cfg.connectors.ncbi_api_key else '<empty>'} "
+        f"web_search_provider={cfg.connectors.web_search_provider} "
         f"google_api_key={'<set>' if cfg.connectors.google_api_key else '<empty>'} "
         f"google_cse_id={'<set>' if cfg.connectors.google_cse_id else '<empty>'} "
         f"serpapi_key={'<set>' if cfg.connectors.serpapi_key else '<empty>'} "
+        f"tavily_api_key={'<set>' if cfg.connectors.tavily_api_key else '<empty>'} "
         f"enabled_sources={list(cfg.connectors.enabled_sources) if cfg.connectors.enabled_sources else '<all>'}",
         flush=True,
     )
@@ -774,14 +948,18 @@ def main() -> None:
         dblp_mirror_path=final_mirror_path,
         dblp_sqlite_path=Path(final_dblp_sqlite) if final_dblp_sqlite else None,
         enabled_sources=cfg.connectors.enabled_sources,
+        acl_anthology_data_dir=cfg.connectors.acl_anthology_data_dir,
+        acl_anthology_repo_path=cfg.connectors.acl_anthology_repo_path,
         semantic_scholar_api_key=final_semscholar_key,
         govinfo_api_key=cfg.connectors.govinfo_api_key,
         searxng_base_url=cfg.connectors.searxng_base_url,
         ncbi_api_key=cfg.connectors.ncbi_api_key,
         ncbi_email=cfg.connectors.ncbi_email,
+        web_search_provider=cfg.connectors.web_search_provider,
         google_api_key=cfg.connectors.google_api_key,
         google_cse_id=cfg.connectors.google_cse_id,
         serpapi_key=cfg.connectors.serpapi_key,
+        tavily_api_key=cfg.connectors.tavily_api_key,
     )
 
     if not args.skip_healthcheck:
@@ -826,7 +1004,47 @@ def main() -> None:
     else:
         print("[setup] llm_source_router disabled", flush=True)
 
-    verifier = CitationVerifier(orchestrator=orchestrator, llm_resolver=llm_resolver)
+    # Build secondary verifier from available connectors
+    from packages.connectors.arxiv import ArxivConnector
+    from packages.connectors.openalex import OpenAlexConnector
+    from packages.connectors.semanticscholar import SemanticScholarConnector
+    from packages.core.secondary_verification import SecondaryVerifier
+
+    from packages.connectors.url_direct import URLDirectConnector as _URLDirectConnector
+
+    arxiv_conn = None
+    semscholar_conn = None
+    openalex_conn = None
+    url_direct_conn = None
+    for conn in orchestrator.connectors:
+        if isinstance(conn, ArxivConnector):
+            arxiv_conn = conn
+        elif isinstance(conn, SemanticScholarConnector):
+            semscholar_conn = conn
+        elif isinstance(conn, OpenAlexConnector):
+            openalex_conn = conn
+        elif isinstance(conn, _URLDirectConnector):
+            url_direct_conn = conn
+
+    secondary_verifier = SecondaryVerifier(
+        arxiv_connector=arxiv_conn,
+        semantic_scholar_connector=semscholar_conn,
+        openalex_connector=openalex_conn,
+        url_direct_connector=url_direct_conn,
+    )
+    print(
+        f"[setup] secondary_verifier enabled "
+        f"arxiv={'yes' if arxiv_conn else 'no'} "
+        f"semantic_scholar={'yes' if semscholar_conn else 'no'} "
+        f"openalex={'yes' if openalex_conn else 'no'}",
+        flush=True,
+    )
+
+    verifier = CitationVerifier(
+        orchestrator=orchestrator,
+        llm_resolver=llm_resolver,
+        secondary_verifier=secondary_verifier,
+    )
 
     aggregate = Counter()
     per_file_summaries: list[dict[str, Any]] = []
@@ -848,6 +1066,9 @@ def main() -> None:
         out_path = output_dir / src.name
         partial_verdicts = []
         total_citations = len(citations)
+        # Tell LLM resolver which paper we're verifying (to detect circular references)
+        if llm_resolver and hasattr(llm_resolver, "source_paper_title"):
+            llm_resolver.source_paper_title = src.stem.replace("_", " ")
         for citation_idx, citation in enumerate(citations, start=1):
             print(
                 f"[run] [{idx}/{total}] paper={src.stem} citation={citation_idx}/{total_citations} "
@@ -857,6 +1078,7 @@ def main() -> None:
             verdict = verifier.verify_citation(
                 citation,
                 extraction_quality=quality_map.get(citation.citation_id, ExtractionQuality.UNKNOWN),
+                source_paper_title=src.stem.replace("_", " "),
             )
             partial_verdicts.append(verdict)
             report_dict = _build_incremental_report(

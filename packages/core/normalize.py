@@ -6,16 +6,57 @@ from difflib import SequenceMatcher
 
 
 VENUE_ALIASES = {
+    # NeurIPS
     "nips": "neurips",
     "neurips": "neurips",
     "advances in neural information processing systems": "neurips",
+    # ICML
     "icml": "icml",
     "international conference on machine learning": "icml",
+    "proceedings of the international conference on machine learning": "icml",
+    # ICLR
     "iclr": "iclr",
     "international conference on learning representations": "iclr",
+    # CVPR
     "cvpr": "cvpr",
     "ieee conference on computer vision and pattern recognition": "cvpr",
+    "ieee/cvf conference on computer vision and pattern recognition": "cvpr",
+    # ECCV / ICCV
+    "eccv": "eccv",
+    "european conference on computer vision": "eccv",
+    "iccv": "iccv",
+    "ieee international conference on computer vision": "iccv",
+    # ACL
+    "acl": "acl",
+    "association for computational linguistics": "acl",
+    "annual meeting of the association for computational linguistics": "acl",
+    # EMNLP
+    "emnlp": "emnlp",
+    "empirical methods in natural language processing": "emnlp",
+    # NAACL
+    "naacl": "naacl",
+    "north american chapter of the association for computational linguistics": "naacl",
+    # AAAI
+    "aaai": "aaai",
+    "aaai conference on artificial intelligence": "aaai",
+    # AI journal
+    "artificial intelligence": "ai_journal",
+    "artif intell": "ai_journal",
+    # Nature family
+    "nat": "nature",
+    "nature": "nature",
+    # Science
+    "science": "science",
+    # JMLR
+    "jmlr": "jmlr",
+    "journal of machine learning research": "jmlr",
+    # PMLR
+    "pmlr": "pmlr",
+    "proceedings of machine learning research": "pmlr",
+    # arXiv
     "arxiv": "arxiv",
+    "corr": "arxiv",
+    "arxiv preprint": "arxiv",
 }
 
 NAME_ALIASES = {
@@ -75,10 +116,38 @@ def normalize_arxiv_id(value: str) -> str:
     return text.strip()
 
 
+# Applied AFTER normalize_text, so unicode dashes are already stripped.
+# Matches volume:pages patterns like "18 279284", "591 7850 379384", "pp 1 5".
+_VENUE_STRIP_RE = re.compile(
+    r",?\s*(?:"
+    r"pages?\s*[\d\s]+|"                    # pages 123 or pages 1 5
+    r"vol(?:ume)?\.?\s*[\d]+|"              # volume 5 / vol. 5
+    r"[\d]+\s*\([^)]*\)\s*[\d\s]+|"        # 591(7850) 379384
+    r"[\d]+\s+[\d]{2,}[\d\s]*|"            # 18 279284 (vol:pages after normalize)
+    r"pp\.?\s*[\d\s]+"                      # pp 1 5
+    r")"
+)
+
+
 def normalize_venue(venue: str) -> str:
     cleaned = normalize_text(venue)
+    # Strip leading "in " (common in citation venue fields)
+    cleaned = re.sub(r"^in\s+", "", cleaned)
+    # Strip trailing year
+    cleaned = re.sub(r",?\s*(19|20)\d{2}\w?$", "", cleaned)
+    # Strip volume/page info
+    cleaned = _VENUE_STRIP_RE.sub("", cleaned).strip()
+    # Strip standalone numbers (residual volume/issue numbers)
+    cleaned = re.sub(r"\b\d+\b", "", cleaned)
+    # Collapse whitespace and strip punctuation
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;.")
+    # Try exact alias match
     if cleaned in VENUE_ALIASES:
         return VENUE_ALIASES[cleaned]
+    # Try matching any alias as a substring of the venue
+    for alias, canonical in VENUE_ALIASES.items():
+        if len(alias) > 3 and alias in cleaned:
+            return canonical
     return cleaned
 
 

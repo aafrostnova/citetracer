@@ -123,6 +123,7 @@ def cache_key_for(connector_name: str, citation: CitationRecord) -> str:
 class BaseConnector:
     name: str = "base"
     ttl_s: int = 60 * 60 * 24
+    cache_identity: str | None = None
 
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, Any]]:
         raise NotImplementedError
@@ -132,6 +133,32 @@ class BaseConnector:
         target = f"{url}?{query}" if query else url
         headers = headers or {}
         request = Request(target, headers={"User-Agent": "citation-checker/1.0", **headers})
+        last_error: Exception | None = None
+        for attempt in range(policy.max_retries + 1):
+            try:
+                with urlopen(request, timeout=policy.timeout_s) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+                last_error = exc
+                if attempt >= policy.max_retries:
+                    break
+                time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
+        raise RuntimeError(f"{self.name} request failed: {last_error}")
+
+    def _request_json_post(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        policy: RequestPolicy,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        headers = headers or {}
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"User-Agent": "citation-checker/1.0", "Content-Type": "application/json", **headers},
+            method="POST",
+        )
         last_error: Exception | None = None
         for attempt in range(policy.max_retries + 1):
             try:
@@ -220,7 +247,8 @@ class ConnectorOrchestrator:
             if max_connectors is not None and len(results) >= max_connectors:
                 break
             started = time.perf_counter()
-            key = cache_key_for(connector.name, citation)
+            cache_identity = getattr(connector, "cache_identity", None) or connector.name
+            key = cache_key_for(cache_identity, citation)
             cached = self.cache.get(key)
             if cached is not None:
                 latency_ms = (time.perf_counter() - started) * 1000
@@ -268,12 +296,13 @@ class ConnectorOrchestrator:
     ) -> bool:
         if not records:
             return False
-        policy = AdjudicationPolicy()
         for record in records:
             candidate = build_candidate_match(citation, connector_name, record)
-            if candidate.score < policy.valid_threshold:
-                continue
             if "doi_mismatch" in candidate.conflicts or "arxiv_id_mismatch" in candidate.conflicts:
+                continue
+            if "title_mismatch" in candidate.conflicts or "year_mismatch" in candidate.conflicts:
+                continue
+            if "title" not in candidate.matched_fields:
                 continue
             return True
         return False

@@ -81,6 +81,8 @@ def _year_is_candidate_eligible(citation_year: int | None, record: dict[str, Any
     if citation_year is None:
         return True
     record_year = _to_int(record.get("year"))
+    if record_year is None:
+        return True  # Record has no year info — don't filter it out
     if record_year == citation_year:
         return True
     version_years = _extract_version_years(record)
@@ -141,18 +143,8 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
     elif year_score == 0.0 and citation.year and (year or version_years):
         conflicts.append("year_mismatch")
 
-    score = (
-        0.45 * title_score
-        + 0.25 * author_score
-        + 0.15 * venue_score
-        + 0.15 * year_score
-        + identifier_boost
-    )
-    score = max(0.0, min(1.0, score))
-
     return CandidateMatch(
         connector=connector,
-        score=score,
         title=title,
         authors=authors,
         venue=venue,
@@ -169,9 +161,10 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
 def collect_candidates(citation: CitationRecord, connector_records: dict[str, list[dict[str, Any]]]) -> list[CandidateMatch]:
     matches: list[CandidateMatch] = []
     citation_title = normalize_title(citation.title)
+    raw_web_connectors = {"google_search", "web_search"}
     for connector, records in connector_records.items():
         for record in records:
-            if connector == "google_search":
+            if connector in raw_web_connectors:
                 matches.append(build_candidate_match(citation, connector, record))
                 continue
             record_title = normalize_title(str(record.get("title", "") or ""))
@@ -184,6 +177,4 @@ def collect_candidates(citation: CitationRecord, connector_records: dict[str, li
 
 
 def rank_candidates(citation: CitationRecord, connector_records: dict[str, list[dict[str, Any]]]) -> list[CandidateMatch]:
-    matches = collect_candidates(citation, connector_records)
-    matches.sort(key=lambda match: match.score, reverse=True)
-    return matches
+    return collect_candidates(citation, connector_records)

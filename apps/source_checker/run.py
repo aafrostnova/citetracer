@@ -39,14 +39,18 @@ def run_source_check(
     orchestrator = orchestrator or default_orchestrator(
         cache_path=_cache_path(),
         dblp_mirror_path=_mirror_path(),
+        acl_anthology_data_dir=os.getenv("CITATION_CHECKER_ACL_ANTHOLOGY_DATA_DIR"),
+        acl_anthology_repo_path=os.getenv("CITATION_CHECKER_ACL_ANTHOLOGY_REPO_PATH"),
         semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"),
         govinfo_api_key=os.getenv("GOVINFO_API_KEY") or os.getenv("CITATION_CHECKER_GOVINFO_API_KEY"),
         searxng_base_url=os.getenv("CITATION_CHECKER_SEARXNG_BASE_URL"),
         ncbi_api_key=os.getenv("NCBI_API_KEY") or os.getenv("CITATION_CHECKER_NCBI_API_KEY"),
         ncbi_email=os.getenv("NCBI_EMAIL") or os.getenv("CITATION_CHECKER_NCBI_EMAIL"),
+        web_search_provider=os.getenv("CITATION_CHECKER_WEB_SEARCH_PROVIDER"),
         google_api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("CITATION_CHECKER_GOOGLE_API_KEY"),
         google_cse_id=os.getenv("GOOGLE_CSE_ID") or os.getenv("CITATION_CHECKER_GOOGLE_CSE_ID"),
         serpapi_key=os.getenv("SERPAPI_KEY") or os.getenv("CITATION_CHECKER_SERPAPI_KEY"),
+        tavily_api_key=os.getenv("TAVILY_API_KEY") or os.getenv("CITATION_CHECKER_TAVILY_API_KEY"),
     )
     verifier = CitationVerifier(orchestrator=orchestrator)
 

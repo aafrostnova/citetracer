@@ -46,3 +46,31 @@ class SemanticScholarConnector(BaseConnector):
                 }
             )
         return records
+
+    def fetch_paper_details(self, paper_id: str, policy: RequestPolicy) -> dict[str, Any]:
+        """Fetch detailed paper info including publication types for preprint linking."""
+        if not paper_id:
+            return {}
+        headers = {}
+        if self.api_key:
+            headers["x-api-key"] = self.api_key
+        try:
+            payload = self._request_json(
+                f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",
+                {"fields": "title,authors,year,venue,externalIds,publicationTypes,journal"},
+                policy,
+                headers=headers,
+            )
+        except Exception:
+            return {}
+        external_ids = payload.get("externalIds", {}) or {}
+        return {
+            "title": str(payload.get("title", "") or ""),
+            "authors": [str(a.get("name", "") or "") for a in payload.get("authors", []) if a.get("name")],
+            "year": payload.get("year"),
+            "venue": str(payload.get("venue", "") or ""),
+            "doi": str(external_ids.get("DOI", "") or "").lower(),
+            "arxiv_id": str(external_ids.get("ArXiv", "") or "").lower(),
+            "publication_types": payload.get("publicationTypes") or [],
+            "journal": payload.get("journal") or {},
+        }

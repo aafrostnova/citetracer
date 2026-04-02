@@ -11,29 +11,48 @@ from packages.core.normalize import extract_identifier
 from .base import BaseConnector, RequestPolicy
 
 
-class GoogleSearchConnector(BaseConnector):
-    name = "google_search"
+class WebSearchConnector(BaseConnector):
+    name = "web_search"
     ttl_s = 60 * 60 * 6
 
     def __init__(
         self,
+        provider: str | None = None,
         api_key: str | None = None,
         cse_id: str | None = None,
         serpapi_key: str | None = None,
+        tavily_api_key: str | None = None,
     ) -> None:
+        self.provider = _normalize_provider(provider)
         self.api_key = (api_key or "").strip()
         self.cse_id = (cse_id or "").strip()
         self.serpapi_key = (serpapi_key or "").strip()
+        self.tavily_api_key = (tavily_api_key or "").strip()
+        self.cache_identity = f"{self.name}:{self._resolve_provider() or 'disabled'}"
 
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, Any]]:
         query = _build_query(citation)
         if not query:
             return []
-        if self.api_key and self.cse_id:
+        provider = self._resolve_provider()
+        if provider == "google_cse":
             return self._search_google_cse(query, policy)
-        if self.serpapi_key:
+        if provider == "serpapi":
             return self._search_serpapi(query, policy)
+        if provider == "tavily":
+            return self._search_tavily(query, policy)
         return []
+
+    def _resolve_provider(self) -> str:
+        if self.provider in {"google_cse", "serpapi", "tavily"}:
+            return self.provider
+        if self.api_key and self.cse_id:
+            return "google_cse"
+        if self.serpapi_key:
+            return "serpapi"
+        if self.tavily_api_key:
+            return "tavily"
+        return ""
 
     def _search_google_cse(self, query: str, policy: RequestPolicy) -> list[dict[str, Any]]:
         payload = self._request_json(
@@ -47,7 +66,7 @@ class GoogleSearchConnector(BaseConnector):
             policy,
         )
         return [
-            self._normalize_item(item, venue="Google Search", query=query)
+            self._normalize_google_like_item(item, query=query)
             for item in payload.get("items", [])[:5]
         ]
 
@@ -64,39 +83,134 @@ class GoogleSearchConnector(BaseConnector):
             policy,
         )
         return [
-            self._normalize_item(item, query=query)
+            self._normalize_google_like_item(item, query=query)
             for item in payload.get("organic_results", [])[:5]
         ]
 
+    def _search_tavily(self, query: str, policy: RequestPolicy) -> list[dict[str, Any]]:
+        payload = self._request_json_post(
+            "https://api.tavily.com/search",
+            {
+                "query": query,
+                "topic": "general",
+                "search_depth": "basic",
+                "max_results": 5,
+                "include_answer": False,
+                "include_raw_content": "markdown",
+                "include_images": False,
+                "include_favicon": True,
+            },
+            policy,
+            headers={"Authorization": f"Bearer {self.tavily_api_key}"},
+        )
+        return [
+            self._normalize_tavily_item(item, query=query)
+            for item in payload.get("results", [])[:5]
+        ]
+
     @staticmethod
-    def _normalize_item(item: dict[str, Any], query: str) -> dict[str, Any]:
+    def _normalize_google_like_item(item: dict[str, Any], query: str) -> dict[str, Any]:
         title = str(item.get("title", "") or "")
         snippet = str(item.get("snippet", "") or "")
         link = str(item.get("link", "") or "")
         source = str(item.get("source", "") or "")
         author_text = str(item.get("author", "") or "")
         date_text = str(item.get("date", "") or "")
-        blob = " ".join(part for part in [title, snippet, source, author_text, date_text] if part).strip()
-        doi, arxiv_id = extract_identifier(" ".join(part for part in [blob, link] if part))
-        search_result_text = _stringify_search_item(item=item, query=query)
-        return {
-            "title": "",
-            "authors": [],
-            "venue": None,
-            "year": None,
-            "doi": "",
-            "arxiv_id": "",
-            "url": link,
+        return _build_normalized_search_record(
+            query=query,
+            title=title,
+            snippet=snippet,
+            link=link,
+            source=source,
+            author_text=author_text,
+            date_text=date_text,
+            raw_item=item,
+        )
+
+    @staticmethod
+    def _normalize_tavily_item(item: dict[str, Any], query: str) -> dict[str, Any]:
+        title = str(item.get("title", "") or "")
+        snippet = str(item.get("content", "") or "")
+        raw_content = str(item.get("raw_content", "") or "")
+        link = str(item.get("url", "") or "")
+        source = _source_from_url(link)
+        # Use raw_content (full page markdown) as the snippet if available,
+        # falling back to the short content summary.
+        effective_snippet = raw_content[:5000] if raw_content else snippet
+        record = _build_normalized_search_record(
+            query=query,
+            title=title,
+            snippet=effective_snippet,
+            link=link,
+            source=source,
+            author_text="",
+            date_text="",
+            raw_item=item,
+        )
+        if raw_content:
+            record["raw_content"] = raw_content
+        favicon = str(item.get("favicon", "") or "").strip()
+        if favicon:
+            record["search_favicon"] = favicon
+        if item.get("score") is not None:
+            record["search_score"] = item.get("score")
+        return record
+
+
+class GoogleSearchConnector(WebSearchConnector):
+    pass
+
+
+def _normalize_provider(provider: str | None) -> str:
+    value = str(provider or "").strip().lower().replace("-", "_")
+    if value in {"google", "google_custom_search", "cse"}:
+        return "google_cse"
+    if value in {"serpapi", "tavily", "auto"}:
+        return value
+    return ""
+
+
+def _build_normalized_search_record(
+    query: str,
+    title: str,
+    snippet: str,
+    link: str,
+    source: str,
+    author_text: str,
+    date_text: str,
+    raw_item: dict[str, Any],
+) -> dict[str, Any]:
+    blob = " ".join(part for part in [title, snippet, source, author_text, date_text] if part).strip()
+    doi, arxiv_id = extract_identifier(" ".join(part for part in [blob, link] if part))
+    search_result_text = _stringify_search_item(
+        item={
+            "title": title,
+            "link": link,
+            "source": source,
+            "author": author_text,
+            "date": date_text,
             "snippet": snippet,
-            "search_source": source,
-            "search_author": author_text,
-            "search_date": date_text,
-            "search_query": query,
-            "search_result_text": search_result_text,
-            "search_result_json": json.dumps(item, ensure_ascii=False, sort_keys=True),
-            "heuristic_doi": doi,
-            "heuristic_arxiv_id": arxiv_id,
-        }
+        },
+        query=query,
+    )
+    return {
+        "title": "",
+        "authors": [],
+        "venue": None,
+        "year": None,
+        "doi": "",
+        "arxiv_id": "",
+        "url": link,
+        "snippet": snippet,
+        "search_source": source,
+        "search_author": author_text,
+        "search_date": date_text,
+        "search_query": query,
+        "search_result_text": search_result_text,
+        "search_result_json": json.dumps(raw_item, ensure_ascii=False, sort_keys=True),
+        "heuristic_doi": doi,
+        "heuristic_arxiv_id": arxiv_id,
+    }
 
 
 def _build_query(citation: CitationRecord) -> str:
@@ -145,9 +259,19 @@ def _extract_year(text: str) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def _source_from_url(url: str) -> str:
+    netloc = urlparse(str(url or "")).netloc.lower().strip()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    return netloc
+
+
 def _stringify_search_item(item: dict[str, Any], query: str) -> str:
+    # NOTE: query is intentionally excluded from the result text to prevent
+    # downstream LLM from confusing query content (which contains citation
+    # metadata like authors/venue) with actual search result evidence.
+    # The query is stored separately in the "search_query" field.
     lines = [
-        f"query: {query}",
         f"title: {str(item.get('title', '') or '').strip()}",
         f"link: {str(item.get('link', '') or '').strip()}",
         f"source: {str(item.get('source', '') or '').strip()}",

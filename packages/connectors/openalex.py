@@ -45,3 +45,27 @@ class OpenAlexConnector(BaseConnector):
                 }
             )
         return records
+
+    def fetch_author_info(self, author_name: str, policy: RequestPolicy) -> dict[str, Any]:
+        """Search for an author by name and return identity info for name variant verification."""
+        if not author_name or not author_name.strip():
+            return {}
+        try:
+            payload = self._request_json(
+                "https://api.openalex.org/authors",
+                {"search": author_name.strip(), "per-page": 3},
+                policy,
+            )
+        except Exception:
+            return {}
+        results = payload.get("results", [])
+        if not results:
+            return {}
+        top = results[0]
+        return {
+            "openalex_id": str(top.get("id", "") or ""),
+            "display_name": str(top.get("display_name", "") or ""),
+            "alternate_names": top.get("display_name_alternatives") or [],
+            "orcid": str(top.get("orcid", "") or ""),
+            "works_count": top.get("works_count", 0),
+        }

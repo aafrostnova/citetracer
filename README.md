@@ -59,6 +59,11 @@ python3 pdf_extractor_demo.py \
   --out artifacts/iclr_2026_reference_extracts \
   --workers 1 \
   --continue-on-error
+
+python3 pdf_extractor_demo.py \
+  --input data/pdf_papers/benign_icml_oral_2026 \
+  --out artifacts/icml_2025_reference_extracts_1 \
+  --workers 1 \
 ```
 
 Notes:

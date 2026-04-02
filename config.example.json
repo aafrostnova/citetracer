@@ -3,6 +3,8 @@
     "cache_path": "data/cache/connector_cache.sqlite",
     "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
     "dblp_sqlite_path": "/project/pi_shiqingma_umass_edu/mingzheli/Ref_Agent/data/dblp.sqlite",
+    "acl_anthology_data_dir": "",
+    "acl_anthology_repo_path": "data/cache/acl_anthology_repo",
     "enabled_sources": [
       "dblp_sqlite",
       "url_direct",
@@ -16,7 +18,6 @@
       "semantic_scholar",
       "govinfo",
       "google_scholar",
-      "google_search",
       "web_search"
     ],
     "semantic_scholar_api_key": "YOUR_SEMANTIC_SCHOLAR_API_KEY",
@@ -24,9 +25,11 @@
     "searxng_base_url": "",
     "ncbi_api_key": "",
     "ncbi_email": "",
+    "web_search_provider": "serpapi",
     "google_api_key": "",
     "google_cse_id": "",
-    "serpapi_key": ""
+    "serpapi_key": "",
+    "tavily_api_key": ""
   },
   "entry_extraction": {
     "mode": "model",
@@ -49,7 +52,7 @@
     "temperature": 0.0,
     "bedrock": {
       "region": "us-east-1",
-      "model_id": "",
+      "model_id": "qwen.qwen3-32b-v1:0",
       "bearer_token": "YOUR_AWS_BEARER_TOKEN_BEDROCK"
     }
   },

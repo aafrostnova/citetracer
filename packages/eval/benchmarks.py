@@ -8,7 +8,7 @@ from apps.pdf_checker.run import run_pdf_check
 from apps.source_checker.run import run_source_check
 
 from .datasets import load_ground_truth, load_manifest
-from .metrics import binary_metrics, expected_calibration_error
+from .metrics import binary_metrics
 
 
 def _canon(label: str) -> str:
@@ -17,7 +17,7 @@ def _canon(label: str) -> str:
         return "POTENTIAL_REFERENCE"
     if value == "SUSPECTED_HALLUCINATION":
         return "FAKE_REFERENCE"
-    return value or "INSUFFICIENT_EVIDENCE"
+    return value or "FAKE_REFERENCE"
 
 
 @dataclass
@@ -31,7 +31,6 @@ class SuiteResult:
     flawed_precision: float
     flawed_recall: float
     flawed_f1: float
-    ece: float
 
 
 
@@ -52,8 +51,6 @@ def run_suite(manifest_path: str | Path, out_dir: str | Path) -> dict:
     hall_preds: list[bool] = []
     flawed_labels: list[bool] = []
     flawed_preds: list[bool] = []
-    confidences: list[float] = []
-    correctness: list[bool] = []
     total_citations = 0
 
     per_item = []
@@ -66,7 +63,7 @@ def run_suite(manifest_path: str | Path, out_dir: str | Path) -> dict:
         for citation in report.get("citations", []):
             citation_id = citation["citation_id"]
             predicted = _canon(citation["verdict"])
-            label = _canon(truth.get(citation_id, "INSUFFICIENT_EVIDENCE"))
+            label = _canon(truth.get(citation_id, "FAKE_REFERENCE"))
 
             hall_labels.append(label == "FAKE_REFERENCE")
             hall_preds.append(predicted == "FAKE_REFERENCE")
@@ -74,8 +71,6 @@ def run_suite(manifest_path: str | Path, out_dir: str | Path) -> dict:
             flawed_labels.append(label == "POTENTIAL_REFERENCE")
             flawed_preds.append(predicted == "POTENTIAL_REFERENCE")
 
-            confidences.append(float(citation.get("confidence", 0.0)))
-            correctness.append(predicted == label)
             total_citations += 1
 
         per_item.append(
@@ -90,7 +85,6 @@ def run_suite(manifest_path: str | Path, out_dir: str | Path) -> dict:
 
     hall_metric = binary_metrics(hall_labels, hall_preds)
     flawed_metric = binary_metrics(flawed_labels, flawed_preds)
-    ece = expected_calibration_error(confidences, correctness)
 
     suite_result = SuiteResult(
         suite_name=manifest.name,
@@ -102,7 +96,6 @@ def run_suite(manifest_path: str | Path, out_dir: str | Path) -> dict:
         flawed_precision=flawed_metric.precision,
         flawed_recall=flawed_metric.recall,
         flawed_f1=flawed_metric.f1,
-        ece=ece,
     )
 
     payload = {
