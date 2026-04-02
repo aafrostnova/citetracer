@@ -54,14 +54,18 @@ class PDFCheckerConfigTests(unittest.TestCase):
 	    "cache_path": "/tmp/custom_cache.sqlite",
 	    "dblp_mirror_path": "/tmp/custom_mirror.jsonl",
 	    "dblp_sqlite_path": "/tmp/custom_dblp.sqlite",
+	    "acl_anthology_data_dir": "/tmp/acl_data",
+	    "acl_anthology_repo_path": "/tmp/acl_repo",
 	    "semantic_scholar_api_key": "s2_key",
 	    "govinfo_api_key": "govinfo_key",
 	    "searxng_base_url": "http://localhost:8080",
 	    "ncbi_api_key": "ncbi_key",
 	    "ncbi_email": "user@example.com",
+	    "web_search_provider": "tavily",
 	    "google_api_key": "google_key",
 	    "google_cse_id": "google_cse",
-	    "serpapi_key": "serpapi_key"
+	    "serpapi_key": "serpapi_key",
+	    "tavily_api_key": "tvly_key"
 	  },
 	  "entry_extraction": {
 	    "mode": "model",
@@ -83,14 +87,18 @@ class PDFCheckerConfigTests(unittest.TestCase):
         self.assertEqual(str(config.connectors.cache_path), "/tmp/custom_cache.sqlite")
         self.assertEqual(str(config.connectors.dblp_mirror_path), "/tmp/custom_mirror.jsonl")
         self.assertEqual(str(config.connectors.dblp_sqlite_path), "/tmp/custom_dblp.sqlite")
+        self.assertEqual(str(config.connectors.acl_anthology_data_dir), "/tmp/acl_data")
+        self.assertEqual(str(config.connectors.acl_anthology_repo_path), "/tmp/acl_repo")
         self.assertEqual(config.connectors.semantic_scholar_api_key, "s2_key")
         self.assertEqual(config.connectors.govinfo_api_key, "govinfo_key")
         self.assertEqual(config.connectors.searxng_base_url, "http://localhost:8080")
         self.assertEqual(config.connectors.ncbi_api_key, "ncbi_key")
         self.assertEqual(config.connectors.ncbi_email, "user@example.com")
+        self.assertEqual(config.connectors.web_search_provider, "tavily")
         self.assertEqual(config.connectors.google_api_key, "google_key")
         self.assertEqual(config.connectors.google_cse_id, "google_cse")
         self.assertEqual(config.connectors.serpapi_key, "serpapi_key")
+        self.assertEqual(config.connectors.tavily_api_key, "tvly_key")
         self.assertEqual(config.entry_extraction.mode, "model")
         self.assertEqual(config.entry_extraction.provider, "bedrock")
         self.assertEqual(config.entry_extraction.chunk_chars, 9000)
@@ -160,6 +168,17 @@ class PDFCheckerConfigTests(unittest.TestCase):
         self.assertEqual(config.entry_extraction.mode, "model")
         self.assertEqual(config.entry_extraction.provider, "local")
         self.assertEqual(config.entry_extraction.local.model_path, "/tmp/local-model")
+
+    def test_web_search_provider_env_override(self) -> None:
+        config = load_pdf_checker_config(
+            env={
+                "CITATION_CHECKER_CONFIG_PATH": "/tmp/does_not_exist_config.json",
+                "CITATION_CHECKER_WEB_SEARCH_PROVIDER": "tavily",
+                "CITATION_CHECKER_TAVILY_API_KEY": "tvly-env-key",
+            }
+        )
+        self.assertEqual(config.connectors.web_search_provider, "tavily")
+        self.assertEqual(config.connectors.tavily_api_key, "tvly-env-key")
 
 
 if __name__ == "__main__":

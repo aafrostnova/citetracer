@@ -9,7 +9,7 @@ from packages.core.models import CandidateMatch, CitationRecord, EvidenceTrace, 
 class AdjudicateTests(unittest.TestCase):
     def test_valid_verdict_for_strong_match(self) -> None:
         citation = CitationRecord(citation_id="c1", title="Attention Is All You Need", authors=["Ashish Vaswani"], year=2017)
-        candidate = CandidateMatch(connector="dblp_offline", score=0.95, title="Attention Is All You Need", authors=["Ashish Vaswani"], year=2017)
+        candidate = CandidateMatch(connector="dblp_offline", title="Attention Is All You Need", authors=["Ashish Vaswani"], year=2017)
         evidence = [
             EvidenceTrace(
                 connector="dblp_offline",
@@ -40,11 +40,10 @@ class AdjudicateTests(unittest.TestCase):
         verdict = adjudicate(citation, [], evidence)
         self.assertEqual(verdict.verdict, VerdictLabel.INSUFFICIENT_EVIDENCE)
 
-    def test_potential_verdict_for_mid_score_match(self) -> None:
+    def test_potential_verdict_for_metadata_conflict(self) -> None:
         citation = CitationRecord(citation_id="c3", title="Attention Is All You Need", authors=["A. Vaswani"], year=2017)
         candidate = CandidateMatch(
             connector="dblp_offline",
-            score=0.7,
             title="Attention Is All You Need",
             authors=["Ashish Vaswani"],
             year=2017,
@@ -64,11 +63,10 @@ class AdjudicateTests(unittest.TestCase):
         verdict = adjudicate(citation, [candidate], evidence)
         self.assertEqual(verdict.verdict, VerdictLabel.POTENTIAL_REFERENCE)
 
-    def test_fake_verdict_for_low_score_hard_mismatch(self) -> None:
+    def test_fake_verdict_for_hard_mismatch(self) -> None:
         citation = CitationRecord(citation_id="c4", title="Attention Is All You Need", authors=["Ashish Vaswani"], year=2017)
         candidate = CandidateMatch(
             connector="dblp_offline",
-            score=0.2,
             title="Completely Different Paper",
             authors=["Other Author"],
             year=2024,
