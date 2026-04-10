@@ -1,4 +1,5 @@
 {
+  "citation_parse_method": "ocr_llm_extract",
   "connectors": {
     "cache_path": "data/cache/connector_cache.sqlite",
     "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
@@ -38,7 +39,7 @@
     }
   },
   "citation_reparse": {
-    "enabled": true,
+    "enabled": false,
     "provider": "bedrock",
     "max_new_tokens": 4048,
     "temperature": 0.0,
