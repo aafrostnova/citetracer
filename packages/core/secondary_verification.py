@@ -121,9 +121,11 @@ class SecondaryVerifier:
         ref_authors: list[str],
         cand_authors: list[str],
     ) -> DiscrepancyEvidence:
+        import re as _re
         mismatched_pairs: list[tuple[str, str]] = []
         ref_norm = [normalize_author(a) for a in ref_authors]
-        cand_norm = [normalize_author(a) for a in cand_authors]
+        # Strip DBLP disambiguation suffixes (e.g. "mark chen 0003" → "mark chen")
+        cand_norm = [_re.sub(r"\s+\d{4,}$", "", normalize_author(a)).strip() for a in cand_authors]
 
         for r_name in ref_norm:
             found = False
@@ -206,11 +208,17 @@ class SecondaryVerifier:
         cand_authors: list[str],
     ) -> DiscrepancyEvidence:
         # If candidate has arXiv ID, check version history for author count changes
+        max_count = max(len(ref_authors), len(cand_authors))
+        min_count = min(len(ref_authors), len(cand_authors))
+        count_ratio = min_count / max_count if max_count > 0 else 0
+
         arxiv_id = candidate.arxiv_id or (candidate.raw_record.get("arxiv_id") if candidate.raw_record else "")
         if self.arxiv and arxiv_id:
             try:
                 versions = self.arxiv.fetch_version_history(arxiv_id, self.policy)
-                if len(versions) > 1:
+                if len(versions) > 1 and count_ratio >= 0.5:
+                    # Only accept version-history explanation for moderate differences
+                    # (at most 2x). Extreme differences (e.g. 10 vs 53) are not version changes.
                     return DiscrepancyEvidence(
                         field="authors",
                         discrepancy_type="author_list_change",
@@ -218,7 +226,8 @@ class SecondaryVerifier:
                         explanation=(
                             f"Paper has {len(versions)} arXiv versions; "
                             f"author list may have changed across versions "
-                            f"(ref: {len(ref_authors)} authors, candidate: {len(cand_authors)} authors)."
+                            f"(ref: {len(ref_authors)} authors, candidate: {len(cand_authors)} authors, "
+                            f"ratio: {count_ratio:.2f})."
                         ),
                         evidence_sources=["arxiv_version_history"],
                         raw_evidence={"versions": versions},
@@ -231,8 +240,9 @@ class SecondaryVerifier:
             discrepancy_type="author_list_change",
             evidence_found=False,
             explanation=(
-                f"Author count differs (ref: {len(ref_authors)}, candidate: {len(cand_authors)}) "
-                f"with no version history to explain the change."
+                f"Author count differs drastically (ref: {len(ref_authors)}, candidate: {len(cand_authors)}, "
+                f"ratio: {count_ratio:.2f}). "
+                f"{'Version history cannot explain such a large change.' if count_ratio < 0.5 else 'No version history to explain the change.'}"
             ),
         )
 
@@ -594,9 +604,13 @@ def _is_initial_match(name_a: str, name_b: str) -> bool:
     for s_part, l_part in zip(shorter, longer):
         if s_part == l_part:
             continue
+        # Single-char initial: "a" matches "ashish"
         if len(s_part) == 1 and l_part.startswith(s_part):
             continue
         if len(l_part) == 1 and s_part.startswith(l_part):
+            continue
+        # Truncated prefix: "ria" matches "rianne" (one is prefix of the other)
+        if l_part.startswith(s_part) or s_part.startswith(l_part):
             continue
         return False
     return True

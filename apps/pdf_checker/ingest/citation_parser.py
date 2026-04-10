@@ -28,7 +28,16 @@ TITLE_STOP_PREFIXES = (
     "//",
     "issn ",
 )
-ENTRY_PREFIX_RE = re.compile(r"^\s*(?:\[\d{1,3}\]|\(\d{1,3}\)|\d{1,3}\.)\s*")
+# Matches a leading entry/reference marker that should be stripped before parsing.
+# Handles:
+#   [12]            - bracketed numeric (Vancouver/IEEE)
+#   (12)            - parenthesized numeric
+#   12.             - numeric + period (numbered list)
+#   374             - bare PDF line number (1-4 digits, no period)
+#                      Common in OCR'd journal pages with line numbering.
+ENTRY_PREFIX_RE = re.compile(
+    r"^\s*(?:\[\d{1,4}\]|\(\d{1,4}\)|\d{1,4}\.|\d{1,4}(?=\s+[A-Z]))\s*"
+)
 INITIALS_TOKEN_RE = re.compile(r"^(?:[A-Z](?:\.)?){1,4}$")
 APA_RE = re.compile(
     r"^(?P<authors>.+?)\(\s*(?:19|20)\d{2}[a-z]?\s*\)\.\s*(?P<title>.+?)(?:\.\s+|$)",
@@ -100,6 +109,10 @@ def _extract_text_from_converse_response(response: dict[str, Any]) -> str:
 def _split_reference_segments(entry: str) -> list[str]:
     # Avoid splitting on initials like "T. J. M." while still splitting sentence boundaries.
     protected = re.sub(r"\b([A-Z])\.", r"\1§", entry)
+    # Avoid splitting on version numbers like "Llada2. 0", "v2. 0", "GPT-3. 5"
+    # — any digit followed by ". " followed by another digit is a version separator,
+    # not a sentence boundary.
+    protected = re.sub(r"(\d)\.(\s+\d)", r"\1§\2", protected)
     protected = re.sub(r"\s+", " ", protected).strip()
     parts = [part.strip(" .;") for part in protected.split(". ") if part.strip(" .;")]
     segments = [part.replace("§", ".").strip(" .;") for part in parts]
@@ -791,13 +804,19 @@ def _split_venue_fields(venue: str) -> tuple[str, str, str, str]:
         idx = remaining.find(pub)
         if idx < 0:
             continue
+        if idx == 0:
+            continue
         # Check that publisher is at a sentence/clause boundary (preceded by ". " or ", " or start)
         before_char = remaining[idx - 1] if idx > 0 else ""
         before_2 = remaining[max(0, idx - 2):idx]
-        is_standalone = idx == 0 or before_2 in (". ", ", ") or before_char in (".", ",", ";")
+        before = remaining[:idx].rstrip(", .")
+        is_standalone = before_2 in (". ", ", ") or before_char in (".", ",", ";")
         if is_standalone:
+            # Keep publisher names inside venue strings for journal/proceedings-style citations
+            # such as "IEEE Transactions ..." or "... Springer, 2013".
+            if before and _looks_like_venue_text(before):
+                continue
             publisher = pub
-            before = remaining[:idx].rstrip(", .")
             after = remaining[idx + len(pub):].lstrip(", .")
             remaining = (before + " " + after).strip() if after else before
             break
@@ -984,12 +1003,18 @@ def _run_llm_reparse_on_raw(
         "Reference:\n"
         f"{raw_text}\n\n"
         "Return only valid JSON with exact keys:\n"
-        '{"title": "", "authors": [], "venue": "", "year": null, "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
+        '{"title": "", "authors": [], "venue": "", "year": null, "volume": "", "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
         "Rules:\n"
         "- authors must be an array of strings.\n"
+        "- IMPORTANT: If the reference uses 'et al.', 'et al', 'others', or 'and others' "
+        "to indicate that the author list was truncated, you MUST include that marker as "
+        "the LAST item in the authors array verbatim (e.g., ['Tom Brown', 'Benjamin Mann', "
+        "..., 'et al.']). Do NOT silently drop it — downstream code uses this marker to "
+        "detect that the author list is intentionally partial.\n"
         "- year must be integer or null.\n"
         "- venue is ONLY the journal or conference name (e.g., 'NeurIPS', 'Nature', 'Proceedings of EMNLP 2021'). Do NOT include pages, volume, issue, location, or publisher in venue.\n"
-        "- pages is the page range (e.g., '1234-1245'). Empty if not present.\n"
+        "- volume is the volume number (e.g., '104', '15'). Empty if not present.\n"
+        "- pages is the page range (e.g., '1234-1245'). Recognize 'pp.' as pages. Empty if not present.\n"
         "- publisher is the publishing organization (e.g., 'Association for Computational Linguistics', 'Springer'). Empty if not present.\n"
         "- location is the conference location (e.g., 'Online', 'Seoul, Korea'). Empty if not present.\n"
         "- doi/arxiv_id/url should be plain strings (empty if unknown).\n"
@@ -1076,6 +1101,11 @@ def _run_llm_reparse_on_raw_bedrock(
         '{"title": "", "authors": [], "venue": "", "year": null, "volume": "", "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
         "Rules:\n"
         "- authors must be an array of strings.\n"
+        "- IMPORTANT: If the reference uses 'et al.', 'et al', 'others', or 'and others' "
+        "to indicate that the author list was truncated, you MUST include that marker as "
+        "the LAST item in the authors array verbatim (e.g., ['Tom Brown', 'Benjamin Mann', "
+        "..., 'et al.']). Do NOT silently drop it — downstream code uses this marker to "
+        "detect that the author list is intentionally partial.\n"
         "- year must be integer or null.\n"
         "- venue is ONLY the journal or conference name (e.g., 'NeurIPS', 'Nature', 'Proceedings of the Indian Academy of Sciences'). Do NOT include volume, pages, issue, location, or publisher in venue.\n"
         "- volume is the volume number (e.g., '104', '15'). Empty if not present.\n"
@@ -1100,6 +1130,47 @@ def _run_llm_reparse_on_raw_bedrock(
     if payload is None:
         return None
     return _normalize_llm_reparse_result(payload)
+
+
+# Markers that indicate "et al." truncation in an author list (case-insensitive)
+_ET_AL_MARKER_RE = re.compile(
+    r"\b(?:et\s*\.?\s*al\s*\.?|and\s+others|others)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_et_al_token(text: str) -> bool:
+    """True if a single string is an et al. / others marker."""
+    cleaned = re.sub(r"[\s.]+", "", str(text or "")).lower()
+    return cleaned in {"etal", "andothers", "others"}
+
+
+def _ensure_et_al_preserved(
+    new_authors: list[str],
+    raw_text: str,
+    original_authors: list[str],
+) -> list[str]:
+    """Re-add 'et al.' to author list if the LLM dropped it.
+
+    LLMs frequently ignore 'preserve et al.' prompt instructions and silently
+    strip the marker. This is a problem because downstream R3 detection relies
+    on the marker to know the author list is intentionally partial.
+
+    Detection: if the original raw_text contains 'et al.' / 'others' / 'and
+    others' AND the new author list doesn't end with such a marker, append
+    'et al.' as the last item.
+    """
+    if not new_authors:
+        return new_authors
+    # Already has marker?
+    if any(_is_et_al_token(a) for a in new_authors):
+        return new_authors
+    # Was the marker present in the raw text or the rule-parser output?
+    raw_has_marker = bool(_ET_AL_MARKER_RE.search(raw_text or ""))
+    orig_has_marker = any(_is_et_al_token(a) for a in (original_authors or []))
+    if raw_has_marker or orig_has_marker:
+        return list(new_authors) + ["et al."]
+    return new_authors
 
 
 def _apply_llm_reparse_if_needed(
@@ -1143,6 +1214,9 @@ def _apply_llm_reparse_if_needed(
 
     new_title = str(parsed.get("title", "") or "").strip()
     new_authors = [str(item).strip() for item in parsed.get("authors", []) if str(item).strip()]
+    # Post-process: re-add 'et al.' marker if it was in the raw text but the LLM
+    # dropped it (LLMs often ignore "preserve et al" prompt instructions).
+    new_authors = _ensure_et_al_preserved(new_authors, record.raw_text or "", record.authors or [])
     new_venue = str(parsed.get("venue", "") or "").strip()
     new_year = parsed.get("year")
     new_volume = str(parsed.get("volume", "") or "").strip()

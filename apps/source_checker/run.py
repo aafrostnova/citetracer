@@ -16,6 +16,32 @@ from .ingest.citation_linker import build_citation_records
 from .ingest.tex_parser import parse_tex_directory
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_input_dir(input_dir: str | Path) -> Path:
+    raw_path = Path(input_dir)
+    if raw_path.exists():
+        return raw_path
+
+    repo_candidate = (_repo_root() / raw_path).resolve()
+    if repo_candidate.exists():
+        return repo_candidate
+
+    raw_text = raw_path.as_posix()
+    legacy_prefix = "data/fixtures/"
+    if raw_text.startswith(legacy_prefix):
+        remapped = Path("data") / raw_text[len(legacy_prefix):]
+        if remapped.exists():
+            return remapped
+        repo_remapped = (_repo_root() / remapped).resolve()
+        if repo_remapped.exists():
+            return repo_remapped
+
+    return raw_path
+
+
 def _cache_path() -> Path:
     return Path(os.getenv("CITATION_CHECKER_CACHE_PATH", "data/cache/connector_cache.sqlite"))
 
@@ -29,7 +55,7 @@ def run_source_check(
     out_path: str | Path,
     orchestrator: ConnectorOrchestrator | None = None,
 ) -> dict:
-    input_dir = Path(input_dir)
+    input_dir = _resolve_input_dir(input_dir)
     out_path = Path(out_path)
 
     key_to_locations = parse_tex_directory(input_dir)

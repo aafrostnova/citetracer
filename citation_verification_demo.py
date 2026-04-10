@@ -303,6 +303,7 @@ def _slim_report(report_dict: dict[str, Any]) -> dict[str, Any]:
                 "citation_id": citation.get("citation_id", ""),
                 "title": citation.get("reference_snapshot", {}).get("title", ""),
                 "validation_result": citation.get("verdict", ""),
+                "taxonomy_subtype": citation.get("taxonomy_subtype", []),
                 "evidence_sources": citation.get("evidence_sources", []),
                 "candidate_sources": candidate_sources,
                 "error_reason": final_reason,
@@ -676,6 +677,180 @@ class BedrockWebSearchEnricher:
         return enriched
 
 
+class BedrockStructuredJudge:
+    """Agent 3: LLM judge for structured source candidates. Returns POTENTIAL or FAKE only."""
+
+    def __init__(self, model_id: str, region: str, bearer_token: str | None = None) -> None:
+        self.model_id = model_id
+        self.client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+
+    def judge(self, citation, candidate, comparison, evidence) -> Any:
+        from packages.core.models import LLMJudgment, VerdictLabel, FieldComparisonResult
+
+        # Build field status summary
+        fs = comparison.field_status if isinstance(comparison, FieldComparisonResult) else comparison.get("field_status", {})
+        field_lines = []
+        for fname, info in (fs.items() if isinstance(fs, dict) else []):
+            status = info.get("status", "")
+            if status not in ("both_missing",):
+                ref = str(info.get("reference", ""))[:60]
+                cand = str(info.get("candidate", ""))[:60]
+                field_lines.append(f"  {fname}: {status} (ref='{ref}' cand='{cand}')")
+
+        evidence_lines = []
+        for ev in evidence:
+            status = "EXPLAINED" if ev.evidence_found else "UNEXPLAINED"
+            evidence_lines.append(f"  {ev.field}: [{status}] {ev.explanation[:100]}")
+
+        prompt = (
+            "You are a citation field comparison specialist.\n"
+            f"Citation: Title='{citation.title}' Authors={citation.authors} "
+            f"Venue='{citation.venue}' Year={citation.year}\n"
+            f"Candidate (from {candidate.connector}): Title='{candidate.title}' "
+            f"Authors={candidate.authors} Venue='{candidate.venue}' Year={candidate.year}\n\n"
+            f"Field comparison:\n" + "\n".join(field_lines) + "\n\n"
+            f"Secondary evidence:\n" + ("\n".join(evidence_lines) if evidence_lines else "  (none)") + "\n\n"
+            "TASK: Determine label and list ALL detected issues.\n"
+            "- POTENTIAL: discrepancies exist but are explained (name variant, version diff)\n"
+            "- HALLUCINATED: ANY unexplained error → HALLUCINATED. List ALL errors found.\n"
+            "You CANNOT return REAL/VALID. Only the rule-based system declares REAL.\n"
+            "IMPORTANT: Venue 'Personal Blog', 'example.com', or any non-academic generic venue is HALLUCINATED (H9).\n"
+            "A preprint-publication difference (arXiv vs conference) is NOT an excuse for completely different venues.\n\n"
+            "TAXONOMY — list ALL that apply:\n"
+            "  POTENTIAL: P1 (version diff), P2 (author name variant)\n"
+            "  HALLUCINATED:\n"
+            "    H1: completely fabricated  H2: title error  H3: author error\n"
+            "    H4: venue error  H5: year error  H6: DOI/identifier error\n"
+            "    H7: pages/volume error  H8: sibling paper confusion  H9: non-existent source\n\n"
+            'Return JSON:\n'
+            '{"label": "POTENTIAL"/"HALLUCINATED", "taxonomy": ["H2", "H3"], "reason": "..."}\n'
+            "If HALLUCINATED, taxonomy must list ALL detected errors (e.g. [\"H2\", \"H5\"]).\n"
+            "If POTENTIAL, taxonomy lists potential issues (e.g. [\"P2\"]).\n"
+            "Return JSON only."
+        )
+
+        try:
+            response = self.client.converse(
+                modelId=self.model_id,
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"temperature": 0, "maxTokens": 512},
+            )
+            text = _extract_text_from_converse_response(response)
+            parsed = _parse_json_from_text(text)
+        except Exception as exc:
+            return LLMJudgment(verdict=VerdictLabel.FAKE_REFERENCE, note=f"LLM error: {exc}")
+
+        label_str = str(parsed.get("label", parsed.get("verdict", "HALLUCINATED"))).strip().upper()
+        if "POTENTIAL" in label_str:
+            verdict = VerdictLabel.POTENTIAL_REFERENCE
+        else:
+            verdict = VerdictLabel.FAKE_REFERENCE
+
+        raw_tax = parsed.get("taxonomy", [])
+        if isinstance(raw_tax, str):
+            taxonomy = [t.strip() for t in raw_tax.split(",") if t.strip()]
+        elif isinstance(raw_tax, list):
+            taxonomy = [str(t).strip() for t in raw_tax if str(t).strip()]
+        else:
+            taxonomy = []
+
+        return LLMJudgment(
+            verdict=verdict,
+            taxonomy=taxonomy,
+            confidence=float(parsed.get("confidence", 0.5)),
+            note=str(parsed.get("reason", parsed.get("note", "")) or "").strip(),
+            raw_response=parsed,
+        )
+
+
+class BedrockExistenceJudge:
+    """Agent 4: LLM judge for web search candidates. Returns VALID/POTENTIAL/FAKE."""
+
+    def __init__(self, model_id: str, region: str, bearer_token: str | None = None) -> None:
+        self.model_id = model_id
+        self.client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+        self.source_paper_title: str = ""
+
+    def judge(self, citation, candidate, source_paper_title: str = "") -> Any:
+        from packages.core.models import LLMJudgment, VerdictLabel
+
+        raw = candidate.raw_record if isinstance(candidate.raw_record, dict) else {}
+        search_text = str(raw.get("search_result_text", "") or "").strip()
+        raw_content = str(raw.get("raw_content", "") or "")
+        evidence_text = raw_content[:3000] if raw_content else search_text[:2000]
+
+        source_title = source_paper_title or self.source_paper_title
+        source_line = ""
+        if source_title:
+            source_line = (
+                f"IMPORTANT: The CITING paper is titled '{source_title}'. "
+                f"If a search result IS this paper or its reference list, reject it.\n"
+            )
+
+        citation_author_count = len([a for a in citation.authors if str(a or "").strip()])
+        prompt = (
+            "You are a citation existence checker.\n"
+            f"{source_line}"
+            f"Citation: Title='{citation.title}' Authors={citation.authors} "
+            f"AuthorCount={citation_author_count} Venue='{citation.venue}' Year={citation.year}\n\n"
+            f"Search evidence:\n{evidence_text}\n\n"
+            "TASK: Does this search result confirm the cited work exists? List ALL issues found.\n"
+            "- REAL: source IS the cited work with ALL metadata matching\n"
+            "- POTENTIAL: partial evidence or source deleted/moved\n"
+            "- HALLUCINATED: any error found or no evidence the work exists\n\n"
+            "RULES:\n"
+            "1. CIRCULAR REFERENCE: if result is a DIFFERENT paper citing this work → HALLUCINATED\n"
+            "2. Non-academic sources (tweets, blogs, GitHub) are legitimate\n"
+            "3. Title must match. Different title = different work\n"
+            "4. Without 'et al': ALL authors must be present\n"
+            "5. Year must match when provided\n\n"
+            "TAXONOMY — list ALL that apply:\n"
+            "  REAL: R1 (exact match), R4 (non-academic verified)\n"
+            "  POTENTIAL: P1 (version diff), P2 (author name variant), P3 (unstable source)\n"
+            "  HALLUCINATED: H1 (fabricated), H2 (title error), H3 (author error),\n"
+            "    H4 (venue error), H5 (year error), H6 (DOI error), H9 (non-existent source)\n\n"
+            'Return JSON:\n'
+            '{"label": "REAL"/"POTENTIAL"/"HALLUCINATED", "taxonomy": ["R4"], "reason": "..."}\n'
+            "If HALLUCINATED, taxonomy lists ALL errors (e.g. [\"H2\", \"H3\"]).\n"
+            "Return JSON only."
+        )
+
+        try:
+            response = self.client.converse(
+                modelId=self.model_id,
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"temperature": 0, "maxTokens": 512},
+            )
+            text = _extract_text_from_converse_response(response)
+            parsed = _parse_json_from_text(text)
+        except Exception as exc:
+            return LLMJudgment(verdict=VerdictLabel.FAKE_REFERENCE, note=f"LLM error: {exc}")
+
+        label_str = str(parsed.get("label", parsed.get("verdict", "HALLUCINATED"))).strip().upper()
+        if "REAL" in label_str or "VALID" in label_str:
+            verdict = VerdictLabel.VALID
+        elif "POTENTIAL" in label_str:
+            verdict = VerdictLabel.POTENTIAL_REFERENCE
+        else:
+            verdict = VerdictLabel.FAKE_REFERENCE
+
+        raw_tax = parsed.get("taxonomy", [])
+        if isinstance(raw_tax, str):
+            taxonomy = [t.strip() for t in raw_tax.split(",") if t.strip()]
+        elif isinstance(raw_tax, list):
+            taxonomy = [str(t).strip() for t in raw_tax if str(t).strip()]
+        else:
+            taxonomy = []
+
+        return LLMJudgment(
+            verdict=verdict,
+            taxonomy=taxonomy,
+            confidence=float(parsed.get("confidence", 0.5)),
+            note=str(parsed.get("reason", parsed.get("note", "")) or "").strip(),
+            raw_response=parsed,
+        )
+
+
 class BedrockStrictMatchResolver(LLMResolver):
     def __init__(
         self,
@@ -748,27 +923,43 @@ class BedrockStrictMatchResolver(LLMResolver):
             "{\n"
             '  "match": true/false,\n'
             '  "matched_result": <number or null>,\n'
+            '  "taxonomy": "R1/R2/R3/P1/P2/H2a/H3a/H3b/H3c/H4/H5a/H5d/H6/...",\n'
             '  "note": "brief reason"\n'
             "}\n"
             "MATCHING CRITERIA:\n"
-            "1. Title must match COMPLETELY.\n"
-            "- All significant words must be present.\n"
-            '- Ignore only case, punctuation, and articles ("a", "an", "the").\n'
-            "2. Authors must match STRICTLY in order.\n"
-            "- Treat 'et al' as an omission marker, NOT as an author name.\n"
-            "- If the citation does NOT contain 'et al', the citation and candidate must have the SAME number of authors.\n"
-            "- If the citation contains 'et al', compare only the explicit authors before 'et al'.\n"
-            "- Those explicit authors must match the candidate's leading authors one-by-one and in the SAME order.\n"
-            "- If any author is inserted, missing, or shifted before the 'et al' boundary, match must be false.\n"
-            "3. Venue matching rules:\n"
-            '- If citation venue is "arXiv" OR downloaded content is from arXiv -> ALLOW any venue difference.\n'
-            "- If citation venue is a conference (e.g., NeurIPS, ICML, CVPR) AND downloaded content is from a DIFFERENT conference -> REJECT.\n"
-            "- If citation venue is conference and downloaded content is journal (or vice versa) -> ALLOW.\n"
-            "- Year differences are acceptable if the work is the same (e.g., arXiv 2020, conference 2021).\n"
+            "1. Title must match COMPLETELY. Ignore only case, punctuation, articles.\n"
+            "2. Authors must match STRICTLY in order. Treat 'et al'/'Others' as omission markers.\n"
+            "   - Without 'et al': citation and candidate must have the SAME number of authors.\n"
+            "   - With 'et al': compare only the explicit authors before 'et al'.\n"
+            "3. Venue: arXiv allows any venue difference. Same conference required otherwise.\n"
+            "4. Year differences acceptable if same work (e.g., arXiv 2020, conference 2021).\n"
+            "\n"
+            "TAXONOMY — classify the result into one of these subtypes:\n"
+            "REAL (match=true):\n"
+            "  R1: Exact match — all fields verified\n"
+            "  R2: Format variant — only case/abbreviation/initial differences\n"
+            "  R3: Et al. abbreviation — author list truncated with et al., listed authors correct\n"
+            "POTENTIAL (match=true, but with caveats):\n"
+            "  P1: Version difference — metadata matches an older arXiv version\n"
+            "  P2: Author name variant — plausible nickname/transliteration (Katherine→Kate)\n"
+            "HALLUCINATED (match=false):\n"
+            "  H1: Completely fabricated — no trace of this paper anywhere\n"
+            "  H2a: Word substitution — 1-2 title words replaced with synonyms\n"
+            "  H2b: Title paraphrase — title rephrased with different wording\n"
+            "  H2c: Title fabrication — semantically different title\n"
+            "  H3a: Author addition/deletion — wrong number of authors (no et al.)\n"
+            "  H3b: Author reordering — author order wrong\n"
+            "  H3c: Author fabrication — entirely fake author names\n"
+            "  H4: Venue/year fabrication — wrong venue AND year\n"
+            "  H5a: DOI fabrication — DOI resolves to different paper\n"
+            "  H5c: Date error — year is verifiably wrong\n"
+            "  H5d: Venue mismatch — paper exists but at different venue\n"
+            "  H5e: Pages/volume fabrication — wrong page numbers\n"
+            "  H6: Sibling paper confusion — metadata mixed from two papers\n"
+            "\n"
             "IMPORTANT:\n"
-            "- match = true only if title matches AND the strict author rule passes AND venue rules are satisfied.\n"
-            "- match = false if title mismatch OR strict author rule fails OR venue rule is violated.\n"
-            "- Do NOT guess. Do NOT use partial matches. Be strict and conservative.\n"
+            "- match=true only if title+authors+venue all pass. Be strict.\n"
+            "- Always provide the most specific taxonomy subtype.\n"
             "Return JSON only."
         )
 
@@ -792,29 +983,50 @@ class BedrockStrictMatchResolver(LLMResolver):
             "{\n"
             '  "match": true/false,\n'
             '  "matched_result": <number or null>,\n'
+            '  "taxonomy": "R1/R2/R3/R4/P1/P2/P3/H1/H2a/H3a/...",\n'
             '  "note": "brief reason"\n'
             "}\n"
             "EXISTENCE CHECK RULES:\n"
-            "1. Use ONLY info EXPLICITLY PRESENT in the search result text. Do not infer or assume.\n"
-            "2. CRITICAL — CIRCULAR REFERENCE: If the search result is a DIFFERENT paper/document whose content "
-            "merely cites or references the work in a bibliography, reference list, or footnote, that is NOT "
-            "evidence the cited work exists independently. The search result must be the cited work ITSELF "
-            "(its own landing page, database entry, or a page primarily ABOUT it). "
-            "Clue: if the search result title differs from the citation title, it is likely another work — match=false.\n"
-            "3. Citations can be tweets, blog posts, news articles, software packages, forum posts — not just "
-            "academic papers. A social media repost or quote of a tweet/post confirms the original exists.\n"
-            "4. Title of the search result must match or directly correspond to the cited work's title. "
-            "If the search result has a completely different title, match=false.\n"
-            "5. When citation is a tweet or social media post: if the search result quotes the exact text and "
-            "attributes it to the same person, that confirms existence even without formal publication metadata.\n"
-            "6. Authors must align in content and order. Treat 'et al', 'Others' as omission markers.\n"
-            "7. If the citation does NOT contain 'et al' or 'Others', ALL listed authors must be explicitly "
-            "supported by the search result. Partial author matches are NOT sufficient.\n"
-            "8. If the citation uses 'et al' or 'Others', compare only the explicitly listed authors.\n"
-            "9. Venue must align when provided. If citation omits venue, absence of venue is acceptable.\n"
-            "10. Year must align when provided. Missing year evidence forces match=false.\n"
-            "11. If title, authors, and year align in the search result with no conflicting info, match=true.\n"
-            "12. If the result is generic, off-topic, or about a different work, match=false.\n"
+            "1. Use ONLY info EXPLICITLY PRESENT in the search result text. Do not infer.\n"
+            "2. CIRCULAR REFERENCE: If the search result is a DIFFERENT paper that merely cites the work "
+            "in its bibliography, match=false. The result must be the cited work ITSELF.\n"
+            "3. Citations can be tweets, blogs, news, GitHub, software packages — not just papers.\n"
+            "4. Title must match or directly correspond to the cited work.\n"
+            "5. For tweets/social media: if result quotes exact text and attributes to same person, match=true.\n"
+            "6. Authors must align. Treat 'et al'/'Others' as omission markers.\n"
+            "7. Without 'et al': ALL listed authors must be explicitly present.\n"
+            "8. With 'et al': compare only the explicitly listed authors.\n"
+            "9. Venue must align when provided. Missing venue acceptable if citation omits it.\n"
+            "10. Year must align when provided.\n"
+            "\n"
+            "TAXONOMY — classify into one subtype:\n"
+            "REAL (match=true):\n"
+            "  R1: Exact match — all fields verified\n"
+            "  R2: Format variant — only case/abbreviation differences\n"
+            "  R3: Et al. — author list truncated, listed authors correct\n"
+            "  R4: Non-academic source verified — tweet/blog/GitHub/news confirmed to exist\n"
+            "POTENTIAL (match=true, with caveats):\n"
+            "  P1: Version difference — metadata matches older version\n"
+            "  P2: Author name variant — plausible nickname (Katherine→Kate)\n"
+            "  P3: Unstable source — source once existed but deleted/moved; indirect evidence found\n"
+            "HALLUCINATED (match=false):\n"
+            "  H1: Completely fabricated — no trace anywhere\n"
+            "  H2a: Word substitution — title words swapped with synonyms\n"
+            "  H2b: Title paraphrase — title rephrased\n"
+            "  H2c: Title fabrication — semantically different title\n"
+            "  H3a: Author addition/deletion — wrong author count (no et al.)\n"
+            "  H3b: Author reordering — wrong author order\n"
+            "  H3c: Author fabrication — entirely fake names\n"
+            "  H4: Venue/year fabrication — wrong venue AND year\n"
+            "  H5a: DOI fabrication — DOI points to different paper\n"
+            "  H5c: Date error — wrong year\n"
+            "  H5d: Venue mismatch — wrong venue only\n"
+            "  H5e: Pages/volume fabrication — wrong pages\n"
+            "  H6: Sibling paper confusion — metadata mixed from two papers\n"
+            "  H7: Non-existent source — URL/tweet/blog doesn't exist\n"
+            "\n"
+            "Non-academic citations are legitimate. Do NOT reject just because it's not a formal paper.\n"
+            "Always provide the most specific taxonomy subtype.\n"
             "Return JSON only."
         )
 
@@ -862,14 +1074,17 @@ class BedrockStrictMatchResolver(LLMResolver):
         match = bool(parsed.get("match", False))
         note = str(parsed.get("note", "")).strip()
         matched_result = parsed.get("matched_result")
+        taxonomy = str(parsed.get("taxonomy", "") or "").strip()
 
         if match:
             return {
                 "label_override": "VALID",
+                "taxonomy": taxonomy,
                 "note": f"Bedrock strict match=true matched_result={matched_result}. {note}".strip(),
             }
         return {
             "label_override": str(proposed_verdict.value),
+            "taxonomy": taxonomy,
             "note": f"Bedrock strict match=false matched_result={matched_result}. {note}".strip(),
         }
 
@@ -1040,10 +1255,37 @@ def main() -> None:
         flush=True,
     )
 
+    # Build multi-agent judges
+    # Build cascading 3-agent system
+    from packages.core.bedrock_agents import BedrockValidAgent, BedrockPotentialAgent, BedrockHallucinatedAgent
+    from packages.core.extractor_agent import BedrockExtractorAgent
+
+    valid_agent = None
+    potential_agent = None
+    hallucinated_agent = None
+    extractor_agent = None
+    if cfg.verification_llm.enabled and cfg.verification_llm.provider == "bedrock":
+        bedrock_client = _build_bedrock_client(
+            region=cfg.verification_llm.bedrock.region,
+            bearer_token=cfg.verification_llm.bedrock.bearer_token,
+        )
+        model_id = str(cfg.verification_llm.bedrock.model_id)
+        valid_agent = BedrockValidAgent(bedrock_client, model_id)
+        potential_agent = BedrockPotentialAgent(bedrock_client, model_id)
+        hallucinated_agent = BedrockHallucinatedAgent(bedrock_client, model_id)
+        extractor_agent = BedrockExtractorAgent(bedrock_client, model_id)
+        print(f"[setup] cascading 3-agent + extractor enabled (model={model_id})", flush=True)
+    else:
+        print("[setup] cascading agents disabled (no verification LLM)", flush=True)
+
     verifier = CitationVerifier(
         orchestrator=orchestrator,
         llm_resolver=llm_resolver,
         secondary_verifier=secondary_verifier,
+        valid_agent=valid_agent,
+        potential_agent=potential_agent,
+        hallucinated_agent=hallucinated_agent,
+        extractor_agent=extractor_agent,
     )
 
     aggregate = Counter()
@@ -1066,9 +1308,10 @@ def main() -> None:
         out_path = output_dir / src.name
         partial_verdicts = []
         total_citations = len(citations)
-        # Tell LLM resolver which paper we're verifying (to detect circular references)
+        # Tell LLM resolver and existence judge which paper we're verifying
+        paper_title = src.stem.replace("_", " ")
         if llm_resolver and hasattr(llm_resolver, "source_paper_title"):
-            llm_resolver.source_paper_title = src.stem.replace("_", " ")
+            llm_resolver.source_paper_title = paper_title
         for citation_idx, citation in enumerate(citations, start=1):
             print(
                 f"[run] [{idx}/{total}] paper={src.stem} citation={citation_idx}/{total_citations} "
@@ -1090,7 +1333,8 @@ def main() -> None:
             _write_json_atomic(out_path, report_dict)
             print(
                 f"[write] [{idx}/{total}] paper={src.stem} citation={citation_idx}/{total_citations} "
-                f"verdict={verdict.verdict.value} out={out_path}",
+                f"verdict={verdict.verdict.value} taxonomy={verdict.taxonomy_subtype} "
+                f"title={citation.title[:50]!r} out={out_path}",
                 flush=True,
             )
 

@@ -1,12 +1,14 @@
 """Generate hallucinated citation test data by mutating real citations.
 
-Taxonomy:
+Taxonomy (2026-04 update):
   REAL:                R1 (exact), R2 (format variant), R3 (et al.), R4 (non-academic verified)
-  POTENTIAL:           P1 (version diff), P2 (author name variant), P3 (unstable source)
-  HALLUCINATED:        H1 (fabricated), H2a-c (title), H3a-c (author), H4-H5e (meta), H6 (sibling), H7 (source)
+  POTENTIAL:           P1 (version diff), P2 (author name variant), P3 (non-academic source)
+  HALLUCINATED:        H1 (fabricated), H2 (title error), H3 (author error),
+                       H4 (venue error), H5 (year error), H6 (DOI/identifier error),
+                       H7 (pages/volume error)
 
 Uses LLM as mutator for realistic hallucinations.
-Input: directory of verified citation JSON files.
+Input: directory of verified citation JSON files, or a BibTeX file.
 Output: labeled dataset with original, mutated, label, subtype, and explanation.
 """
 from __future__ import annotations
@@ -29,7 +31,7 @@ class MutationSample:
     original: dict[str, Any]
     mutated: dict[str, Any]
     label: str           # REAL, POTENTIAL_HALLUCINATED, HALLUCINATED
-    subtype: str         # e.g. H2a, H3b, R1, P1
+    subtype: str         # e.g. H2, H3, R1, P1
     category: str        # e.g. Title, Author, Meta, Full, Source, Format
     mutation_type: str   # e.g. word_substitution, author_reordering
     explanation: str     # What was changed and why
@@ -223,7 +225,7 @@ def gen_P1_version_difference(citation: dict, **_) -> MutationSample | None:
 
 
 def gen_P2_author_name_variant(citation: dict, **_) -> MutationSample | None:
-    """P2: Replace author first name with a plausible nickname/variant (Katherine→Kate)."""
+    """P2: Replace author first name with a plausible nickname/variant."""
     mutated = deepcopy(citation)
     authors = list(mutated.get("authors", []))
     if not authors:
@@ -235,7 +237,7 @@ def gen_P2_author_name_variant(citation: dict, **_) -> MutationSample | None:
     prompt = (
         f"Replace this author's first name with a plausible nickname or shortened variant "
         f"that the same person might use (e.g., Katherine→Kate, Michael→Mike, Robert→Bob, "
-        f"William→Will, Richard→Dick, Elizabeth→Liz, 张伟→Wei Zhang vs William Zhang).\n"
+        f"William→Will, Richard→Dick, Elizabeth→Liz).\n"
         f"Original: \"{original_name}\"\n"
         f'Return JSON: {{"variant_name": "...", "explanation": "what changed"}}\n'
         f"Return JSON only."
@@ -245,7 +247,7 @@ def gen_P2_author_name_variant(citation: dict, **_) -> MutationSample | None:
         authors[idx] = result["variant_name"]
         change = result.get("explanation", "name variant applied")
     except Exception:
-        # Fallback: simple nickname
+        # Fallback: multi-letter truncation
         parts = original_name.split()
         if len(parts) >= 2 and len(parts[0]) > 4:
             authors[idx] = f"{parts[0][:3]}. {' '.join(parts[1:])}"
@@ -266,23 +268,30 @@ def gen_P2_author_name_variant(citation: dict, **_) -> MutationSample | None:
     )
 
 
-def gen_P3_unstable_source(citation: dict, **_) -> MutationSample | None:
-    """P3: Simulate a source that has been deleted/moved — change URL to broken version."""
+def gen_P3_non_academic_source(citation: dict, **_) -> MutationSample | None:
+    """P3: Simulate a non-academic source that cannot be fully verified."""
     mutated = deepcopy(citation)
     url = citation.get("url", "")
-    if not url:
-        return None
 
-    # Simulate URL change (moved/deleted)
-    if "twitter.com" in url or "x.com" in url:
-        mutated["url"] = url.replace("x.com", "twitter.com") + "?deleted=true"
-        explanation = "Tweet URL simulated as deleted/moved."
-    elif "github.com" in url:
-        mutated["url"] = url.rstrip("/") + "/tree/archived-2023"
-        explanation = "GitHub repo simulated as archived."
+    if url:
+        # Has URL: simulate it being deleted/moved
+        if "twitter.com" in url or "x.com" in url:
+            mutated["url"] = url.replace("x.com", "twitter.com") + "?deleted=true"
+            explanation = "Tweet URL simulated as deleted/moved."
+        elif "github.com" in url:
+            mutated["url"] = url.rstrip("/") + "/tree/archived-2023"
+            explanation = "GitHub repo simulated as archived."
+        else:
+            mutated["url"] = url.rstrip("/") + "/page-moved"
+            explanation = "URL simulated as moved to different location."
     else:
-        mutated["url"] = url.rstrip("/") + "/page-moved"
-        explanation = "URL simulated as moved to different location."
+        # No URL: convert to non-academic source with fabricated URL
+        fake_slug = re.sub(r"[^a-z0-9]+", "-", citation.get("title", "paper")[:30].lower()).strip("-")
+        mutated["url"] = f"https://example.com/blog/{fake_slug}-{random.randint(1000, 9999)}"
+        mutated["venue"] = "Personal Blog"
+        mutated["doi"] = ""
+        mutated["arxiv_id"] = ""
+        explanation = f"Converted to non-academic source with fabricated URL: {mutated['url']}."
 
     return MutationSample(
         original=citation,
@@ -290,231 +299,14 @@ def gen_P3_unstable_source(citation: dict, **_) -> MutationSample | None:
         label="POTENTIAL_HALLUCINATED",
         subtype="P3",
         category="Source",
-        mutation_type="unstable_source",
-        explanation=f"{explanation} Original URL: {url}. Indirect evidence (reposts, caches) may confirm existence.",
-        changed_fields=["url"],
+        mutation_type="non_academic_source",
+        explanation=f"{explanation} Original URL: {url or '(none)'}. Source cannot be fully verified via academic databases.",
+        changed_fields=[f for f in ["url", "venue", "doi", "arxiv_id"] if mutated.get(f) != citation.get(f)],
     )
 
 
 # ===========================================================================
-# HALLUCINATED generators — Title
-# ===========================================================================
-
-def gen_H2a_word_substitution(citation: dict, **_) -> MutationSample | None:
-    """H2a: Replace 1-2 key words with synonyms."""
-    mutated = deepcopy(citation)
-    original_title = citation.get("title", "")
-    if not original_title:
-        return None
-
-    prompt = (
-        f"Replace 1-2 key words in this paper title with synonyms or related terms. "
-        f"The result should look plausible but be detectably different.\n"
-        f"Original: \"{original_title}\"\n"
-        f'Return JSON: {{"mutated_title": "...", "changed_words": "word1→word2, ..."}}\n'
-        f"Return JSON only."
-    )
-    try:
-        result = _call_llm_json(prompt)
-        mutated["title"] = result["mutated_title"]
-        changed = result.get("changed_words", "")
-    except Exception:
-        words = original_title.split()
-        if len(words) > 3:
-            idx = random.randint(1, len(words) - 2)
-            old_word = words[idx]
-            words[idx] = "novel"
-            mutated["title"] = " ".join(words)
-            changed = f"{old_word}→novel"
-        else:
-            return None
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H2a",
-        category="Title",
-        mutation_type="word_substitution",
-        explanation=f"Word substitution: {changed}. Original: \"{original_title}\".",
-        changed_fields=["title"],
-    )
-
-
-def gen_H2b_title_paraphrase(citation: dict, **_) -> MutationSample | None:
-    """H2b: Rephrase with different wording."""
-    mutated = deepcopy(citation)
-    original_title = citation.get("title", "")
-    if not original_title:
-        return None
-
-    prompt = (
-        f"Paraphrase this paper title using different words but keeping similar meaning. "
-        f"It should be clearly a different title string.\n"
-        f"Original: \"{original_title}\"\n"
-        f'Return JSON: {{"mutated_title": "..."}}\n'
-        f"Return JSON only."
-    )
-    try:
-        result = _call_llm_json(prompt)
-        mutated["title"] = result["mutated_title"]
-    except Exception:
-        return None
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H2b",
-        category="Title",
-        mutation_type="title_paraphrase",
-        explanation=f"Title paraphrased. Original: \"{original_title}\". Mutated: \"{mutated['title']}\".",
-        changed_fields=["title"],
-    )
-
-
-def gen_H2c_title_fabrication(citation: dict, **_) -> MutationSample | None:
-    """H2c: Semantically different, loosely related title."""
-    mutated = deepcopy(citation)
-    original_title = citation.get("title", "")
-    if not original_title:
-        return None
-
-    prompt = (
-        f"Generate a completely different paper title that is loosely related to the same topic "
-        f"but describes a different research contribution.\n"
-        f"Original: \"{original_title}\"\n"
-        f'Return JSON: {{"mutated_title": "..."}}\n'
-        f"Return JSON only."
-    )
-    try:
-        result = _call_llm_json(prompt)
-        mutated["title"] = result["mutated_title"]
-    except Exception:
-        return None
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H2c",
-        category="Title",
-        mutation_type="title_fabrication",
-        explanation=f"Title fabricated. Original: \"{original_title}\". Fabricated: \"{mutated['title']}\".",
-        changed_fields=["title"],
-    )
-
-
-# ===========================================================================
-# HALLUCINATED generators — Author
-# ===========================================================================
-
-def gen_H3a_author_addition_deletion(citation: dict, **_) -> MutationSample | None:
-    """H3a: Add or remove authors (not explainable by version history)."""
-    mutated = deepcopy(citation)
-    authors = list(mutated.get("authors", []))
-    if not authors:
-        return None
-
-    action = random.choice(["add", "delete"]) if len(authors) >= 2 else "add"
-
-    if action == "add":
-        prompt = (
-            f"Generate a plausible but fake author name for a paper in this field.\n"
-            f"Existing authors: {authors}\n"
-            f'Return JSON: {{"fake_author": "First Last"}}\n'
-            f"Return JSON only."
-        )
-        try:
-            result = _call_llm_json(prompt)
-            fake = result["fake_author"]
-        except Exception:
-            fake = "Alexander J. Thompson"
-        pos = random.randint(0, len(authors))
-        authors.insert(pos, fake)
-        explanation = f"Added fake author '{fake}' at position {pos}. Original had {len(citation['authors'])} authors."
-    else:
-        removed_idx = random.randint(0, len(authors) - 1)
-        removed = authors.pop(removed_idx)
-        explanation = f"Removed real author '{removed}' from position {removed_idx}. Original had {len(citation['authors'])} authors."
-
-    mutated["authors"] = authors
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H3a",
-        category="Author",
-        mutation_type="author_addition_deletion",
-        explanation=explanation,
-        changed_fields=["authors"],
-    )
-
-
-def gen_H3b_author_reordering(citation: dict, **_) -> MutationSample | None:
-    """H3b: Change author order from published version."""
-    mutated = deepcopy(citation)
-    authors = list(mutated.get("authors", []))
-    if len(authors) < 2:
-        return None
-
-    original_order = list(authors)
-    # Shuffle until different from original
-    for _ in range(10):
-        random.shuffle(authors)
-        if authors != original_order:
-            break
-    else:
-        # Simple swap of first two
-        authors[0], authors[1] = authors[1], authors[0]
-
-    mutated["authors"] = authors
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H3b",
-        category="Author",
-        mutation_type="author_reordering",
-        explanation=f"Author order changed. Original: {original_order}. Reordered: {authors}.",
-        changed_fields=["authors"],
-    )
-
-
-def gen_H3c_author_fabrication(citation: dict, **_) -> MutationSample | None:
-    """H3c: Replace entire author list with fake names."""
-    mutated = deepcopy(citation)
-    authors = mutated.get("authors", [])
-    if not authors:
-        return None
-
-    n = len(authors)
-    prompt = (
-        f"Generate {n} completely fake but plausible-sounding author names for an academic paper. "
-        f"Mix different ethnic backgrounds.\n"
-        f'Return JSON: {{"authors": ["Name1", "Name2", ...]}}\n'
-        f"Return JSON only."
-    )
-    try:
-        result = _call_llm_json(prompt)
-        mutated["authors"] = result["authors"][:n]
-    except Exception:
-        mutated["authors"] = [f"Author {chr(65 + i)}" for i in range(n)]
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H3c",
-        category="Author",
-        mutation_type="author_fabrication",
-        explanation=f"All {n} authors replaced with fabricated names. Original: {authors}.",
-        changed_fields=["authors"],
-    )
-
-
-# ===========================================================================
-# HALLUCINATED generators — Full / Meta
+# HALLUCINATED generators — Full
 # ===========================================================================
 
 def gen_H1_completely_fabricated(citation: dict, **_) -> MutationSample | None:
@@ -554,13 +346,253 @@ def gen_H1_completely_fabricated(citation: dict, **_) -> MutationSample | None:
     )
 
 
-def gen_H4_venue_year_fabrication(citation: dict, **_) -> MutationSample | None:
+# ===========================================================================
+# HALLUCINATED generators — Title (H2)
+# ===========================================================================
+
+def gen_H2_word_substitution(citation: dict, **_) -> MutationSample | None:
+    """H2: Replace 1-2 key words with synonyms."""
+    mutated = deepcopy(citation)
+    original_title = citation.get("title", "")
+    if not original_title:
+        return None
+
+    prompt = (
+        f"Replace 1-2 key words in this paper title with synonyms or related terms. "
+        f"The result should look plausible but be detectably different.\n"
+        f"Original: \"{original_title}\"\n"
+        f'Return JSON: {{"mutated_title": "...", "changed_words": "word1→word2, ..."}}\n'
+        f"Return JSON only."
+    )
+    try:
+        result = _call_llm_json(prompt)
+        mutated["title"] = result["mutated_title"]
+        changed = result.get("changed_words", "")
+    except Exception:
+        words = original_title.split()
+        if len(words) > 3:
+            idx = random.randint(1, len(words) - 2)
+            old_word = words[idx]
+            words[idx] = "novel"
+            mutated["title"] = " ".join(words)
+            changed = f"{old_word}→novel"
+        else:
+            return None
+
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H2",
+        category="Title",
+        mutation_type="word_substitution",
+        explanation=f"Word substitution: {changed}. Original: \"{original_title}\".",
+        changed_fields=["title"],
+    )
+
+
+def gen_H2_title_paraphrase(citation: dict, **_) -> MutationSample | None:
+    """H2: Rephrase with different wording."""
+    mutated = deepcopy(citation)
+    original_title = citation.get("title", "")
+    if not original_title:
+        return None
+
+    prompt = (
+        f"Paraphrase this paper title using different words but keeping similar meaning. "
+        f"It should be clearly a different title string.\n"
+        f"Original: \"{original_title}\"\n"
+        f'Return JSON: {{"mutated_title": "..."}}\n'
+        f"Return JSON only."
+    )
+    try:
+        result = _call_llm_json(prompt)
+        mutated["title"] = result["mutated_title"]
+    except Exception:
+        return None
+
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H2",
+        category="Title",
+        mutation_type="title_paraphrase",
+        explanation=f"Title paraphrased. Original: \"{original_title}\". Mutated: \"{mutated['title']}\".",
+        changed_fields=["title"],
+    )
+
+
+def gen_H2_title_fabrication(citation: dict, **_) -> MutationSample | None:
+    """H2: Semantically different, loosely related title."""
+    mutated = deepcopy(citation)
+    original_title = citation.get("title", "")
+    if not original_title:
+        return None
+
+    prompt = (
+        f"Generate a completely different paper title that is loosely related to the same topic "
+        f"but describes a different research contribution.\n"
+        f"Original: \"{original_title}\"\n"
+        f'Return JSON: {{"mutated_title": "..."}}\n'
+        f"Return JSON only."
+    )
+    try:
+        result = _call_llm_json(prompt)
+        mutated["title"] = result["mutated_title"]
+    except Exception:
+        return None
+
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H2",
+        category="Title",
+        mutation_type="title_fabrication",
+        explanation=f"Title fabricated. Original: \"{original_title}\". Fabricated: \"{mutated['title']}\".",
+        changed_fields=["title"],
+    )
+
+
+# ===========================================================================
+# HALLUCINATED generators — Author (H3)
+# ===========================================================================
+
+def gen_H3_author_addition_deletion(citation: dict, **_) -> MutationSample | None:
+    """H3: Add or remove authors."""
+    mutated = deepcopy(citation)
+    authors = list(mutated.get("authors", []))
+    if not authors:
+        return None
+
+    action = random.choice(["add", "delete"]) if len(authors) >= 2 else "add"
+
+    if action == "add":
+        prompt = (
+            f"Generate a plausible but fake author name for a paper in this field.\n"
+            f"Existing authors: {authors}\n"
+            f'Return JSON: {{"fake_author": "First Last"}}\n'
+            f"Return JSON only."
+        )
+        try:
+            result = _call_llm_json(prompt)
+            fake = result["fake_author"]
+        except Exception:
+            fake = "Alexander J. Thompson"
+        pos = random.randint(0, len(authors))
+        authors.insert(pos, fake)
+        explanation = f"Added fake author '{fake}' at position {pos}. Original had {len(citation['authors'])} authors."
+    else:
+        removed_idx = random.randint(0, len(authors) - 1)
+        removed = authors.pop(removed_idx)
+        explanation = f"Removed real author '{removed}' from position {removed_idx}. Original had {len(citation['authors'])} authors."
+
+    mutated["authors"] = authors
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H3",
+        category="Author",
+        mutation_type="author_addition_deletion",
+        explanation=explanation,
+        changed_fields=["authors"],
+    )
+
+
+def gen_H3_author_reordering(citation: dict, **_) -> MutationSample | None:
+    """H3: Change author order from published version."""
+    mutated = deepcopy(citation)
+    authors = list(mutated.get("authors", []))
+    if len(authors) < 2:
+        return None
+
+    original_order = list(authors)
+    for _ in range(10):
+        random.shuffle(authors)
+        if authors != original_order:
+            break
+    else:
+        authors[0], authors[1] = authors[1], authors[0]
+
+    mutated["authors"] = authors
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H3",
+        category="Author",
+        mutation_type="author_reordering",
+        explanation=f"Author order changed. Original: {original_order}. Reordered: {authors}.",
+        changed_fields=["authors"],
+    )
+
+
+def gen_H3_author_fabrication(citation: dict, **_) -> MutationSample | None:
+    """H3: Replace entire author list with fake names."""
+    mutated = deepcopy(citation)
+    authors = mutated.get("authors", [])
+    if not authors:
+        return None
+
+    n = len(authors)
+    prompt = (
+        f"Generate {n} completely fake but plausible-sounding author names for an academic paper. "
+        f"Mix different ethnic backgrounds.\n"
+        f'Return JSON: {{"authors": ["Name1", "Name2", ...]}}\n'
+        f"Return JSON only."
+    )
+    try:
+        result = _call_llm_json(prompt)
+        mutated["authors"] = result["authors"][:n]
+    except Exception:
+        mutated["authors"] = [f"Author {chr(65 + i)}" for i in range(n)]
+
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H3",
+        category="Author",
+        mutation_type="author_fabrication",
+        explanation=f"All {n} authors replaced with fabricated names. Original: {authors}.",
+        changed_fields=["authors"],
+    )
+
+
+# ===========================================================================
+# HALLUCINATED generators — Venue (H4)
+# ===========================================================================
+
+def gen_H4_venue_fabrication(citation: dict, **_) -> MutationSample | None:
+    """H4: Change venue to wrong value (year unchanged)."""
+    mutated = deepcopy(citation)
+    original_venue = citation.get("venue", "")
+
+    venues = ["NeurIPS", "ICML", "ICLR", "CVPR", "ACL", "EMNLP", "AAAI", "Nature", "Science", "SIGIR", "KDD", "WWW"]
+    new_venue = random.choice([v for v in venues if v.lower() not in (original_venue or "").lower()] or venues)
+    mutated["venue"] = new_venue
+
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H4",
+        category="Meta",
+        mutation_type="venue_fabrication",
+        explanation=f"Venue: \"{original_venue}\" → \"{new_venue}\". Paper was never published at {new_venue}.",
+        changed_fields=["venue"],
+    )
+
+
+def gen_H4_venue_and_year(citation: dict, **_) -> MutationSample | None:
     """H4: Change venue AND year to wrong values."""
     mutated = deepcopy(citation)
     original_venue = citation.get("venue", "")
     original_year = citation.get("year")
 
-    venues = ["NeurIPS", "ICML", "ICLR", "CVPR", "ACL", "EMNLP", "AAAI", "Nature", "Science", "SIGIR", "KDD"]
+    venues = ["NeurIPS", "ICML", "ICLR", "CVPR", "ACL", "EMNLP", "AAAI", "Nature", "Science"]
     new_venue = random.choice([v for v in venues if v.lower() not in (original_venue or "").lower()] or venues)
     year_offset = random.choice([-2, -1, 1, 2])
     new_year = (original_year or 2023) + year_offset
@@ -580,45 +612,12 @@ def gen_H4_venue_year_fabrication(citation: dict, **_) -> MutationSample | None:
     )
 
 
-def gen_H5a_doi_fabrication(citation: dict, **_) -> MutationSample | None:
-    """H5a: DOI resolves to a different paper."""
-    mutated = deepcopy(citation)
-    fake_doi = f"10.{random.randint(1000, 9999)}/{random.randint(100000, 999999)}"
-    original_doi = citation.get("doi", "")
-    mutated["doi"] = fake_doi
+# ===========================================================================
+# HALLUCINATED generators — Year (H5)
+# ===========================================================================
 
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H5a",
-        category="Meta",
-        mutation_type="doi_fabrication",
-        explanation=f"DOI fabricated: \"{original_doi}\" → \"{fake_doi}\". Will resolve to wrong paper or 404.",
-        changed_fields=["doi"],
-    )
-
-
-def gen_H5b_doi_nonexistent(citation: dict, **_) -> MutationSample | None:
-    """H5b: DOI that doesn't exist at all."""
-    mutated = deepcopy(citation)
-    original_doi = citation.get("doi", "")
-    mutated["doi"] = "10.99999/nonexistent.00000"
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H5b",
-        category="Meta",
-        mutation_type="doi_nonexistent",
-        explanation=f"DOI replaced with nonexistent value. Original: \"{original_doi}\".",
-        changed_fields=["doi"],
-    )
-
-
-def gen_H5c_date_error(citation: dict, **_) -> MutationSample | None:
-    """H5c: Year is verifiably wrong."""
+def gen_H5_date_error(citation: dict, **_) -> MutationSample | None:
+    """H5: Year is verifiably wrong."""
     mutated = deepcopy(citation)
     original_year = citation.get("year")
     if not original_year:
@@ -631,7 +630,7 @@ def gen_H5c_date_error(citation: dict, **_) -> MutationSample | None:
         original=citation,
         mutated=mutated,
         label="HALLUCINATED",
-        subtype="H5c",
+        subtype="H5",
         category="Meta",
         mutation_type="date_error",
         explanation=f"Year: {original_year} → {mutated['year']}.",
@@ -639,29 +638,53 @@ def gen_H5c_date_error(citation: dict, **_) -> MutationSample | None:
     )
 
 
-def gen_H5d_venue_mismatch(citation: dict, **_) -> MutationSample | None:
-    """H5d: Paper exists but venue is wrong."""
-    mutated = deepcopy(citation)
-    original_venue = citation.get("venue", "")
+# ===========================================================================
+# HALLUCINATED generators — DOI/Identifier (H6)
+# ===========================================================================
 
-    venues = ["NeurIPS", "ICML", "ICLR", "CVPR", "ACL", "EMNLP", "AAAI", "SIGIR", "KDD", "WWW"]
-    new_venue = random.choice([v for v in venues if v.lower() not in (original_venue or "").lower()] or venues)
-    mutated["venue"] = new_venue
+def gen_H6_doi_fabrication(citation: dict, **_) -> MutationSample | None:
+    """H6: DOI resolves to a different paper."""
+    mutated = deepcopy(citation)
+    fake_doi = f"10.{random.randint(1000, 9999)}/{random.randint(100000, 999999)}"
+    original_doi = citation.get("doi", "")
+    mutated["doi"] = fake_doi
 
     return MutationSample(
         original=citation,
         mutated=mutated,
         label="HALLUCINATED",
-        subtype="H5d",
+        subtype="H6",
         category="Meta",
-        mutation_type="venue_mismatch",
-        explanation=f"Venue: \"{original_venue}\" → \"{new_venue}\". Paper was never published at {new_venue}.",
-        changed_fields=["venue"],
+        mutation_type="doi_fabrication",
+        explanation=f"DOI fabricated: \"{original_doi}\" → \"{fake_doi}\". Will resolve to wrong paper or 404.",
+        changed_fields=["doi"],
     )
 
 
-def gen_H5e_pages_fabrication(citation: dict, **_) -> MutationSample | None:
-    """H5e: Pages/volume is verifiably wrong."""
+def gen_H6_doi_nonexistent(citation: dict, **_) -> MutationSample | None:
+    """H6: DOI that doesn't exist at all."""
+    mutated = deepcopy(citation)
+    original_doi = citation.get("doi", "")
+    mutated["doi"] = "10.99999/nonexistent.00000"
+
+    return MutationSample(
+        original=citation,
+        mutated=mutated,
+        label="HALLUCINATED",
+        subtype="H6",
+        category="Meta",
+        mutation_type="doi_nonexistent",
+        explanation=f"DOI replaced with nonexistent value. Original: \"{original_doi}\".",
+        changed_fields=["doi"],
+    )
+
+
+# ===========================================================================
+# HALLUCINATED generators — Pages/Volume (H7)
+# ===========================================================================
+
+def gen_H7_pages_fabrication(citation: dict, **_) -> MutationSample | None:
+    """H7: Pages/volume is verifiably wrong."""
     mutated = deepcopy(citation)
     original_pages = citation.get("pages", "")
     original_volume = citation.get("volume", "")
@@ -677,66 +700,11 @@ def gen_H5e_pages_fabrication(citation: dict, **_) -> MutationSample | None:
         original=citation,
         mutated=mutated,
         label="HALLUCINATED",
-        subtype="H5e",
+        subtype="H7",
         category="Meta",
         mutation_type="pages_volume_fabrication",
         explanation=f"Pages: \"{original_pages}\" → \"{fake_pages}\". Volume: \"{original_volume}\" → \"{fake_volume}\".",
         changed_fields=["pages", "volume"],
-    )
-
-
-def gen_H6_sibling_confusion(citation: dict, all_citations: list[dict] | None = None, **_) -> MutationSample | None:
-    """H6: Mix metadata from two different papers."""
-    if not all_citations:
-        return None
-    mutated = deepcopy(citation)
-    candidates = [
-        c for c in all_citations
-        if c.get("title", "") != citation.get("title", "")
-        and c.get("title", "").strip()
-        and c.get("venue", "").strip()
-    ]
-    if not candidates:
-        return None
-
-    sibling = random.choice(candidates)
-    mutated["venue"] = sibling.get("venue", mutated.get("venue", ""))
-    mutated["year"] = sibling.get("year", mutated.get("year"))
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H6",
-        category="Meta",
-        mutation_type="sibling_paper_confusion",
-        explanation=(
-            f"Venue/year taken from \"{sibling.get('title', '')[:50]}\". "
-            f"Venue: \"{citation.get('venue', '')}\" → \"{mutated['venue']}\". "
-            f"Year: {citation.get('year')} → {mutated['year']}."
-        ),
-        changed_fields=["venue", "year"],
-    )
-
-
-def gen_H7_nonexistent_source(citation: dict, **_) -> MutationSample | None:
-    """H7: Non-academic URL that doesn't exist."""
-    mutated = deepcopy(citation)
-    fake_slug = re.sub(r"[^a-z0-9]+", "-", citation.get("title", "paper")[:30].lower()).strip("-")
-    mutated["url"] = f"https://example.com/blog/{fake_slug}-{random.randint(1000, 9999)}"
-    mutated["venue"] = "Personal Blog"
-    mutated["doi"] = ""
-    mutated["arxiv_id"] = ""
-
-    return MutationSample(
-        original=citation,
-        mutated=mutated,
-        label="HALLUCINATED",
-        subtype="H7",
-        category="Source",
-        mutation_type="nonexistent_source",
-        explanation=f"URL fabricated: \"{mutated['url']}\". Original: \"{citation.get('url', '')}\".",
-        changed_fields=["url", "venue", "doi", "arxiv_id"],
     )
 
 
@@ -753,29 +721,28 @@ ALL_GENERATORS = {
     # POTENTIAL
     "P1": gen_P1_version_difference,
     "P2": gen_P2_author_name_variant,
-    "P3": gen_P3_unstable_source,
+    "P3": gen_P3_non_academic_source,
     # HALLUCINATED — Full
     "H1": gen_H1_completely_fabricated,
-    # HALLUCINATED — Title
-    "H2a": gen_H2a_word_substitution,
-    "H2b": gen_H2b_title_paraphrase,
-    "H2c": gen_H2c_title_fabrication,
-    # HALLUCINATED — Author
-    "H3a": gen_H3a_author_addition_deletion,
-    "H3b": gen_H3b_author_reordering,
-    "H3c": gen_H3c_author_fabrication,
-    # HALLUCINATED — Meta
-    "H4": gen_H4_venue_year_fabrication,
-    "H5a": gen_H5a_doi_fabrication,
-    "H5b": gen_H5b_doi_nonexistent,
-    "H5c": gen_H5c_date_error,
-    "H5d": gen_H5d_venue_mismatch,
-    "H5e": gen_H5e_pages_fabrication,
-    # HALLUCINATED — Source
-    "H7": gen_H7_nonexistent_source,
+    # HALLUCINATED — Title (H2: 3 sub-generators, all labeled H2)
+    "H2-sub": gen_H2_word_substitution,
+    "H2-para": gen_H2_title_paraphrase,
+    "H2-fab": gen_H2_title_fabrication,
+    # HALLUCINATED — Author (H3: 3 sub-generators, all labeled H3)
+    "H3-add": gen_H3_author_addition_deletion,
+    "H3-reorder": gen_H3_author_reordering,
+    "H3-fab": gen_H3_author_fabrication,
+    # HALLUCINATED — Venue (H4)
+    "H4-venue": gen_H4_venue_fabrication,
+    "H4-both": gen_H4_venue_and_year,
+    # HALLUCINATED — Year (H5)
+    "H5": gen_H5_date_error,
+    # HALLUCINATED — DOI (H6)
+    "H6-fab": gen_H6_doi_fabrication,
+    "H6-nonexist": gen_H6_doi_nonexistent,
+    # HALLUCINATED — Pages/Volume (H7)
+    "H7": gen_H7_pages_fabrication,
 }
-
-SIBLING_GENERATORS = {"H6": gen_H6_sibling_confusion}
 
 
 def generate_mutations(
@@ -783,11 +750,11 @@ def generate_mutations(
     subtypes: list[str] | None = None,
     samples_per_type: int = 1,
 ) -> list[dict]:
-    subtypes = subtypes or list(ALL_GENERATORS.keys()) + list(SIBLING_GENERATORS.keys())
+    subtypes = subtypes or list(ALL_GENERATORS.keys())
     results: list[dict] = []
 
     for subtype in subtypes:
-        gen = ALL_GENERATORS.get(subtype) or SIBLING_GENERATORS.get(subtype)
+        gen = ALL_GENERATORS.get(subtype)
         if not gen:
             print(f"  Unknown subtype: {subtype}", flush=True)
             continue
@@ -800,10 +767,7 @@ def generate_mutations(
             if not citation.get("title") or not citation.get("authors"):
                 continue
             try:
-                if subtype in SIBLING_GENERATORS:
-                    sample = gen(citation, all_citations=citations)
-                else:
-                    sample = gen(citation)
+                sample = gen(citation, all_citations=citations)
             except Exception as e:
                 print(f"  {subtype} error: {e}", flush=True)
                 sample = None
@@ -825,7 +789,7 @@ def generate_mutations(
             })
             count += 1
 
-        print(f"  {subtype:5s} ({gen.__doc__.split(':')[0].strip() if gen.__doc__ else subtype}): {count} samples", flush=True)
+        print(f"  {subtype:12s} ({gen.__doc__.split(':')[0].strip() if gen.__doc__ else subtype}): {count} samples", flush=True)
 
     return results
 
@@ -834,12 +798,77 @@ def generate_mutations(
 # CLI
 # ===========================================================================
 
+def _parse_bib_file(bib_path: str | Path) -> list[dict]:
+    """Parse a BibTeX file into a list of citation dicts."""
+    with open(bib_path) as f:
+        content = f.read()
+
+    entries = re.findall(r'@\w+\{[^@]+\}', content, re.DOTALL)
+    citations = []
+    for entry_text in entries:
+        m = re.match(r'@(\w+)\{([^,]+),', entry_text)
+        if not m:
+            continue
+        key = m.group(2).strip()
+
+        fields: dict[str, str] = {}
+        for fm in re.finditer(r'(\w+)\s*=\s*\{(.*?)\}', entry_text, re.DOTALL):
+            fields[fm.group(1).lower()] = fm.group(2).strip()
+
+        authors = []
+        if 'author' in fields:
+            for a in fields['author'].split(' and '):
+                a = a.strip()
+                if ',' in a:
+                    parts = a.split(',', 1)
+                    a = f"{parts[1].strip()} {parts[0].strip()}"
+                if a:
+                    authors.append(a)
+
+        year = None
+        if 'year' in fields:
+            try:
+                year = int(fields['year'])
+            except ValueError:
+                pass
+
+        title = fields.get('title', '')
+        if not title:
+            continue
+
+        # Extract arxiv_id from eprint, url, or journal fields
+        arxiv_id = ''
+        for src in [fields.get('eprint', ''), fields.get('url', ''), fields.get('journal', '')]:
+            aid_m = re.search(r'(\d{4}\.\d{4,5})', src)
+            if aid_m:
+                arxiv_id = aid_m.group(1)
+                break
+
+        citations.append({
+            "citation_id": key,
+            "title": title,
+            "authors": authors,
+            "venue": fields.get('journal', '') or fields.get('booktitle', ''),
+            "year": year,
+            "volume": fields.get('volume', ''),
+            "pages": fields.get('pages', ''),
+            "publisher": fields.get('publisher', ''),
+            "doi": fields.get('doi', ''),
+            "url": fields.get('url', ''),
+            "arxiv_id": arxiv_id,
+            "_source_paper": "bib_input",
+        })
+
+    return citations
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate hallucinated citation test data.")
-    parser.add_argument("--input-dir", required=True, help="Directory with verified citation JSONs.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--input-dir", help="Directory with verified citation JSONs.")
+    group.add_argument("--bib", help="BibTeX file with valid citations.")
     parser.add_argument("--output", default="artifacts/hallucination_test_data.json", help="Output JSON file.")
-    parser.add_argument("--samples-per-type", type=int, default=3, help="Samples per mutation subtype.")
-    parser.add_argument("--max-papers", type=int, default=0, help="Max papers to use. 0 = all.")
+    parser.add_argument("--total", type=int, default=100, help="Target total number of samples.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     args = parser.parse_args()
 
@@ -854,23 +883,33 @@ def main():
     print(f"LLM: model_id={bcfg.model_id} region={bcfg.region}", flush=True)
 
     # Load citations
-    input_dir = Path(args.input_dir)
     all_citations: list[dict] = []
-    files = sorted(input_dir.glob("*.json"))
-    if args.max_papers > 0:
-        files = files[:args.max_papers]
+    if args.bib:
+        all_citations = _parse_bib_file(args.bib)
+        print(f"Loaded {len(all_citations)} citations from BibTeX file\n", flush=True)
+    else:
+        input_dir = Path(args.input_dir)
+        for fpath in sorted(input_dir.glob("*.json")):
+            with open(fpath) as f:
+                data = json.load(f)
+            for c in data.get("citations", []):
+                if c.get("title") and c.get("authors"):
+                    c["_source_paper"] = fpath.stem
+                    all_citations.append(c)
+        print(f"Loaded {len(all_citations)} citations from JSON files\n", flush=True)
 
-    for fpath in files:
-        with open(fpath) as f:
-            data = json.load(f)
-        for c in data.get("citations", []):
-            if c.get("title") and c.get("authors"):
-                c["_source_paper"] = fpath.stem
-                all_citations.append(c)
+    if not all_citations:
+        print("No citations found!")
+        return
 
-    print(f"Loaded {len(all_citations)} citations from {len(files)} papers\n", flush=True)
+    # Calculate samples per type to hit target total
+    all_subtypes = list(ALL_GENERATORS.keys())
+    n_types = len(all_subtypes)
+    samples_per_type = max(1, args.total // n_types)
 
-    results = generate_mutations(all_citations, samples_per_type=args.samples_per_type)
+    print(f"Target: {args.total} samples across {n_types} subtypes ({samples_per_type} per type)\n")
+
+    results = generate_mutations(all_citations, samples_per_type=samples_per_type)
 
     # Summary
     from collections import Counter

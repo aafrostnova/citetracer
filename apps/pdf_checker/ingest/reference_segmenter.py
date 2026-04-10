@@ -16,7 +16,11 @@ from packages.core.models import ExtractionQuality
 
 
 START_HEADING_RE = re.compile(
-    r"^\s*(?:\d+(?:\.\d+)*[\)\.]?\s*)?(references|bibliography|reference list|参考文献)\s*$",
+    # Match a "References" / "Bibliography" heading. The trailing junk allows
+    # for: pure end-of-line, or non-alphabetic stuff (line numbers like "364",
+    # bracketed page refs, punctuation). We REJECT continuation by a letter,
+    # which would mean the word is part of "Referenced" / "Bibliographer" etc.
+    r"^\s*(?:\d+(?:\.\d+)*[\)\.]?\s*)?(references|bibliography|reference list|参考文献)(?:[\s\d\W]*)?$",
     re.IGNORECASE,
 )
 END_HEADING_RE = re.compile(

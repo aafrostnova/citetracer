@@ -57,6 +57,12 @@ class PDFCheckerConfig:
     citation_reparse: "CitationReparseConfig"
     verification_llm: "VerificationLLMConfig"
     ocr_llm_extract: "OCRLLMExtractConfig"
+    # Top-level switch: which citation parsing path to use in run.py.
+    #   "citation_reparse" — use config.citation_reparse as-is (only reparse
+    #                        entries with missing core fields).
+    #   "ocr_llm_extract"  — use config.ocr_llm_extract (force-reparse all
+    #                        entries via Bedrock).
+    citation_parse_method: str = "citation_reparse"
 
 
 @dataclass(frozen=True)
@@ -178,6 +184,15 @@ def _parse_reparse_provider(value: Any) -> str:
     return "local"
 
 
+def _parse_citation_parse_method(value: Any) -> str:
+    method = str(value or "").strip().lower()
+    if method in {"ocr_parse_llm_fix"}:  # backward-compat alias
+        return "ocr_llm_extract"
+    if method in {"citation_reparse", "ocr_llm_extract"}:
+        return method
+    return "citation_reparse"
+
+
 def _parse_web_search_provider(value: Any) -> str | None:
     provider = str(value).strip().lower().replace("-", "_")
     if provider in {"", "auto"}:
@@ -277,6 +292,11 @@ def _resolve_model_provider(
 def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerConfig:
     env = env or os.environ
     payload = _load_json_payload(env)
+
+    citation_parse_method = _parse_citation_parse_method(
+        _optional_str(env, "CITATION_CHECKER_CITATION_PARSE_METHOD")
+        or _optional_payload_str(payload, ["citation_parse_method"])
+    )
 
     cache_path = (
         _optional_str(env, "CITATION_CHECKER_CACHE_PATH")
@@ -603,6 +623,7 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
                 bearer_token=verification_bearer_token,
             ),
         ),
+        citation_parse_method=citation_parse_method,
         ocr_llm_extract=OCRLLMExtractConfig(
             enabled=ocr_llm_extract_enabled and bool(ocr_llm_extract_model_id),
             max_new_tokens=ocr_llm_extract_max_new_tokens,

@@ -48,7 +48,9 @@ def default_orchestrator(
         connectors = [DblpSQLiteConnector(final_sqlite_path)]
     else:
         connectors = [DblpOfflineConnector(dblp_mirror_path)]
-    connectors.append(URLDirectConnector())
+    # NOTE: url_direct is intentionally NOT added here.
+    # It is invoked exclusively from verifier.py Phase 0 (before orchestrator.query)
+    # so we don't double-fetch the citation URL.
     if os.getenv("CITATION_CHECKER_OFFLINE_ONLY", "0") != "1":
         connectors.extend(
             [
