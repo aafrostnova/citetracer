@@ -73,53 +73,17 @@ class HallucinatedAgentProtocol(Protocol):
 _WEB_CONNECTORS = {"google_search", "web_search"}
 
 
-def _fetch_url_content(url: str, tavily_api_key: str = "") -> str:
-    """Fetch page content from URL via HTTP GET, with Tavily Extract fallback."""
-    from packages.connectors.base import RequestPolicy as _RP
-    from packages.connectors.url_direct import URLDirectConnector
-
-    connector = URLDirectConnector(tavily_api_key=tavily_api_key)
-    policy = _RP(timeout_s=5.0)
-    
-    # Try direct HTTP GET first
-    try:
-        body = connector._request_text(
-            url, {}, policy,
-            headers={"Accept": "text/html,application/xhtml+xml"},
-        )
-        return body
-    except Exception:
-        pass
-
-    # Fallback: Tavily Extract API
-    if tavily_api_key:
-        try:
-            payload = connector._request_json_post(
-                "https://api.tavily.com/extract",
-                {"urls": [url], "extract_depth": "basic", "format": "markdown"},
-                policy,
-                headers={"Authorization": f"Bearer {tavily_api_key}"},
-            )
-            results = payload.get("results", []) if isinstance(payload, dict) else []
-            if results:
-                return str(results[0].get("raw_content", "") or results[0].get("content", "") or "")[:8000]
-        except Exception:
-            pass
-
-    return ""
-
-
 def _enrich_web_candidate_via_url(
     candidate: CandidateMatch,
     tavily_api_key: str = "",
     extractor_agent: Any = None,
 ) -> CandidateMatch:
-    """Fetch URL page content and use ExtractorAgent LLM to extract structured fields.
+    """Fetch URL page via direct HTTP GET and use ExtractorAgent LLM to extract structured fields.
 
-    Flow:
-      1. HTTP GET the URL (fallback: Tavily Extract API)
-      2. Pass page content to ExtractorAgent LLM for structured extraction
-      3. Merge extracted fields into candidate (only fill empty fields)
+    No Tavily fallback — web search already returned raw_content via Tavily,
+    so the first ExtractorAgent pass already used that. This step only adds
+    value when direct HTTP GET returns HTML with richer metadata (e.g. meta tags,
+    BibTeX blocks) than the Tavily markdown.
     """
     from dataclasses import replace as _replace
 
@@ -138,14 +102,20 @@ def _enrich_web_candidate_via_url(
     except Exception:
         pass
 
-    # Fetch page content
+    # Direct HTTP GET only — no Tavily fallback (already have raw_content from search)
     content = ""
     try:
-        content = _fetch_url_content(url, tavily_api_key)
+        from packages.connectors.url_direct import URLDirectConnector
+        from packages.connectors.base import RequestPolicy as _RP
+        connector = URLDirectConnector()
+        content = connector._request_text(
+            url, {}, _RP(timeout_s=5.0),
+            headers={"Accept": "text/html,application/xhtml+xml"},
+        )
     except Exception:
         return candidate
 
-    if not content.strip():
+    if not content or not content.strip():
         return candidate
 
     # Use ExtractorAgent LLM to extract structured fields from the page content.
