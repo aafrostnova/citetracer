@@ -52,9 +52,57 @@ class CandidateMatch:
     doi: str = ""
     arxiv_id: str = ""
     url: str = ""
+    volume: str = ""
+    pages: str = ""
+    publisher: str = ""
     matched_fields: list[str] = field(default_factory=list)
     conflicts: list[str] = field(default_factory=list)
     raw_record: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class FieldComparisonResult:
+    """Output of the FieldComparator agent."""
+    field_status: dict[str, dict[str, Any]] = field(default_factory=dict)
+    signal: str = ""  # "direct_valid" | "hard_mismatch" | "soft_discrepancy" | "no_candidate"
+    hard_mismatch_fields: list[str] = field(default_factory=list)
+    soft_discrepancy_fields: list[str] = field(default_factory=list)
+    has_et_al: bool = False
+    comparison: dict[str, Any] = field(default_factory=dict)
+    conflicts: list[str] = field(default_factory=list)
+
+
+@dataclass
+class LLMJudgment:
+    """Output of an LLM judge agent."""
+    verdict: VerdictLabel = VerdictLabel.FAKE_REFERENCE
+    taxonomy: list[str] = field(default_factory=list)
+    confidence: float = 0.0
+    note: str = ""
+    raw_response: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ValidAgentResult:
+    """Output of the ValidAgent in cascading pipeline."""
+    is_valid: bool = False
+    taxonomy: list[str] = field(default_factory=list)
+    hint: str = ""               # "likely_potential" | "likely_hallucinated"
+    issues: list[str] = field(default_factory=list)
+    reason: str = ""
+    field_result: Any = None     # FieldComparisonResult
+    candidate: Any = None        # CandidateMatch
+    raw_llm_response: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DownstreamAgentResult:
+    """Output of PotentialAgent or HallucinatedAgent."""
+    label: VerdictLabel = VerdictLabel.FAKE_REFERENCE
+    taxonomy: list[str] = field(default_factory=list)
+    reason: str = ""
+    escalate_to: str = ""        # "" | "hallucinated" | "potential"
+    raw_llm_response: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -91,6 +139,7 @@ class CitationVerdict:
     comparison: dict[str, Any] = field(default_factory=dict)
     candidate_evaluations: list[dict[str, Any]] = field(default_factory=list)
     llm_recheck_reason: str = ""
+    taxonomy_subtype: list[str] = field(default_factory=list)
     needs_human_review: bool = False
     extraction_quality: ExtractionQuality = ExtractionQuality.UNKNOWN
     secondary_evidence: list[DiscrepancyEvidence] = field(default_factory=list)
@@ -142,6 +191,26 @@ def citation_verdict_to_dict(verdict: CitationVerdict) -> dict[str, Any]:
     if verdict.matched_candidate is not None:
         payload["matched_candidate"] = verdict.matched_candidate
     return payload
+
+
+def citation_verdict_from_dict(data: dict[str, Any], citation_id: str = "") -> CitationVerdict:
+    """Reconstruct a CitationVerdict from a cached dict."""
+    return CitationVerdict(
+        citation_id=citation_id or data.get("citation_id", ""),
+        verdict=canonical_verdict_label(data.get("verdict", "VALID")),
+        evidence_sources=data.get("evidence_sources", []),
+        conflicts=data.get("conflicts", []),
+        adjudication_reason=data.get("adjudication_reason", ""),
+        matched_candidate=data.get("matched_candidate"),
+        reference_snapshot=data.get("reference_snapshot", {}),
+        comparison=data.get("comparison", {}),
+        candidate_evaluations=data.get("candidate_evaluations", []),
+        llm_recheck_reason=data.get("llm_recheck_reason", ""),
+        taxonomy_subtype=data.get("taxonomy_subtype", []),
+        needs_human_review=data.get("needs_human_review", False),
+        extraction_quality=ExtractionQuality(data.get("extraction_quality", "UNKNOWN")),
+        secondary_evidence=[],
+    )
 
 
 def canonical_verdict_label(label: VerdictLabel | str) -> VerdictLabel:

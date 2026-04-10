@@ -71,6 +71,74 @@ def _attempt_upgrade(
     )
 
 
+def _classify_taxonomy(
+    verdict: VerdictLabel,
+    field_status: dict[str, dict[str, Any]],
+    candidate_connector: str,
+    has_et_al: bool,
+    has_candidates: bool,
+) -> str:
+    """Classify the verdict into a taxonomy subtype (R1-R4, P1-P3, H1-H7)."""
+    if verdict == VerdictLabel.VALID:
+        # Check if it's a non-academic source (web_search only)
+        if candidate_connector in {"google_search", "web_search"}:
+            return "R4"
+        # Check if authors used et al.
+        if has_et_al:
+            return "R3"
+        # Check for format variants (title/authors match but with normalization)
+        return "R1"  # Default to exact match (R2 is hard to distinguish from R1 at this level)
+
+    if verdict == VerdictLabel.POTENTIAL_REFERENCE:
+        author_status = field_status.get("authors", {}).get("status", "")
+        if author_status in ("partial_overlap",):
+            return "P2"  # Author name variant
+        # Check if it's a non-academic unstable source (P3)
+        url_status = field_status.get("url", {}).get("status", "")
+        if candidate_connector in {"google_search", "web_search"} and url_status == "mismatch":
+            return "P3"  # Non-academic source unstable (deleted/moved)
+        return "P1"  # Version difference or other
+
+    if verdict == VerdictLabel.FAKE_REFERENCE:
+        if not has_candidates:
+            return "H1"  # No candidates = completely fabricated
+        title_status = field_status.get("title", {}).get("status", "")
+        author_status = field_status.get("authors", {}).get("status", "")
+        venue_status = field_status.get("venue", {}).get("status", "")
+        year_status = field_status.get("year", {}).get("status", "")
+        doi_status = field_status.get("doi", {}).get("status", "")
+
+        # Author issues
+        if author_status == "count_mismatch":
+            return "H3a"  # Author addition/deletion
+        if author_status == "mismatch":
+            return "H3c"  # Author fabrication
+
+        # Title issues
+        if title_status == "mismatch":
+            return "H2a"  # Title mutation (could be H2a/H2b/H2c, hard to distinguish)
+
+        # DOI issues
+        if doi_status == "mismatch":
+            return "H5a"  # DOI fabrication
+
+        # Venue/year issues
+        if venue_status == "mismatch" and year_status == "mismatch":
+            return "H4"  # Venue+year fabrication
+        if venue_status == "mismatch":
+            return "H5d"  # Venue mismatch
+        if year_status == "mismatch":
+            return "H5c"  # Date error
+
+        # Non-academic source not found
+        if candidate_connector in {"google_search", "web_search"}:
+            return "H7"  # Non-existent source
+
+        return "H1"  # Default: completely fabricated
+
+    return ""  # INSUFFICIENT_EVIDENCE
+
+
 def _norm_text(value: Any) -> str:
     text = " ".join(str(value or "").strip().lower().split())
     return text.strip(" .,:;!?\"'()[]{}")
@@ -82,6 +150,19 @@ def _norm_title(value: Any) -> str:
 
 def _norm_identifier(value: Any) -> str:
     return _norm_text(value).rstrip(".,;")
+
+
+def _norm_pages(value: Any) -> str:
+    """Normalize page ranges: '1877--1901' / '1877—1901' / 'pp. 1877-1901' → '1877-1901'."""
+    text = str(value or "").lower().strip()
+    if not text:
+        return ""
+    text = text.replace("pp.", "").replace("pp", "").strip()
+    # Unify all dash variants to ASCII hyphen
+    for sep in ("\u2013", "\u2014", "\u2212", "--", "—", "–"):
+        text = text.replace(sep, "-")
+    text = " ".join(text.split())
+    return text.strip(" .,:;")
 
 
 def _norm_arxiv_id(value: Any) -> str:
@@ -203,8 +284,18 @@ def _compare_authors(reference: list[str], candidate: list[str]) -> dict[str, An
     has_et_al = any(_is_et_al_marker(name) for name in ref)
     ref_actual = [name for name in ref if not _is_et_al_marker(name)]
 
-    ref_norm = [_norm_text(name) for name in ref_actual]
-    cand_norm = [_norm_text(name) for name in cand]
+    import re as _re
+    def _norm_author_name(name: str) -> str:
+        """Normalize author name: lowercase, strip DBLP suffix, remove dots/commas."""
+        text = _norm_text(name)
+        # Strip DBLP-style disambiguation suffixes (e.g. "mark chen 0003" → "mark chen")
+        text = _re.sub(r"\s+\d{4,}$", "", text).strip()
+        # Remove interior dots/commas (e.g. "daniel d." → "daniel d")
+        text = _re.sub(r"[.,]", "", text)
+        return " ".join(text.split())  # collapse whitespace
+
+    ref_norm = [_norm_author_name(name) for name in ref_actual]
+    cand_norm = [_norm_author_name(name) for name in cand]
 
     if not ref_norm and not cand_norm:
         status = "both_missing"
@@ -222,29 +313,48 @@ def _compare_authors(reference: list[str], candidate: list[str]) -> dict[str, An
         status = "reordered_match"
         overlap = len(ref_norm)
     else:
-        overlap_set = set(ref_norm).intersection(set(cand_norm))
-        overlap = len(overlap_set)
-        if overlap > 0:
+        from .normalize import author_tokens as _at
+
+        def _authors_match_at_position(rn: str, cn: str) -> bool:
+            """Check if ref author and cand author at the same position are the same person."""
+            if rn == cn:
+                return True
+            r_tokens = _at(rn)
+            c_tokens = _at(cn)
+            if r_tokens and c_tokens and r_tokens & c_tokens:
+                return True
+            return False
+
+        # Step 1: Strict positional matching — compare ref[i] vs cand[i] one-to-one.
+        # This avoids the greedy cross-position matching bug where common surnames
+        # (Wang, Chen, Liu) cause false reordered_match.
+        positional_matches = 0
+        compare_len = min(len(ref_norm), len(cand_norm))
+        for i in range(compare_len):
+            if _authors_match_at_position(ref_norm[i], cand_norm[i]):
+                positional_matches += 1
+
+        overlap = positional_matches
+
+        if positional_matches == len(ref_norm) == len(cand_norm):
+            # All authors matched at same positions → match
+            status = "match"
+        elif has_et_al and positional_matches == len(ref_norm) and len(cand_norm) >= len(ref_norm):
+            # Et al.: all listed ref authors matched as prefix of candidate → match
+            status = "match"
+        elif positional_matches > 0:
+            # Some matched positionally but not all — let LLM decide
+            # whether it's reorder, name variant, or real mismatch
             status = "partial_overlap"
         else:
-            # Try initial matching (e.g., "s bubeck" vs "bubeck sebastien")
-            from .normalize import author_tokens
-            initial_matches = 0
-            for r_name in ref_norm:
-                r_tokens = author_tokens(r_name)
-                for c_name in cand_norm:
-                    c_tokens = author_tokens(c_name)
-                    # Last name must match; first name can be initial
-                    if r_tokens and c_tokens and r_tokens & c_tokens:
-                        initial_matches += 1
-                        break
-            overlap = initial_matches
-            status = "partial_overlap" if initial_matches > 0 else "mismatch"
-
-        # When citation uses "et al." and all listed authors match a prefix of candidate,
-        # treat as match (citation intentionally omitted remaining authors)
-        if has_et_al and overlap == len(ref_norm) and len(cand_norm) >= len(ref_norm):
-            status = "match"
+            status = "mismatch"
+        # When citation does NOT use et al. and author counts differ significantly,
+        # this is a definitive count mismatch (H3a in taxonomy).
+        # Only flag as count_mismatch when ratio < 0.5 (more than 2x difference).
+        if not has_et_al and ref_norm and cand_norm and len(ref_norm) != len(cand_norm):
+            count_ratio = min(len(ref_norm), len(cand_norm)) / max(len(ref_norm), len(cand_norm))
+            if count_ratio < 0.5:
+                status = "count_mismatch"
 
     return {
         "status": status,
@@ -263,6 +373,7 @@ def _reference_snapshot(citation: CitationRecord) -> dict[str, Any]:
         "authors": list(citation.authors),
         "venue": citation.venue,
         "year": citation.year,
+        "volume": citation.volume,
         "pages": citation.pages,
         "publisher": citation.publisher,
         "location": citation.location,
@@ -281,6 +392,9 @@ def _candidate_snapshot(candidate: CandidateMatch | None) -> dict[str, Any]:
         "authors": list(candidate.authors),
         "venue": candidate.venue,
         "year": candidate.year,
+        "volume": candidate.volume,
+        "pages": candidate.pages,
+        "publisher": candidate.publisher,
         "doi": candidate.doi,
         "arxiv_id": candidate.arxiv_id,
         "url": candidate.url,
@@ -299,15 +413,26 @@ def _build_comparison(
         raw_years = candidate.raw_record.get("version_years")
         if isinstance(raw_years, list):
             candidate_version_years = raw_years
-    # Extract pages/publisher from candidate raw_record (url_direct cite blocks provide these)
+    # Prefer candidate.* (populated by build_candidate_match from connector records),
+    # fall back to raw_record for fields some connectors may only stash there.
     cand_raw = candidate.raw_record if candidate is not None and isinstance(candidate.raw_record, dict) else {}
+
+    def _from_candidate(field_name: str) -> str:
+        value = ""
+        if candidate is not None:
+            value = str(getattr(candidate, field_name, "") or "")
+        if not value:
+            value = str(cand_raw.get(field_name, "") or "")
+        return value
+
     candidate_core = {
         "title": candidate_data.get("title", ""),
         "authors": candidate_data.get("authors", []),
         "venue": candidate_data.get("venue", ""),
         "year": candidate_data.get("year"),
-        "pages": str(cand_raw.get("pages", "") or ""),
-        "publisher": str(cand_raw.get("publisher", "") or ""),
+        "volume": _from_candidate("volume"),
+        "pages": _from_candidate("pages"),
+        "publisher": _from_candidate("publisher"),
         "location": str(cand_raw.get("location", "") or ""),
         "doi": candidate_data.get("doi", ""),
         "arxiv_id": candidate_data.get("arxiv_id", ""),
@@ -319,7 +444,8 @@ def _build_comparison(
         "authors": _compare_authors(reference["authors"], candidate_core["authors"]),
         "venue": _compare_venue(reference["venue"], candidate_core["venue"]),
         "year": _compare_year(reference["year"], candidate_core["year"], candidate_version_years),
-        "pages": _compare_scalar(reference.get("pages", ""), candidate_core["pages"], _norm_text),
+        "volume": _compare_scalar(reference.get("volume", ""), candidate_core["volume"], _norm_text),
+        "pages": _compare_scalar(reference.get("pages", ""), candidate_core["pages"], _norm_pages),
         "publisher": _compare_scalar(reference.get("publisher", ""), candidate_core["publisher"], _norm_text),
         "location": _compare_scalar(reference.get("location", ""), candidate_core["location"], _norm_text),
         "doi": _compare_scalar(reference["doi"], candidate_core["doi"], _norm_identifier),
@@ -351,10 +477,11 @@ def _has_soft_discrepancies(field_status: dict[str, dict[str, Any]], conflicts: 
     review_statuses = {
         "mismatch",
         "partial_overlap",
+        "reordered_match",
         "candidate_missing",
         "reference_missing",
     }
-    for field_name in ("authors", "venue", "doi", "arxiv_id", "pages", "publisher", "location"):
+    for field_name in ("authors", "venue", "doi", "arxiv_id", "pages", "publisher", "location", "volume"):
         if field_name in field_status and _status_in(field_status[field_name], review_statuses):
             return True
 
@@ -375,17 +502,14 @@ def _is_direct_valid(field_status: dict[str, dict[str, Any]], conflicts: list[st
         return False
     if field_status["year"]["status"] != "match":
         return False
-    if not _status_in(field_status["authors"], {"match", "reordered_match"}):
+    if field_status["authors"]["status"] != "match":
         return False
-    # Optional fields: venue/doi/arxiv_id — if citation wrote it, must be correct
-    for f in ("venue", "doi", "arxiv_id"):
-        if not _status_in(field_status[f], {"match", "both_missing", "reference_missing", "candidate_missing"}):
-            return False
-    # Extended fields: pages/publisher/location — if citation has them, they must match
-    # (candidate_missing is OK: citation provided them but this connector didn't return them)
-    for f in ("pages", "publisher", "location"):
+    # All optional fields: if reference has a value, candidate must also have it and match.
+    # - both_missing / reference_missing → reference didn't provide it, OK to skip
+    # - candidate_missing → reference HAS a value but candidate doesn't → NOT valid
+    for f in ("venue", "doi", "arxiv_id", "pages", "publisher", "location", "volume"):
         if f in field_status:
-            if not _status_in(field_status[f], {"match", "both_missing", "reference_missing", "candidate_missing"}):
+            if not _status_in(field_status[f], {"match", "both_missing", "reference_missing"}):
                 return False
     return True
 
@@ -417,9 +541,18 @@ def _evaluate_candidate(
         verdict = VerdictLabel.FAKE_REFERENCE
         reason = "Title or year mismatches the current candidate."
         should_run_llm_recheck = True
-    elif _has_soft_discrepancies(field_status, conflicts):
+    elif field_status["authors"].get("status") == "count_mismatch":
+        ref_count = field_status["authors"].get("reference_count", "?")
+        cand_count = field_status["authors"].get("candidate_count", "?")
         verdict = VerdictLabel.FAKE_REFERENCE
-        reason = "Field discrepancies default to fake; secondary evidence required to upgrade."
+        reason = (
+            f"Author count mismatch without et al.: citation lists {ref_count} "
+            f"specific authors but candidate has {cand_count} (H3a)."
+        )
+        should_run_llm_recheck = True
+    elif _has_soft_discrepancies(field_status, conflicts):
+        verdict = VerdictLabel.POTENTIAL_REFERENCE
+        reason = "Only soft metadata discrepancies were found; mark as potential unless stronger evidence disproves the match."
         should_run_llm_recheck = True
         needs_secondary_verification = True
     else:
@@ -448,8 +581,8 @@ def adjudicate(
             verdict_label = VerdictLabel.INSUFFICIENT_EVIDENCE
             reason = "All sources failed or timed out, unable to establish ground truth."
         else:
-            verdict_label = VerdictLabel.FAKE_REFERENCE
-            reason = "No matching paper found in any database."
+            verdict_label = VerdictLabel.INSUFFICIENT_EVIDENCE
+            reason = "No matching paper was found in queried sources, but absence alone is insufficient to prove fabrication."
         return CitationVerdict(
             citation_id=citation.citation_id,
             verdict=verdict_label,
@@ -460,6 +593,7 @@ def adjudicate(
             reference_snapshot=_reference_snapshot(citation),
             comparison=_build_comparison(citation, None, ["no_candidate"]),
             candidate_evaluations=[],
+            taxonomy_subtype=["H1"] if verdict_label == VerdictLabel.FAKE_REFERENCE else [],
             llm_recheck_reason="",
             needs_human_review=True,
             extraction_quality=extraction_quality,
@@ -467,6 +601,10 @@ def adjudicate(
 
     preferred_fallback: CitationVerdict | None = None
     candidate_evaluations: list[dict[str, Any]] = []
+    # Track if any structured (non-web-search) candidate found a hard mismatch.
+    # If so, web_search LLM cannot override to VALID.
+    _WEB_CONNECTORS = {"google_search", "web_search"}
+    has_structured_hard_mismatch = False
 
     for candidate in candidates:
 
@@ -493,8 +631,14 @@ def adjudicate(
             verdict = upgraded_verdict
             reason = upgrade_reason
 
+        # Track if secondary verification upgraded to POTENTIAL (e.g. author name variant)
+        was_upgraded_to_potential = (
+            verdict == VerdictLabel.POTENTIAL_REFERENCE and sec_evidence
+        )
+
         # LLM resolver with secondary evidence context
         llm_note = ""
+        llm_taxonomy = ""
         if llm_resolver and should_run_llm_recheck:
             try:
                 review = llm_resolver.review(
@@ -505,13 +649,28 @@ def adjudicate(
                 review = {"note": f"LLM review failed: {exc}"}
             override = review.get("label_override")
             if override:
-                verdict = canonical_verdict_label(override)
-            llm_note = str(review.get("note", "")).strip()
+                overridden = canonical_verdict_label(override)
+                fs = comparison["field_status"]
+                is_structured = candidate.connector not in _WEB_CONNECTORS
 
-        # If candidate has no structured data and no LLM override happened, stay FAKE
-        if no_structured and not llm_note:
-            verdict = VerdictLabel.FAKE_REFERENCE
-            reason = "No structured candidate data and no LLM evidence."
+                # Guard 1: structured source with title mismatch or author count_mismatch
+                # cannot be overridden to VALID by LLM.
+                has_hard_field_mismatch = (
+                    fs.get("title", {}).get("status") == "mismatch"
+                    or fs.get("authors", {}).get("status") == "count_mismatch"
+                )
+                if overridden == VerdictLabel.VALID and is_structured and has_hard_field_mismatch:
+                    pass  # Keep original verdict
+
+                # Guard 2: secondary verification upgraded to POTENTIAL (e.g. author name variant)
+                # LLM cannot override back to VALID — the discrepancy was real but explainable.
+                elif overridden == VerdictLabel.VALID and was_upgraded_to_potential:
+                    pass  # Keep POTENTIAL
+
+                else:
+                    verdict = overridden
+            llm_taxonomy = str(review.get("taxonomy", "") or "").strip()
+            llm_note = str(review.get("note", "")).strip()
 
         if llm_note:
             reason = f"{reason} LLM disambiguation: {llm_note}"
@@ -532,6 +691,15 @@ def adjudicate(
             }
         )
 
+        # Use LLM taxonomy if available, else fall back to rule-based
+        taxonomy = llm_taxonomy if llm_note and llm_taxonomy else _classify_taxonomy(
+            verdict=verdict,
+            field_status=comparison["field_status"],
+            candidate_connector=candidate.connector,
+            has_et_al=comparison["field_status"].get("authors", {}).get("has_et_al", False),
+            has_candidates=True,
+        )
+
         current = CitationVerdict(
             citation_id=citation.citation_id,
             verdict=verdict,
@@ -543,13 +711,47 @@ def adjudicate(
             comparison=comparison,
             candidate_evaluations=list(candidate_evaluations),
             llm_recheck_reason=llm_note,
+            taxonomy_subtype=[taxonomy] if taxonomy else [],
             needs_human_review=(verdict != VerdictLabel.VALID),
             extraction_quality=extraction_quality,
             secondary_evidence=sec_evidence,
         )
 
+        # Track hard mismatches from structured sources (title mismatch or author count mismatch)
+        if (verdict == VerdictLabel.FAKE_REFERENCE
+                and candidate.connector not in _WEB_CONNECTORS):
+            fs = comparison["field_status"]
+            # Structured source found the paper but with field mismatches.
+            # This blocks web_search from overriding to VALID (at most POTENTIAL).
+            title_ok = fs.get("title", {}).get("status") in ("match", "candidate_missing", "both_missing")
+            if title_ok:
+                # Title matches but other fields don't → paper exists but citation has errors
+                has_structured_hard_mismatch = True
+
         if verdict == VerdictLabel.VALID:
-            return current
+            # If a structured source already found title mismatch or author count mismatch,
+            # web_search VALID cannot override — downgrade to FAKE.
+            if has_structured_hard_mismatch and candidate.connector in _WEB_CONNECTORS:
+                current = CitationVerdict(
+                    citation_id=citation.citation_id,
+                    verdict=VerdictLabel.POTENTIAL_REFERENCE,
+                    evidence_sources=evidence_sources,
+                    conflicts=["structured_mismatch_caps_web_search"],
+                    adjudication_reason=(
+                        f"Structured database found the paper but with field discrepancies. "
+                        f"Web search confirms existence but verdict capped at POTENTIAL. {reason}"
+                    ),
+                    matched_candidate=candidate_match_to_dict(candidate),
+                    reference_snapshot=_reference_snapshot(citation),
+                    comparison=comparison,
+                    candidate_evaluations=list(candidate_evaluations),
+                    llm_recheck_reason=llm_note,
+                    needs_human_review=True,
+                    extraction_quality=extraction_quality,
+                    secondary_evidence=sec_evidence,
+                )
+            else:
+                return current
 
         if preferred_fallback is None:
             preferred_fallback = current

@@ -26,7 +26,7 @@ class SemanticScholarConnector(BaseConnector):
             {
                 "query": query,
                 "limit": 5,
-                "fields": "title,authors,year,venue,externalIds,url",
+                "fields": "title,authors,year,venue,externalIds,url,journal,publicationVenue",
             },
             policy,
             headers=headers,
@@ -34,6 +34,11 @@ class SemanticScholarConnector(BaseConnector):
         records = []
         for paper in payload.get("data", []):
             external_ids = paper.get("externalIds", {}) or {}
+            journal = paper.get("journal") or {}
+            pub_venue = paper.get("publicationVenue") or {}
+            volume = str(journal.get("volume", "") or "")
+            pages = str(journal.get("pages", "") or "")
+            publisher = str(pub_venue.get("publisher", "") or "")
             records.append(
                 {
                     "title": str(paper.get("title", "") or ""),
@@ -43,6 +48,9 @@ class SemanticScholarConnector(BaseConnector):
                     "doi": str(external_ids.get("DOI", "") or "").lower(),
                     "arxiv_id": str(external_ids.get("ArXiv", "") or "").lower(),
                     "url": str(paper.get("url", "") or ""),
+                    "volume": volume,
+                    "pages": pages,
+                    "publisher": publisher,
                 }
             )
         return records

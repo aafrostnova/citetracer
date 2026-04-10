@@ -42,6 +42,8 @@ class EuropePMCConnector(BaseConnector):
             url = f"https://europepmc.org/article/PMC/{pmcid}"
         elif pmid:
             url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        journal_info = item.get("journalInfo") or {}
+        journal_volume = str(item.get("journalVolume", "") or journal_info.get("volume", "") or "")
         return {
             "title": str(item.get("title", "") or ""),
             "authors": authors,
@@ -50,6 +52,9 @@ class EuropePMCConnector(BaseConnector):
             "doi": doi,
             "arxiv_id": "",
             "url": url,
+            "volume": journal_volume,
+            "pages": str(item.get("pageInfo", "") or ""),
+            "publisher": "",
         }
 
 

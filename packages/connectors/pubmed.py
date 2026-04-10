@@ -84,4 +84,7 @@ class PubMedConnector(BaseConnector):
             "doi": doi,
             "arxiv_id": "",
             "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+            "volume": str(item.get("volume", "") or ""),
+            "pages": str(item.get("pages", "") or ""),
+            "publisher": "",
         }

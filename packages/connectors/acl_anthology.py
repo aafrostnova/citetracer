@@ -106,6 +106,9 @@ class ACLAnthologyConnector(BaseConnector):
                     "doi": str(getattr(paper, "doi", "") or "").strip().lower(),
                     "arxiv_id": "",
                     "url": str(getattr(paper, "url", "") or "").strip(),
+                    "volume": "",
+                    "pages": str(getattr(paper, "pages", "") or "").strip(),
+                    "publisher": str(getattr(paper, "publisher", "") or "").strip() or "Association for Computational Linguistics",
                 }
             )
         return records

@@ -42,6 +42,10 @@ class DblpOfflineConnector(BaseConnector):
             if not title:
                 continue
             if query in title or title in query:
+                # Ensure volume/pages/publisher are surfaced if present in mirror
+                record.setdefault("volume", str(record.get("volume", "") or ""))
+                record.setdefault("pages", str(record.get("pages", "") or ""))
+                record.setdefault("publisher", str(record.get("publisher", "") or ""))
                 candidates.append(record)
             if len(candidates) >= 5:
                 break

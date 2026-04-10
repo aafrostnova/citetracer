@@ -47,6 +47,9 @@ class CrossrefConnector(BaseConnector):
             except (TypeError, ValueError):
                 year = None
 
+        publisher = str(item.get("publisher", "") or "")
+        volume = str(item.get("volume", "") or "")
+        pages = str(item.get("page", "") or "")
         return {
             "title": title,
             "authors": authors,
@@ -55,4 +58,7 @@ class CrossrefConnector(BaseConnector):
             "doi": str(item.get("DOI", "") or "").lower(),
             "arxiv_id": "",
             "url": str(item.get("URL", "") or ""),
+            "volume": volume,
+            "pages": pages,
+            "publisher": publisher,
         }

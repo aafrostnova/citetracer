@@ -172,6 +172,9 @@ def _parse_bibtex_record(bibtex_text: str) -> dict[str, Any]:
     authors = []
     if author_text:
         authors = _unique_preserve([part.strip() for part in author_text.split(" and ") if part.strip()])
+    volume = _extract_bibtex_field(bibtex_text, "volume")
+    pages = _extract_bibtex_field(bibtex_text, "pages")
+    publisher = _extract_bibtex_field(bibtex_text, "publisher")
     return {
         "title": title,
         "authors": authors,
@@ -180,6 +183,9 @@ def _parse_bibtex_record(bibtex_text: str) -> dict[str, Any]:
         "doi": doi or doi_from_text,
         "arxiv_id": arxiv_id_from_text,
         "url": url,
+        "volume": volume,
+        "pages": pages,
+        "publisher": publisher,
     }
 
 

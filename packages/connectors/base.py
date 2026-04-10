@@ -106,6 +106,77 @@ class SQLiteCache:
             )
 
 
+class VerifiedReferenceCache:
+    """Cache for references that have been verified as VALID (R1/R3/R4).
+
+    This caches the *reference* (not individual candidates). When the same
+    reference appears in another paper, the cached verdict is returned
+    immediately, skipping the entire verification pipeline.
+    """
+
+    # Verified references are unlikely to become invalid; use a long TTL.
+    DEFAULT_TTL_S = 60 * 60 * 24 * 30  # 30 days
+
+    def __init__(self, db_path: str | Path) -> None:
+        self.db_path = str(db_path)
+        self._init_db()
+
+    def _init_db(self) -> None:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS verified_references (
+                    ref_key TEXT PRIMARY KEY,
+                    verdict_json TEXT NOT NULL,
+                    expires_at INTEGER NOT NULL
+                )
+                """
+            )
+
+    @staticmethod
+    def _ref_key(citation: CitationRecord) -> str:
+        """Build a cache key from title + year."""
+        payload = {
+            "title": (citation.title or "").strip().lower(),
+            "year": citation.year,
+        }
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        return f"ref:{digest}"
+
+    def get(self, citation: CitationRecord) -> dict[str, Any] | None:
+        key = self._ref_key(citation)
+        now = int(time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT verdict_json, expires_at FROM verified_references WHERE ref_key = ?",
+                (key,),
+            ).fetchone()
+            if not row:
+                return None
+            verdict_json, expires_at = row
+            if expires_at < now:
+                conn.execute("DELETE FROM verified_references WHERE ref_key = ?", (key,))
+                return None
+            return json.loads(verdict_json)
+
+    def set(self, citation: CitationRecord, verdict_dict: dict[str, Any], ttl_s: int | None = None) -> None:
+        key = self._ref_key(citation)
+        expires_at = int(time.time()) + (ttl_s or self.DEFAULT_TTL_S)
+        payload = json.dumps(verdict_dict, ensure_ascii=False)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO verified_references(ref_key, verdict_json, expires_at)
+                VALUES(?, ?, ?)
+                ON CONFLICT(ref_key) DO UPDATE SET
+                    verdict_json = excluded.verdict_json,
+                    expires_at = excluded.expires_at
+                """,
+                (key, payload, expires_at),
+            )
+
+
 def cache_key_for(connector_name: str, citation: CitationRecord) -> str:
     payload = {
         "connector": connector_name,
@@ -268,7 +339,7 @@ class ConnectorOrchestrator:
             records: list[dict[str, Any]] = []
             try:
                 records = connector.search(citation, self.policy)
-                if self._should_cache_records(citation, connector.name, records):
+                if records:
                     self.cache.set(key, records, connector.ttl_s)
                 health = self.source_health.success(connector.name, self.policy)
             except Exception as exc:  # noqa: BLE001 - connector failures should not crash the paper run
@@ -287,22 +358,3 @@ class ConnectorOrchestrator:
                 )
             )
         return results
-
-    @staticmethod
-    def _should_cache_records(
-        citation: CitationRecord,
-        connector_name: str,
-        records: list[dict[str, Any]],
-    ) -> bool:
-        if not records:
-            return False
-        for record in records:
-            candidate = build_candidate_match(citation, connector_name, record)
-            if "doi_mismatch" in candidate.conflicts or "arxiv_id_mismatch" in candidate.conflicts:
-                continue
-            if "title_mismatch" in candidate.conflicts or "year_mismatch" in candidate.conflicts:
-                continue
-            if "title" not in candidate.matched_fields:
-                continue
-            return True
-        return False

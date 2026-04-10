@@ -214,6 +214,13 @@ def _build_normalized_search_record(
 
 
 def _build_query(citation: CitationRecord) -> str:
+    # Prefer raw_text (original unstructured reference string) as the query —
+    # it's exactly what appeared in the paper, so search engines match it best.
+    # Fall back to structured fields if raw_text is unavailable.
+    raw = (citation.raw_text or "").strip()
+    if raw and len(raw) > 20:
+        return raw[:500]  # cap length to avoid overly long queries
+
     title = (citation.title or "").strip()
     all_authors = _extract_all_authors(citation.authors)
     venue = (citation.venue or "").strip()
@@ -231,7 +238,7 @@ def _build_query(citation: CitationRecord) -> str:
 
     if parts:
         return " ".join(parts)
-    return (citation.raw_text or citation.doi or "").strip()
+    return (citation.doi or "").strip()
 
 
 def _normalize_query_author(author: str) -> str:

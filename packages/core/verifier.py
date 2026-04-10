@@ -5,13 +5,15 @@ from dataclasses import dataclass, replace
 
 from packages.connectors.base import ConnectorOrchestrator, ConnectorResult
 
-from dataclasses import replace as _replace
-
-from packages.connectors.base import RequestPolicy
-from packages.connectors.crossref import CrossrefConnector
-from packages.connectors.url_direct import URLDirectConnector
-
 from .adjudicate import AdjudicationPolicy, LLMResolver, SecondaryVerifierProtocol, adjudicate, canonical_verdict_label
+from .agents import ExistenceJudge, StructuredJudge, multi_agent_adjudicate
+from .cascading_agents import (
+    ValidAgentProtocol, PotentialAgentProtocol, HallucinatedAgentProtocol,
+    cascading_adjudicate,
+    phase0_url_check,
+    phase0_decide_verdict,
+    downgrade_non_academic_fake,
+)
 from .matching import CandidateMatch, collect_candidates
 from .models import CheckReport, CitationRecord, CitationVerdict, EvidenceTrace, ExtractionQuality, VerdictLabel
 from .normalize import extract_identifier, normalize_title, similarity
@@ -32,12 +34,38 @@ class CitationVerifier:
         llm_resolver: LLMResolver | None = None,
         config: VerifyConfig | None = None,
         secondary_verifier: SecondaryVerifierProtocol | None = None,
+        structured_judge: StructuredJudge | None = None,
+        existence_judge: ExistenceJudge | None = None,
+        # Cascading agents
+        valid_agent: ValidAgentProtocol | None = None,
+        potential_agent: PotentialAgentProtocol | None = None,
+        hallucinated_agent: HallucinatedAgentProtocol | None = None,
+        extractor_agent: Any = None,
+        verified_ref_cache: Any = None,
     ) -> None:
         self.orchestrator = orchestrator
         self.policy = policy or AdjudicationPolicy()
         self.llm_resolver = llm_resolver
         self.config = config or VerifyConfig()
         self.secondary_verifier = secondary_verifier
+        self.structured_judge = structured_judge
+        self.existence_judge = existence_judge
+        self.valid_agent = valid_agent
+        self.potential_agent = potential_agent
+        self.hallucinated_agent = hallucinated_agent
+        self.extractor_agent = extractor_agent
+        self.verified_ref_cache = verified_ref_cache
+
+    _CACHEABLE_TAXONOMY = {"R1", "R3", "R4"}
+
+    def _cache_if_valid(self, citation: CitationRecord, verdict: CitationVerdict) -> None:
+        """Cache the verified reference if verdict is VALID with R1/R3/R4."""
+        if self.verified_ref_cache is None:
+            return
+        taxonomy = set(verdict.taxonomy_subtype or [])
+        if verdict.verdict == VerdictLabel.VALID and taxonomy & self._CACHEABLE_TAXONOMY:
+            from .models import citation_verdict_to_dict
+            self.verified_ref_cache.set(citation, citation_verdict_to_dict(verdict))
 
     def _result_to_trace(self, citation: CitationRecord, result: ConnectorResult) -> EvidenceTrace:
         return EvidenceTrace(
@@ -59,160 +87,38 @@ class CitationVerifier:
     @staticmethod
     def _enrich_citation_from_url(citation: CitationRecord) -> CitationRecord:
         url = str(citation.url or "").strip()
-        if not url:
+        # Step 1: extract doi/arxiv_id from URL
+        if url:
+            extracted_doi, extracted_arxiv_id = extract_identifier(url)
+        else:
+            extracted_doi, extracted_arxiv_id = "", ""
+
+        new_doi = (citation.doi or "").strip().lower() or extracted_doi
+        new_arxiv_id = (citation.arxiv_id or "").strip().lower() or extracted_arxiv_id
+
+        # Step 2: if citation has arxiv_id but no venue, infer venue="arXiv"
+        # (avoids LLM HallucinatedAgent flagging empty venue as H4 for arxiv papers)
+        new_venue = citation.venue
+        if new_arxiv_id and not (citation.venue or "").strip():
+            new_venue = "arXiv"
+
+        # Skip rebuilding if nothing actually changed
+        unchanged = (
+            new_doi == (citation.doi or "").strip().lower()
+            and new_arxiv_id == (citation.arxiv_id or "").strip().lower()
+            and new_venue == citation.venue
+        )
+        if unchanged:
             return citation
-        extracted_doi, extracted_arxiv_id = extract_identifier(url)
-        if extracted_doi == (citation.doi or "").strip().lower() and extracted_arxiv_id == (citation.arxiv_id or "").strip().lower():
-            return citation
+
         return replace(
             citation,
-            doi=(citation.doi or "").strip().lower() or extracted_doi,
-            arxiv_id=(citation.arxiv_id or "").strip().lower() or extracted_arxiv_id,
+            doi=new_doi,
+            arxiv_id=new_arxiv_id,
+            venue=new_venue,
         )
 
     _WEB_CONNECTORS = {"google_search", "web_search"}
-
-    @staticmethod
-    def _build_resolve_urls(citation: CitationRecord, candidate_url: str) -> list[str]:
-        """Build prioritized list of URLs to try for web_search enrichment.
-
-        Priority: citation arXiv → citation URL → web_search result URL.
-        (DOI is handled separately via Crossref API, not url_direct.)
-        """
-        urls: list[str] = []
-        arxiv_id = (citation.arxiv_id or "").strip()
-        if arxiv_id:
-            urls.append(f"https://arxiv.org/abs/{arxiv_id}")
-        citation_url = (citation.url or "").strip()
-        if citation_url:
-            urls.append(citation_url)
-        if candidate_url and candidate_url not in urls:
-            urls.append(candidate_url)
-        return urls
-
-    def _enrich_web_candidates_via_url(
-        self, citation: CitationRecord, candidates: list[CandidateMatch],
-    ) -> list[CandidateMatch]:
-        """For web_search candidates with empty structured fields, resolve URLs via url_direct.
-
-        Tries citation's own DOI/arXiv/URL first, then falls back to the web_search result URL.
-        """
-        url_direct = self._find_url_direct_connector() or URLDirectConnector()
-        policy = RequestPolicy(timeout_s=10)
-        enriched: list[CandidateMatch] = []
-        for cand in candidates:
-            if cand.connector not in self._WEB_CONNECTORS or cand.title:
-                enriched.append(cand)
-                continue
-
-            resolve_urls = self._build_resolve_urls(citation, cand.url)
-            for try_url in resolve_urls:
-                try:
-                    probe = CitationRecord(citation_id="_enrich", url=try_url)
-                    results = url_direct.search(probe, policy)
-                    if not results:
-                        continue
-                    r = results[0]
-                    new_title = str(r.get("title", "") or "").strip()
-                    if not new_title:
-                        continue
-                    new_authors = r.get("authors") or []
-                    new_venue = str(r.get("venue", "") or "").strip()
-                    raw_year = r.get("year")
-                    new_year = int(raw_year) if raw_year is not None else None
-                    new_doi = str(r.get("doi", "") or "").strip()
-                    new_arxiv_id = str(r.get("arxiv_id", "") or "").strip()
-                    new_pages = str(r.get("pages", "") or "").strip()
-                    new_publisher = str(r.get("publisher", "") or "").strip()
-                    updated_raw = dict(cand.raw_record)
-                    updated_raw["url_direct_enrichment"] = r
-                    updated_raw["url_direct_enrichment_source"] = try_url
-                    cand = _replace(
-                        cand,
-                        title=new_title,
-                        authors=new_authors or cand.authors,
-                        venue=new_venue or cand.venue,
-                        year=new_year if new_year is not None else cand.year,
-                        doi=new_doi or cand.doi,
-                        arxiv_id=new_arxiv_id or cand.arxiv_id,
-                        raw_record=updated_raw,
-                    )
-                    break  # Successfully enriched, stop trying URLs
-                except Exception:
-                    continue
-            enriched.append(cand)
-        return enriched
-
-    def _find_url_direct_connector(self) -> URLDirectConnector | None:
-        """Get the url_direct connector from the orchestrator (shares its cache)."""
-        for conn in getattr(self.orchestrator, "connectors", []):
-            if isinstance(conn, URLDirectConnector):
-                return conn
-        return None
-
-    def _resolve_doi_via_crossref(self, doi: str) -> dict | None:
-        """Resolve a DOI via Crossref API (no JS rendering needed)."""
-        crossref = CrossrefConnector()
-        policy = RequestPolicy(timeout_s=10)
-        try:
-            payload = crossref._request_json(
-                f"https://api.crossref.org/works/{doi}",
-                {},
-                policy,
-            )
-            item = payload.get("message", {})
-            if not item:
-                return None
-            record = crossref._normalize_item(item)
-            record["_resolved_from"] = f"crossref_api:{doi}"
-            return record
-        except Exception:
-            return None
-
-    def _resolve_citation_urls_direct(self, citation: CitationRecord) -> list[dict]:
-        """Resolve citation's DOI/arXiv/URL as highest-priority candidates.
-
-        DOI → Crossref API (reliable, no JS issues).
-        arXiv/URL → url_direct (HTML meta tag extraction).
-        """
-        results: list[dict] = []
-        seen_titles: set[str] = set()
-
-        # DOI: use Crossref API directly (avoids JS redirect issues with doi.org)
-        doi = (citation.doi or "").strip()
-        if doi:
-            record = self._resolve_doi_via_crossref(doi)
-            if record:
-                title = str(record.get("title", "") or "").strip().lower()
-                if title and title not in seen_titles:
-                    results.append(record)
-                    seen_titles.add(title)
-
-        # arXiv / URL: use url_direct
-        url_direct = self._find_url_direct_connector()
-        if url_direct:
-            policy = RequestPolicy(timeout_s=10)
-            arxiv_id = (citation.arxiv_id or "").strip()
-            citation_url = (citation.url or "").strip()
-            urls_to_try: list[str] = []
-            if arxiv_id:
-                urls_to_try.append(f"https://arxiv.org/abs/{arxiv_id}")
-            if citation_url:
-                urls_to_try.append(citation_url)
-            for try_url in urls_to_try:
-                try:
-                    probe = CitationRecord(citation_id="_resolve", url=try_url)
-                    fetched = url_direct.search(probe, policy)
-                    for r in fetched:
-                        title = str(r.get("title", "") or "").strip().lower()
-                        if title and title not in seen_titles:
-                            r["_resolved_from"] = try_url
-                            results.append(r)
-                            seen_titles.add(title)
-                except Exception:
-                    continue
-
-        return results
 
     # Titles that indicate a redirect/CAPTCHA/error page, not a real resolved title
     _JUNK_TITLES = {
@@ -326,37 +232,107 @@ class CitationVerifier:
         extraction_quality: ExtractionQuality | None = None,
         source_paper_title: str = "",
     ):
+        # Check verified reference cache — skip entire pipeline if already confirmed VALID
+        if self.verified_ref_cache is not None:
+            cached = self.verified_ref_cache.get(citation)
+            if cached is not None:
+                from .models import citation_verdict_from_dict
+                return citation_verdict_from_dict(cached, citation.citation_id)
+
         citation = self._enrich_citation_from_url(citation)
         extraction_quality = extraction_quality or self.config.default_extraction_quality
 
-        # Step 1: url_direct is highest priority — resolve citation's own DOI/arXiv/URL
-        url_direct_records = self._resolve_citation_urls_direct(citation)
+        # Phase 0: URL/DOI direct verification (BEFORE orchestrator query).
+        # Resolves citation.url and citation.doi via URLDirectConnector + Tavily fallback.
+        # Returns status signal AND any fetched records to merge into candidates.
+        url_match_status, url_issues, url_type_triggered, phase0_records = phase0_url_check(citation)
 
-        # Step 1.5: If identifiers resolve to a different paper → immediate FAKE
-        id_mismatch = self._check_identifier_mismatch(citation, url_direct_records)
+        # Phase 0 early-exit:
+        # - Scholar URL (arxiv/doi) mismatch or not_found → FAKE_REFERENCE
+        # - Other URL mismatch or not_found → POTENTIAL_REFERENCE / P3
+        phase0_verdict = phase0_decide_verdict(
+            citation, url_match_status, url_issues, url_type_triggered,
+        )
+        if phase0_verdict is not None:
+            return phase0_verdict
+
+        # If identifiers resolve to a clearly different paper → immediate FAKE
+        id_mismatch = self._check_identifier_mismatch(citation, phase0_records)
         if id_mismatch:
             return id_mismatch
 
-        # Step 2: Query all other connectors
+        # Query all other connectors (url_direct is NOT in the orchestrator anymore)
         connector_results = self.orchestrator.query(citation, max_connectors=None)
         records = {result.connector: result.records for result in connector_results}
 
-        # Prepend url_direct results (highest priority)
-        if url_direct_records:
+        # Add Phase 0 url_direct records as a synthetic source so they participate
+        # in candidate matching alongside the structured connectors.
+        if phase0_records:
             existing = records.get("url_direct", [])
             existing_urls = {str(r.get("url", "")) for r in existing}
-            for r in url_direct_records:
+            for r in phase0_records:
                 if str(r.get("url", "")) not in existing_urls:
                     existing.append(r)
             records["url_direct"] = existing
 
         candidates = collect_candidates(citation, records)
 
-        # Step 3: Enrich web_search candidates that still have empty fields
-        candidates = self._enrich_web_candidates_via_url(citation, candidates)
+        # Note: web_search candidate enrichment via url_direct is removed.
+        # Phase 0 already handled the citation URL. Empty web_search candidates
+        # are handled by ExtractorAgent inside cascading_adjudicate.
 
         evidence = [self._result_to_trace(citation, result) for result in connector_results]
-        return adjudicate(
+
+        # Use cascading 3-agent flow if configured (preferred)
+        if self.valid_agent:
+            # Resolve tavily key for web_search URL enrichment
+            import os as _os
+            _tavily_key = _os.getenv("TAVILY_API_KEY", "")
+            if not _tavily_key:
+                try:
+                    from apps.pdf_checker.config import load_pdf_checker_config as _load_cfg
+                    _tavily_key = (_load_cfg().connectors.tavily_api_key or "").strip()
+                except Exception:
+                    pass
+
+            verdict = cascading_adjudicate(
+                citation=citation,
+                candidates=candidates,
+                evidence_traces=evidence,
+                extraction_quality=extraction_quality,
+                valid_agent=self.valid_agent,
+                potential_agent=self.potential_agent,
+                hallucinated_agent=self.hallucinated_agent,
+                secondary_verifier=self.secondary_verifier,
+                extractor_agent=self.extractor_agent,
+                source_paper_title=source_paper_title,
+                url_match_status=url_match_status,
+                url_issues=url_issues,
+                url_type_triggered=url_type_triggered,
+                tavily_api_key=_tavily_key,
+            )
+            # Final downgrade: non-academic FAKE → P3 (R packages, GitHub, blogs)
+            verdict = downgrade_non_academic_fake(citation, verdict)
+            self._cache_if_valid(citation, verdict)
+            return verdict
+
+        # Use parallel multi-agent flow if judges are configured
+        if self.structured_judge or self.existence_judge:
+            verdict = multi_agent_adjudicate(
+                citation=citation,
+                candidates=candidates,
+                evidence_traces=evidence,
+                extraction_quality=extraction_quality,
+                structured_judge=self.structured_judge,
+                existence_judge=self.existence_judge,
+                secondary_verifier=self.secondary_verifier,
+                source_paper_title=source_paper_title,
+            )
+            self._cache_if_valid(citation, verdict)
+            return verdict
+
+        # Fallback: legacy single-LLM adjudication
+        verdict = adjudicate(
             citation=citation,
             candidates=candidates,
             evidence=evidence,
@@ -365,6 +341,8 @@ class CitationVerifier:
             policy=self.policy,
             secondary_verifier=self.secondary_verifier,
         )
+        self._cache_if_valid(citation, verdict)
+        return verdict
 
     def verify_paper(
         self,

@@ -1,0 +1,1593 @@
+"""Cascading 3-Agent Citation Verification System.
+
+Pipeline: ValidAgent → PotentialAgent → HallucinatedAgent
+
+ValidAgent: Is this citation verifiably REAL? (rule-based + LLM)
+  YES → REAL (done)
+  NO → hint ("likely_potential" or "likely_hallucinated") → route downstream
+
+PotentialAgent: Are the discrepancies explainable? (evidence + LLM)
+  POTENTIAL → done
+  HALLUCINATED → escalate to HallucinatedAgent
+
+HallucinatedAgent: Classify ALL errors. (LLM)
+  HALLUCINATED → done (with full error list)
+  POTENTIAL → rare downgrade
+"""
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+from .models import (
+    CandidateMatch,
+    CitationRecord,
+    CitationVerdict,
+    DiscrepancyEvidence,
+    DownstreamAgentResult,
+    ExtractionQuality,
+    FieldComparisonResult,
+    ValidAgentResult,
+    VerdictLabel,
+    candidate_match_to_dict,
+)
+
+
+# ---------------------------------------------------------------------------
+# Agent Protocols
+# ---------------------------------------------------------------------------
+
+class ValidAgentProtocol(Protocol):
+    def evaluate(
+        self,
+        citation: CitationRecord,
+        candidate: CandidateMatch,
+        comparison: FieldComparisonResult,
+    ) -> ValidAgentResult: ...
+
+
+class PotentialAgentProtocol(Protocol):
+    def evaluate(
+        self,
+        citation: CitationRecord,
+        candidate: CandidateMatch,
+        comparison: FieldComparisonResult,
+        valid_hint: ValidAgentResult,
+        evidence: list[DiscrepancyEvidence],
+    ) -> DownstreamAgentResult: ...
+
+
+class HallucinatedAgentProtocol(Protocol):
+    def evaluate(
+        self,
+        citation: CitationRecord,
+        candidate: CandidateMatch,
+        comparison: FieldComparisonResult,
+        valid_hint: ValidAgentResult,
+    ) -> DownstreamAgentResult: ...
+
+
+# ---------------------------------------------------------------------------
+# Rule-based hint computation
+# ---------------------------------------------------------------------------
+
+_WEB_CONNECTORS = {"google_search", "web_search"}
+
+
+def _fetch_url_content(url: str, tavily_api_key: str = "") -> str:
+    """Fetch page content from URL via HTTP GET, with Tavily Extract fallback."""
+    from packages.connectors.base import RequestPolicy as _RP
+    from packages.connectors.url_direct import URLDirectConnector
+
+    connector = URLDirectConnector(tavily_api_key=tavily_api_key)
+    policy = _RP(timeout_s=5.0)
+    
+    # Try direct HTTP GET first
+    try:
+        body = connector._request_text(
+            url, {}, policy,
+            headers={"Accept": "text/html,application/xhtml+xml"},
+        )
+        return body
+    except Exception:
+        pass
+
+    # Fallback: Tavily Extract API
+    if tavily_api_key:
+        try:
+            payload = connector._request_json_post(
+                "https://api.tavily.com/extract",
+                {"urls": [url], "extract_depth": "basic", "format": "markdown"},
+                policy,
+                headers={"Authorization": f"Bearer {tavily_api_key}"},
+            )
+            results = payload.get("results", []) if isinstance(payload, dict) else []
+            if results:
+                return str(results[0].get("raw_content", "") or results[0].get("content", "") or "")[:8000]
+        except Exception:
+            pass
+
+    return ""
+
+
+def _enrich_web_candidate_via_url(
+    candidate: CandidateMatch,
+    tavily_api_key: str = "",
+    extractor_agent: Any = None,
+) -> CandidateMatch:
+    """Fetch URL page content and use ExtractorAgent LLM to extract structured fields.
+
+    Flow:
+      1. HTTP GET the URL (fallback: Tavily Extract API)
+      2. Pass page content to ExtractorAgent LLM for structured extraction
+      3. Merge extracted fields into candidate (only fill empty fields)
+    """
+    from dataclasses import replace as _replace
+
+    url = (candidate.url or "").strip()
+    if not url or extractor_agent is None:
+        return candidate
+
+    # Skip URLs that are clearly not academic pages
+    skip_domains = {"youtube.com", "twitter.com", "x.com", "github.com", "slideslive.com"}
+    try:
+        from urllib.parse import urlsplit
+        host = urlsplit(url).hostname or ""
+        host = host.lower().lstrip("www.")
+        if any(host.endswith(d) for d in skip_domains):
+            return candidate
+    except Exception:
+        pass
+
+    # Fetch page content
+    content = ""
+    try:
+        content = _fetch_url_content(url, tavily_api_key)
+    except Exception:
+        return candidate
+
+    if not content.strip():
+        return candidate
+
+    # Use ExtractorAgent LLM to extract structured fields from the page content.
+    # Build a temporary candidate with URL page content as raw_content,
+    # then extract and merge results back — URL page values override snippet values
+    # when they differ (URL page is more authoritative).
+    try:
+        from packages.core.extractor_agent import EXTRACTOR_PROMPT, _call_bedrock
+        import re as _re, json as _json
+
+        prompt = EXTRACTOR_PROMPT.format(content=content)
+        parsed = _call_bedrock(extractor_agent.client, extractor_agent.model_id, prompt)
+        if not parsed:
+            return candidate
+    except Exception:
+        return candidate
+
+    new_title = str(parsed.get("title", "") or "").strip()
+    new_authors = parsed.get("authors") or []
+    if isinstance(new_authors, str):
+        new_authors = [a.strip() for a in new_authors.split(",") if a.strip()]
+    new_venue = str(parsed.get("venue", "") or "").strip()
+    raw_year = parsed.get("year")
+    new_year = int(raw_year) if raw_year is not None else None
+    new_doi = str(parsed.get("doi", "") or "").strip()
+    new_pages = str(parsed.get("pages", "") or "").strip()
+    new_volume = str(parsed.get("volume", "") or "").strip()
+    new_publisher = str(parsed.get("publisher", "") or "").strip()
+
+    # Merge: URL page extraction overrides when values differ.
+    # If URL page didn't extract a field (empty), keep existing value.
+    def _pick(old: str, new: str) -> str:
+        if not new:
+            return old  # URL page didn't extract → keep existing
+        return new      # URL page has value → use it (override even if different)
+
+    def _pick_list(old: list, new: list) -> list:
+        if not new:
+            return old
+        return new
+
+    updated_raw = dict(candidate.raw_record) if isinstance(candidate.raw_record, dict) else {}
+    updated_raw["url_direct_enrichment"] = parsed
+
+    return _replace(
+        candidate,
+        title=_pick(candidate.title, new_title),
+        authors=_pick_list(candidate.authors, new_authors),
+        venue=_pick(candidate.venue, new_venue),
+        year=new_year if new_year is not None else candidate.year,
+        doi=_pick(candidate.doi, new_doi),
+        pages=_pick(candidate.pages, new_pages),
+        volume=_pick(candidate.volume, new_volume),
+        publisher=_pick(candidate.publisher, new_publisher),
+        raw_record=updated_raw,
+    )
+
+
+def compute_hint(field_result: FieldComparisonResult) -> tuple[str, list[str]]:
+    """Compute routing hint + issues from field comparison. No LLM needed."""
+    fs = field_result.field_status
+    issues: list[str] = []
+    hint = "likely_hallucinated"  # default
+
+    title_s = fs.get("title", {}).get("status", "")
+    year_s = fs.get("year", {}).get("status", "")
+    author_s = fs.get("authors", {}).get("status", "")
+    venue_s = fs.get("venue", {}).get("status", "")
+    doi_s = fs.get("doi", {}).get("status", "")
+    pages_s = fs.get("pages", {}).get("status", "")
+    volume_s = fs.get("volume", {}).get("status", "")
+    publisher_s = fs.get("publisher", {}).get("status", "")
+
+    # Title
+    if title_s == "mismatch":
+        issues.append("title_mismatch")
+
+    # Authors
+    if author_s == "count_mismatch":
+        issues.append("author_count_mismatch")
+    elif author_s in ("partial_overlap", "reordered_match"):
+        issues.append("author_name_variant" if author_s == "partial_overlap" else "author_reordered")
+    elif author_s == "mismatch":
+        issues.append("author_mismatch")
+
+    # Year
+    if year_s == "mismatch":
+        ref_year = fs.get("year", {}).get("reference")
+        cand_year = fs.get("year", {}).get("candidate")
+        try:
+            diff = abs(int(ref_year) - int(cand_year)) if ref_year and cand_year else 99
+        except (TypeError, ValueError):
+            diff = 99
+        if diff <= 1:
+            issues.append("year_off_by_one")
+        else:
+            issues.append("year_mismatch")
+
+    # Venue — arXiv is NOT a valid variant of any conference/journal
+    if venue_s == "mismatch":
+        issues.append("venue_mismatch")
+
+    # DOI
+    if doi_s == "mismatch":
+        issues.append("doi_mismatch")
+
+    # Pages
+    if pages_s == "mismatch":
+        issues.append("pages_mismatch")
+    # Volume
+    if volume_s == "mismatch":
+        issues.append("volume_mismatch")
+    # Publisher
+    if publisher_s == "mismatch":
+        issues.append("publisher_mismatch")
+
+    # Determine hint from issues
+    potential_signals = {
+        "author_name_variant", "year_off_by_one",
+    }
+    hallucinated_signals = {
+        "title_mismatch", "author_count_mismatch", "author_mismatch", "author_reordered",
+        "year_mismatch", "venue_mismatch", "doi_mismatch", "pages_mismatch",
+        "volume_mismatch", "publisher_mismatch",
+    }
+
+    has_potential = any(i in potential_signals for i in issues)
+    has_hallucinated = any(i in hallucinated_signals for i in issues)
+
+    if has_hallucinated:
+        hint = "likely_hallucinated"
+    elif has_potential:
+        hint = "likely_potential"
+    elif not issues:
+        hint = "likely_potential"  # no obvious issues → might be format variant
+
+    return hint, issues
+
+
+# ---------------------------------------------------------------------------
+# ValidAgent (rule-based part)
+# ---------------------------------------------------------------------------
+
+def rule_based_valid_check(
+    citation: CitationRecord,
+    candidate: CandidateMatch,
+    build_comparison_func,
+    is_direct_valid_func,
+) -> ValidAgentResult:
+    """Rule-based validation. If direct_valid passes, return REAL immediately."""
+    conflicts = list(candidate.conflicts)
+    comparison = build_comparison_func(citation, candidate, conflicts)
+    fs = comparison["field_status"]
+    has_et_al = fs.get("authors", {}).get("has_et_al", False)
+
+    field_result = FieldComparisonResult(
+        field_status=fs,
+        signal="",
+        has_et_al=has_et_al,
+        comparison=comparison,
+        conflicts=conflicts,
+    )
+
+    # Fast path: direct valid
+    if is_direct_valid_func(fs, conflicts):
+        ref_authors = fs.get("authors", {}).get("reference", [])
+        cand_authors = fs.get("authors", {}).get("candidate", [])
+        author_status = fs.get("authors", {}).get("status", "")
+
+        # reordered_match: don't hard-reject here — _compare_authors token matching
+        # can produce false reordered_match (e.g. "Wang, S" matching wrong "Wang").
+        # Let LLM ValidAgent decide whether the order truly differs.
+        if author_status == "reordered_match":
+            hint, issues = compute_hint(field_result)
+            field_result.signal = "soft_discrepancy"
+            return ValidAgentResult(
+                is_valid=False,
+                taxonomy=[],
+                hint="likely_potential",
+                issues=["author_reordered"],
+                reason="Author order may differ — needs LLM verification.",
+                field_result=field_result,
+                candidate=candidate,
+            )
+
+        # Check 2: Detect P2 (multi-letter author name variants)
+        # If authors status is "match" via token overlap but names differ in more than initial,
+        # this might be P2 not R1/R2
+        if ref_authors and cand_authors and len(ref_authors) == len(cand_authors):
+            from .normalize import normalize_text
+            import re as _re
+            p2_detected = False
+            for r, c in zip(ref_authors, cand_authors):
+                r_parts = normalize_text(str(r)).split()
+                c_parts = normalize_text(str(c)).split()
+                # Strip DBLP suffixes from candidate
+                c_parts = [_re.sub(r"\s*\d{4,}$", "", p).strip() for p in c_parts]
+                c_parts = [p for p in c_parts if p]
+                for rp, cp in zip(r_parts, c_parts):
+                    if rp == cp:
+                        continue
+                    # Single-letter initial is R2
+                    if len(rp) == 1 and cp.startswith(rp):
+                        continue
+                    if len(cp) == 1 and rp.startswith(cp):
+                        continue
+                    # Multi-letter difference → P2
+                    if len(rp) > 1 and len(cp) > 1 and rp != cp:
+                        p2_detected = True
+                        break
+                if p2_detected:
+                    break
+
+            if p2_detected:
+                field_result.signal = "soft_discrepancy"
+                return ValidAgentResult(
+                    is_valid=False,
+                    taxonomy=[],
+                    hint="likely_potential",
+                    issues=["author_name_variant"],
+                    reason="Author name differs by more than single-letter initial (P2 candidate).",
+                    field_result=field_result,
+                    candidate=candidate,
+                )
+
+        is_web = candidate.connector in _WEB_CONNECTORS
+        if has_et_al:
+            taxonomy = ["R3"]
+        elif is_web:
+            taxonomy = ["R4"]
+        else:
+            taxonomy = ["R1"]
+
+        field_result.signal = "direct_valid"
+        return ValidAgentResult(
+            is_valid=True,
+            taxonomy=taxonomy,
+            hint="",
+            issues=[],
+            reason="All core fields match.",
+            field_result=field_result,
+            candidate=candidate,
+        )
+
+    # Not direct valid → compute hint
+    hint, issues = compute_hint(field_result)
+    field_result.signal = "soft_discrepancy" if hint == "likely_potential" else "hard_mismatch"
+
+    return ValidAgentResult(
+        is_valid=False,
+        taxonomy=[],
+        hint=hint,
+        issues=issues,
+        reason=f"Not valid. Issues: {issues}",
+        field_result=field_result,
+        candidate=candidate,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Post-validation guards for LLM VALID results
+# ---------------------------------------------------------------------------
+
+# Fields to skip in the "reference field missing from all candidates" check.
+# pages and volume are excluded for now — will be handled separately later.
+_SKIP_FIELDS_FOR_MISSING_CHECK = {"pages", "volume", "url"}
+
+
+def _has_multi_letter_truncation(
+    citation: CitationRecord, candidate: CandidateMatch,
+) -> tuple[bool, str]:
+    """Return (detected, description) for multi-letter author truncation (P2, not R2).
+
+    R2 allows ONLY single-letter initials (e.g. "C. Zou" vs "Chang Zou").
+    Multi-letter truncation like "Cha. Zou" vs "Chang Zou" is P2.
+
+    Handles name-order differences (e.g. "Cha. Zou" vs "Zou, Chang") by
+    matching each ref token against the best candidate token (unordered).
+
+    The description names the specific author pair that triggered the rule,
+    e.g. "'Josh Achiam' (citation) vs 'Joshua Achiam' (candidate): 'josh' is
+    a multi-letter prefix of 'joshua'".
+    """
+    from .normalize import normalize_text
+    import re as _re
+
+    ref_authors = list(citation.authors or [])
+    cand_authors = list(candidate.authors or [])
+    if not ref_authors or not cand_authors or len(ref_authors) != len(cand_authors):
+        return False, ""
+
+    def _clean_parts(name: str) -> list[str]:
+        parts = normalize_text(str(name)).split()
+        # Strip DBLP numeric suffixes (e.g. "0001")
+        parts = [_re.sub(r"\s*\d{4,}$", "", p).strip() for p in parts]
+        return [p for p in parts if p]
+
+    def _is_multi_letter_trunc(short: str, long: str) -> bool:
+        """True if short is a multi-letter prefix of long (not single-letter)."""
+        s = short.rstrip(".")
+        l = long.rstrip(".")
+        return len(s) > 1 and len(l) > len(s) and l.startswith(s)
+
+    for r, c in zip(ref_authors, cand_authors):
+        r_parts = _clean_parts(r)
+        c_parts = _clean_parts(c)
+
+        # For each ref part, find the best matching candidate part
+        remaining_cparts = list(c_parts)
+        for rp in r_parts:
+            # 1) Try exact match first
+            if rp in remaining_cparts:
+                remaining_cparts.remove(rp)
+                continue
+            # 2) Try single-letter initial (R2 — allowed)
+            matched = False
+            for cp in remaining_cparts:
+                if (len(rp) == 1 and cp.startswith(rp)) or (len(cp) == 1 and rp.startswith(cp)):
+                    remaining_cparts.remove(cp)
+                    matched = True
+                    break
+            if matched:
+                continue
+            # 3) Check multi-letter truncation (P2)
+            for cp in remaining_cparts:
+                if _is_multi_letter_trunc(rp, cp):
+                    return True, (
+                        f"'{r}' (citation) vs '{c}' (candidate): "
+                        f"'{rp}' is a multi-letter prefix of '{cp}' "
+                        f"(R2 only allows single-letter initials)"
+                    )
+                if _is_multi_letter_trunc(cp, rp):
+                    return True, (
+                        f"'{r}' (citation) vs '{c}' (candidate): "
+                        f"'{cp}' is a multi-letter prefix of '{rp}' "
+                        f"(R2 only allows single-letter initials)"
+                    )
+
+    return False, ""
+
+
+def _has_reference_field_missing_from_all(
+    citation: CitationRecord,
+    candidates: list[CandidateMatch],
+    build_comparison_func,
+) -> list[str]:
+    """Return list of fields that exist in the citation but are missing in ALL candidates.
+
+    If the citation provides a value for a field (e.g. venue, year, doi) and no
+    candidate has that field at all, this is suspicious — the field cannot be
+    verified.  We exclude pages/volume for now.
+    """
+    # Collect which reference fields have values
+    ref_fields_with_value: set[str] = set()
+    for fname in ("venue", "year", "doi", "arxiv_id"):
+        val = getattr(citation, fname, None)
+        if val and str(val).strip():
+            ref_fields_with_value.add(fname)
+
+    if not ref_fields_with_value:
+        return []
+
+    # For each field, check if ANY candidate has it (not candidate_missing)
+    fields_found_in_candidates: set[str] = set()
+    for cand in candidates:
+        for fname in ref_fields_with_value:
+            cand_val = getattr(cand, fname, None)
+            if cand_val and str(cand_val).strip():
+                fields_found_in_candidates.add(fname)
+
+    missing_fields = sorted(ref_fields_with_value - fields_found_in_candidates)
+    return missing_fields
+
+
+def _venue_is_arxiv(venue: str) -> bool:
+    """Return True if venue normalizes to arXiv/CoRR (preprint server)."""
+    from .normalize import normalize_venue
+    return normalize_venue(venue) == "arxiv"
+
+
+def _venue_is_conference_or_journal(venue: str) -> bool:
+    """Return True if venue normalizes to a known conference or journal."""
+    from .normalize import normalize_venue, VENUE_ALIASES
+    norm = normalize_venue(venue)
+    # Everything in VENUE_ALIASES that is NOT arxiv is a conference/journal
+    known_venues = {v for v in VENUE_ALIASES.values() if v != "arxiv"}
+    return norm in known_venues
+
+
+def _has_venue_arxiv_vs_conference(citation: CitationRecord, candidate: CandidateMatch) -> tuple[bool, str]:
+    """Detect when citation says arXiv but candidate is at a conference, or vice versa.
+
+    arXiv preprint is NOT a valid format variant (R2) of any conference/journal.
+    This is at minimum a version difference (P1) or venue error (H4).
+    Returns (detected, description).
+    """
+    ref_venue = (citation.venue or "").strip()
+    cand_venue = (candidate.venue or "").strip()
+    if not ref_venue or not cand_venue:
+        return (False, "")
+
+    ref_is_arxiv = _venue_is_arxiv(ref_venue)
+    cand_is_arxiv = _venue_is_arxiv(cand_venue)
+
+    if ref_is_arxiv and not cand_is_arxiv and _venue_is_conference_or_journal(cand_venue):
+        from .normalize import normalize_venue
+        return (True, f"Citation venue '{ref_venue}' is arXiv but candidate is published at '{cand_venue}' ({normalize_venue(cand_venue)})")
+    if cand_is_arxiv and not ref_is_arxiv and _venue_is_conference_or_journal(ref_venue):
+        from .normalize import normalize_venue
+        return (True, f"Citation venue '{ref_venue}' ({normalize_venue(ref_venue)}) but candidate is only on arXiv")
+
+    return (False, "")
+
+
+def _has_cross_candidate_year_contradiction(
+    citation: CitationRecord,
+    candidate: CandidateMatch,
+    all_candidates: list[CandidateMatch],
+) -> tuple[bool, str]:
+    """Detect when the current candidate has missing year but other candidates
+    show a year mismatch with the citation.
+
+    If >=2 other candidates have a concrete year that disagrees with the citation,
+    we should not trust a candidate with missing year as VALID.
+    """
+    cite_year = str(citation.year or "").strip()
+    cand_year = str(candidate.year or "").strip()
+    if not cite_year:
+        return (False, "")
+    # Only trigger if the winning candidate has no year
+    if cand_year and cand_year != "None":
+        return (False, "")
+
+    contradicting = 0
+    actual_year = None
+    for c in all_candidates:
+        cy = str(c.year or "").strip()
+        if cy and cy != "None" and cy != cite_year:
+            contradicting += 1
+            actual_year = cy
+
+    if contradicting >= 2:
+        return (True, f"Citation year={cite_year} but {contradicting} candidates say year={actual_year}; winning candidate has no year")
+
+    return (False, "")
+
+
+def _has_structured_conflict_on_missing_fields(
+    candidate: CandidateMatch,
+    field_result: "FieldComparisonResult",
+    prior_evaluations: list[dict],
+) -> tuple[bool, str, list[str]]:
+    """Detect when the winning candidate has candidate_missing fields, but prior
+    structured sources found errors on those same fields.
+
+    E.g. web_search has authors=candidate_missing, but dblp/crossref found
+    authors=reordered_match.  The web_search VALID should inherit that conflict.
+    """
+    if not prior_evaluations:
+        return (False, "", [])
+
+    fs = field_result.field_status if field_result else {}
+    # Which fields are candidate_missing in the winning candidate?
+    missing_fields: set[str] = set()
+    for fname, info in fs.items():
+        if isinstance(info, dict) and info.get("status") == "candidate_missing":
+            missing_fields.add(fname)
+
+    if not missing_fields:
+        return (False, "", [])
+
+    # Check prior evaluations from structured (non-web) sources
+    _CONFLICT_STATUSES = {"mismatch", "reordered_match", "count_mismatch", "partial_overlap"}
+    _FIELD_TO_H = {
+        "authors": "H3",
+        "venue": "H4",
+        "year": "H5",
+        "doi": "H6",
+        "title": "H2",
+        "pages": "H7",
+        "volume": "H7",
+        "publisher": "H7",
+    }
+
+    inherited_issues: list[str] = []
+    inherited_descs: list[str] = []
+
+    for ev in prior_evaluations:
+        connector = ev.get("connector", "")
+        if connector in _WEB_CONNECTORS:
+            continue  # only inherit from structured sources
+        prior_fs = ev.get("comparison", {}).get("field_status", {})
+        for fname in missing_fields:
+            prior_info = prior_fs.get(fname, {})
+            if isinstance(prior_info, dict) and prior_info.get("status") in _CONFLICT_STATUSES:
+                h_code = _FIELD_TO_H.get(fname, "")
+                if h_code and h_code not in inherited_issues:
+                    inherited_issues.append(h_code)
+                    inherited_descs.append(
+                        f"{fname}={prior_info['status']} from {connector} "
+                        f"(ref={str(prior_info.get('reference',''))[:40]} "
+                        f"cand={str(prior_info.get('candidate',''))[:40]})"
+                    )
+
+    if inherited_issues:
+        desc = "; ".join(inherited_descs)
+        return (True, f"Winning candidate missing {sorted(missing_fields)}, but structured sources found conflicts: {desc}", inherited_issues)
+
+    return (False, "", [])
+
+
+def _post_validate_valid_result(
+    citation: CitationRecord,
+    candidate: CandidateMatch,
+    all_candidates: list[CandidateMatch],
+    taxonomy: list[str],
+    field_result: "FieldComparisonResult",
+    build_comparison_func=None,
+    prior_evaluations: list[dict] | None = None,
+) -> tuple[bool, str, list[str], VerdictLabel]:
+    """Post-validation guard after rule-based or LLM declares VALID.
+
+    Returns (should_override, reason, override_taxonomy, override_verdict).
+    override_verdict: FAKE_REFERENCE for hard evidence (H*), POTENTIAL_REFERENCE for soft (P*).
+    """
+    # Guard 0: Non-academic venue detection
+    # If citation claims a non-academic venue but candidate is from an academic source,
+    # the venue claim is suspicious → P3
+    _NON_ACADEMIC_VENUES = {"personal blog", "blog", "blog post", "tweet", "twitter",
+                            "github", "medium", "substack", "personal website", "website"}
+    ref_venue_lower = (citation.venue or "").strip().lower()
+    if any(marker in ref_venue_lower for marker in _NON_ACADEMIC_VENUES):
+        if candidate.connector not in _WEB_CONNECTORS:
+            return (
+                True,
+                f"Guard 0 (P3): citation venue '{citation.venue}' is non-academic but matched academic paper from {candidate.connector}.",
+                ["P3"],
+                VerdictLabel.POTENTIAL_REFERENCE,
+            )
+
+    # Guard 1: Multi-letter author truncation → P2, not R2
+    has_trunc, trunc_desc = _has_multi_letter_truncation(citation, candidate)
+    if has_trunc:
+        return (
+            True,
+            f"Guard 1 (P2): author name has multi-letter truncation. {trunc_desc}",
+            ["P2"],
+            VerdictLabel.POTENTIAL_REFERENCE,
+        )
+
+    # Guard 2: arXiv vs conference/journal venue mismatch → H4 (venue error)
+    # P1 is only for arXiv version differences (v1 vs v3), NOT for venue differences.
+    venue_issue, venue_desc = _has_venue_arxiv_vs_conference(citation, candidate)
+    if venue_issue:
+        return (
+            True,
+            f"Guard 2 (H4): {venue_desc}. Venue mismatch.",
+            ["H4"],
+            VerdictLabel.FAKE_REFERENCE,
+        )
+
+    # Guard 3: Cross-candidate year contradiction → hard evidence
+    year_issue, year_desc = _has_cross_candidate_year_contradiction(
+        citation, candidate, all_candidates,
+    )
+    if year_issue:
+        return (
+            True,
+            f"Guard 3 (H5): {year_desc}. Cannot trust VALID from candidate with missing year.",
+            ["H5"],
+            VerdictLabel.FAKE_REFERENCE,
+        )
+
+    # Guard 3b: Year contradiction from any prior candidate for web search winners.
+    # Only triggers when the WINNER's own year is unreliable (missing or mismatch).
+    # If the winner itself confirms a matching year, prior contradictions are noise.
+    if candidate.connector in _WEB_CONNECTORS and prior_evaluations:
+        cite_year = str(citation.year or "").strip()
+        winner_year_status = ""
+        if field_result and field_result.field_status:
+            winner_year_status = (
+                field_result.field_status.get("year", {}).get("status", "")
+            )
+        # Skip Guard 3b if winner already independently confirmed the year
+        winner_year_unreliable = winner_year_status in ("candidate_missing", "mismatch", "")
+        if cite_year and winner_year_unreliable:
+            for ev in (prior_evaluations or []):
+                conn = ev.get("connector", "")
+                yr_status = ev.get("comparison", {}).get("field_status", {}).get("year", {}).get("status")
+                if yr_status == "mismatch":
+                    actual_year = ev.get("comparison", {}).get("field_status", {}).get("year", {}).get("candidate", "")
+                    return (
+                        True,
+                        f"Guard 3b (H5): prior candidate {conn} says year={actual_year} but citation says {cite_year} (winner year status={winner_year_status!r}).",
+                        ["H5"],
+                        VerdictLabel.FAKE_REFERENCE,
+                    )
+
+    # Guard 4: Inherit structured source conflicts on candidate_missing fields
+    conflict_issue, conflict_desc, conflict_tax = _has_structured_conflict_on_missing_fields(
+        candidate, field_result, prior_evaluations or [],
+    )
+    if conflict_issue:
+        # H-codes → FAKE, P-codes → POTENTIAL
+        has_h = any(t.startswith("H") for t in conflict_tax)
+        override_verdict = VerdictLabel.FAKE_REFERENCE if has_h else VerdictLabel.POTENTIAL_REFERENCE
+        return (
+            True,
+            f"Guard 4 ({','.join(conflict_tax)}): {conflict_desc}",
+            conflict_tax,
+            override_verdict,
+        )
+
+    # Guard 5: Reference field present but missing from ALL candidates.
+    # Skip if the current winning candidate already has these fields matched
+    # (enrichment may have filled them after the original candidates list was built).
+    fs = field_result.field_status if field_result else {}
+    missing = _has_reference_field_missing_from_all(
+        citation, all_candidates, build_comparison_func,
+    )
+    if missing:
+        # Check if the winning candidate actually covers these fields
+        still_missing = [
+            f for f in missing
+            if fs.get(f, {}).get("status") not in ("match", "both_missing", "reference_missing")
+        ]
+        if still_missing:
+            return (
+                True,
+                f"Guard 5 (P3): reference field(s) {still_missing} not found in any candidate.",
+                ["P3"],
+                VerdictLabel.POTENTIAL_REFERENCE,
+            )
+
+    return (False, "", [], VerdictLabel.VALID)
+
+
+# ---------------------------------------------------------------------------
+# Candidate selection
+# ---------------------------------------------------------------------------
+
+def select_best_candidate(valid_results: list[ValidAgentResult]) -> ValidAgentResult | None:
+    """Pick the best failing candidate for downstream routing."""
+    if not valid_results:
+        return None
+
+    # Prefer: most matching fields, structured over web, potential over hallucinated
+    def score(r: ValidAgentResult) -> tuple:
+        fs = r.field_result.field_status if r.field_result else {}
+        match_count = sum(1 for v in fs.values() if isinstance(v, dict) and v.get("status") == "match")
+        is_structured = 1 if r.candidate and r.candidate.connector not in _WEB_CONNECTORS else 0
+        is_potential = 1 if r.hint == "likely_potential" else 0
+        return (is_structured, match_count, is_potential)
+
+    return max(valid_results, key=score)
+
+
+# ---------------------------------------------------------------------------
+# Cascading Orchestrator
+# ---------------------------------------------------------------------------
+
+def _apply_url_cap(
+    verdict: CitationVerdict,
+    url_status: str,
+    url_issues: list[str],
+    url_type: str = "",
+) -> CitationVerdict:
+    """If URL check found issues, cap VALID based on URL type.
+
+    url_type: "doi" | "arxiv" | "other"
+    - DOI/arXiv 404 → H6/FAKE (academic identifiers must resolve)
+    - Other URL 404 → P3/POTENTIAL (URLs can go stale)
+    """
+    if url_status not in ("mismatch", "not_found") or verdict.verdict != VerdictLabel.VALID:
+        return verdict
+
+    # DOI or arXiv identifier not found → H6 (identifier error)
+    if url_status == "not_found" and url_type in ("doi", "arxiv"):
+        return CitationVerdict(
+            citation_id=verdict.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=verdict.evidence_sources,
+            conflicts=["identifier_not_found"],
+            adjudication_reason=f"URL check: {url_type.upper()} resolves to 404. Identifier does not exist (H6). {verdict.adjudication_reason}",
+            matched_candidate=verdict.matched_candidate,
+            reference_snapshot=verdict.reference_snapshot,
+            comparison=verdict.comparison,
+            candidate_evaluations=verdict.candidate_evaluations,
+            taxonomy_subtype=["H6"],
+            needs_human_review=True,
+            secondary_evidence=verdict.secondary_evidence,
+        )
+
+    # Other cases (mismatch, or non-academic URL not found) → P3
+    return CitationVerdict(
+        citation_id=verdict.citation_id,
+        verdict=VerdictLabel.POTENTIAL_REFERENCE,
+        evidence_sources=verdict.evidence_sources,
+        conflicts=url_issues or ["url_issue"],
+        adjudication_reason=f"URL check: {url_status}. Capped to P3. {verdict.adjudication_reason}",
+        matched_candidate=verdict.matched_candidate,
+        reference_snapshot=verdict.reference_snapshot,
+        comparison=verdict.comparison,
+        candidate_evaluations=verdict.candidate_evaluations,
+        taxonomy_subtype=["P3"],
+        needs_human_review=True,
+        secondary_evidence=verdict.secondary_evidence,
+    )
+
+
+# Titles that indicate a redirect/CAPTCHA/error page, not a real resolved title
+_PHASE0_JUNK_TITLES = {
+    "redirecting", "just a moment", "not found", "access denied",
+    "page not found", "error", "captcha", "verify you are human",
+    "please wait", "loading", "forbidden", "unauthorized",
+}
+
+# Domains that are deterministic scholar identifiers — URL alone uniquely
+# identifies a paper. Mismatch on these → hard FAKE (treated like arxiv/doi).
+_SCHOLAR_DOMAINS = {
+    "arxiv.org",
+    "aclanthology.org",
+    "openreview.net",
+    "ieeexplore.ieee.org",
+    "dl.acm.org",
+    "link.springer.com",
+    "proceedings.mlr.press",
+    "proceedings.neurips.cc",
+    "papers.nips.cc",
+    "pubmed.ncbi.nlm.nih.gov",
+    "ncbi.nlm.nih.gov/pmc",
+}
+
+
+def _classify_url_type(url: str) -> str:
+    """Classify a URL into 'arxiv' | 'scholar' | 'other'."""
+    u = url.lower()
+    if "arxiv.org" in u or "arxiv:" in u:
+        return "arxiv"
+    if any(d in u for d in _SCHOLAR_DOMAINS):
+        return "scholar"
+    return "other"
+
+
+def phase0_url_check(citation: CitationRecord) -> tuple[str, list[str], str, list[dict]]:
+    """Phase 0: Direct URL/DOI verification BEFORE orchestrator query.
+
+    Probes citation.url and citation.doi via URLDirectConnector (with Tavily fallback).
+    Returns (url_match_status, url_issues, url_type_triggered, fetched_records).
+
+    - url_match_status: "" | "match" | "mismatch" | "not_found" | "blocked"
+    - url_issues: list of H codes detected (e.g. ["H2", "H4"])
+    - url_type_triggered: "" | "doi" | "arxiv" | "other"
+    - fetched_records: raw url_direct records (can be added to candidates)
+    """
+    from packages.connectors.url_direct import URLDirectConnector
+    from packages.connectors.base import RequestPolicy as _RP
+    from .normalize import normalize_title, normalize_venue, similarity
+    import os as _os
+
+    url_match_status = ""
+    url_issues: list[str] = []
+    url_type_triggered = ""
+    fetched_records: list[dict] = []
+
+    citation_url = (citation.url or "").strip()
+    citation_doi = (citation.doi or "").strip()
+    citation_arxiv_id = (citation.arxiv_id or "").strip()
+    if not (citation_url or citation_doi or citation_arxiv_id):
+        return url_match_status, url_issues, url_type_triggered, fetched_records
+
+    # Resolve Tavily key from env or config
+    _tavily_key = _os.getenv("TAVILY_API_KEY", "")
+    if not _tavily_key:
+        try:
+            from apps.pdf_checker.config import load_pdf_checker_config as _load_cfg
+            _tavily_key = (_load_cfg().connectors.tavily_api_key or "").strip()
+        except Exception:
+            pass
+
+    url_connector = URLDirectConnector(tavily_api_key=_tavily_key)
+    url_policy = _RP(timeout_s=15)
+
+    urls_to_try: list[tuple[str, str]] = []
+    if citation_doi:
+        urls_to_try.append((f"https://doi.org/{citation_doi}", "doi"))
+    if citation_url:
+        # Normalize arxiv PDF URLs to abs URLs so we can extract HTML metadata
+        # and run version expansion. Examples:
+        #   https://arxiv.org/pdf/2106.09685.pdf  → https://arxiv.org/abs/2106.09685
+        #   https://arxiv.org/pdf/2106.09685v2    → https://arxiv.org/abs/2106.09685v2
+        normalized_url = citation_url
+        _u_lower = citation_url.lower()
+        if "arxiv.org/pdf/" in _u_lower:
+            import re as _re
+            normalized_url = _re.sub(
+                r"(arxiv\.org)/pdf/", r"\1/abs/", citation_url, flags=_re.IGNORECASE,
+            )
+            # Strip trailing .pdf if present
+            if normalized_url.lower().endswith(".pdf"):
+                normalized_url = normalized_url[:-4]
+        urls_to_try.append((normalized_url, _classify_url_type(normalized_url)))
+    elif (citation.arxiv_id or "").strip():
+        # No url but has arxiv_id → construct arxiv URL
+        import re as _re
+        arxiv_id = (citation.arxiv_id or "").strip()
+        arxiv_id = _re.sub(r"^arxiv:", "", arxiv_id, flags=_re.IGNORECASE)
+        urls_to_try.append((f"https://arxiv.org/abs/{arxiv_id}", "arxiv"))
+
+    if not urls_to_try:
+        return url_match_status, url_issues, url_type_triggered, fetched_records
+
+    for try_url, _url_type in urls_to_try:
+        try:
+            # PDF URL handling:
+            # - Scholar PDF (arxiv/scholar/doi): skip Phase 0, let connectors find
+            #   the paper via title/author search (we'll still get a candidate).
+            # - Non-scholar PDF (random blog/site): can't verify content → P3.
+            if try_url.lower().rstrip("/").endswith(".pdf"):
+                if _url_type in ("arxiv", "doi", "scholar"):
+                    continue
+                # Non-scholar PDF → treat as unverifiable
+                url_match_status = "not_found"
+                url_type_triggered = _url_type
+                break
+
+            probe = CitationRecord(citation_id="_url_check", url=try_url)
+            fetched = url_connector.search(probe, url_policy)
+            if not fetched:
+                url_match_status = "not_found"
+                url_type_triggered = _url_type
+                break
+
+            resolved = fetched[0]
+            resolved_title = str(resolved.get("title", "") or "").strip()
+
+            if resolved_title.lower().strip() in _PHASE0_JUNK_TITLES:
+                url_match_status = "blocked"
+                continue
+
+            # If url_direct couldn't extract a title, the rest of the fields
+            # are unreliable (likely a PDF or JS-rendered page).  Skip field
+            # comparison and treat as blocked → continue to next try_url.
+            if not resolved_title:
+                url_match_status = "blocked"
+                continue
+
+            # Compare resolved fields with citation
+            issues: list[str] = []
+            ref_title_norm = normalize_title(citation.title)
+            cand_title_norm = normalize_title(resolved_title)
+            # Scholar URLs (arxiv/doi/scholar) → require exact title match
+            # Other URLs → 0.75 similarity threshold
+            if _url_type in ("arxiv", "doi", "scholar"):
+                if ref_title_norm != cand_title_norm:
+                    issues.append("H2")
+            else:
+                sim = similarity(ref_title_norm, cand_title_norm)
+                if sim < 0.75:
+                    issues.append("H2")
+            resolved_year = resolved.get("year")
+            if citation.year and resolved_year:
+                try:
+                    if int(citation.year) != int(resolved_year):
+                        issues.append("H5")
+                except (TypeError, ValueError):
+                    pass
+            resolved_venue = str(resolved.get("venue", "") or "").strip()
+            if citation.venue and resolved_venue:
+                if normalize_venue(citation.venue) != normalize_venue(resolved_venue):
+                    issues.append("H4")
+
+            # Save the record so caller can add to candidates
+            resolved["_resolved_from"] = try_url
+            fetched_records.append(resolved)
+
+            # arXiv version expansion: if this is an arxiv URL, fetch version
+            # history and per-version metadata. Title/authors/year may differ
+            # across versions (e.g. AutoGen v1 has 10 authors, v2 has 14).
+            if _url_type == "arxiv":
+                version_records = _expand_arxiv_versions(
+                    try_url, resolved, url_policy,
+                )
+                for vr in version_records:
+                    fetched_records.append(vr)
+
+                # Cross-version full match: clear ALL issues only if there
+                # exists ONE version where every checked field matches the
+                # citation simultaneously. Field-by-field stripping (any
+                # version matches title, any matches year) is too lenient
+                # because the matches might come from different versions.
+                if version_records and issues:
+                    cite_year_int = None
+                    if citation.year:
+                        try:
+                            cite_year_int = int(citation.year)
+                        except (TypeError, ValueError):
+                            cite_year_int = None
+
+                    for vr in version_records:
+                        v_title = str(vr.get("title", "") or "").strip()
+                        v_year = vr.get("year")
+                        title_match = (
+                            v_title and
+                            normalize_title(v_title) == ref_title_norm
+                        )
+                        year_match = (
+                            cite_year_int is None
+                            or (v_year is not None and int(v_year) == cite_year_int)
+                        )
+                        # All checked fields must match for this version
+                        if title_match and year_match:
+                            issues = []  # this version fully matches the citation
+                            break
+
+            if issues:
+                url_match_status = "mismatch"
+                url_issues = issues
+                url_type_triggered = _url_type
+            else:
+                url_match_status = "match"
+            break
+
+        except RuntimeError as e:
+            err_msg = str(e).lower()
+            if "404" in err_msg:
+                url_match_status = "not_found"
+                url_type_triggered = _url_type
+                break
+            if any(code in err_msg for code in ["403", "429", "ssl", "certificate"]):
+                url_match_status = "blocked"
+                continue
+            continue
+        except Exception:
+            continue
+
+    return url_match_status, url_issues, url_type_triggered, fetched_records
+
+
+def _expand_arxiv_versions(
+    try_url: str,
+    base_record: dict,
+    policy,
+) -> list[dict]:
+    """For an arxiv URL, fetch per-version metadata (title/authors/year) for each version.
+
+    Uses ArxivConnector.fetch_per_version_records() which hits arxiv.org/abs/{id}{vN}
+    for each version and parses the version-specific HTML meta tags. This is the
+    only reliable way to get per-version author lists (e.g. AutoGen v1 has 10 authors,
+    v2 has 14 — different lists, not just different years).
+    """
+    from packages.connectors.arxiv import ArxivConnector
+    import re as _re
+
+    arxiv_id_raw = ArxivConnector._clean_arxiv_id(try_url)
+    if not arxiv_id_raw:
+        return []
+    base_id = _re.sub(r"v\d+$", "", arxiv_id_raw)
+    if not base_id:
+        return []
+
+    arxiv_conn = ArxivConnector()
+    try:
+        records = arxiv_conn.fetch_per_version_records(base_id, policy)
+    except Exception:
+        return []
+
+    # Tag each record with _resolved_from for evidence trace
+    for r in records:
+        r["_resolved_from"] = r.get("url", "")
+    return records
+
+
+def phase0_decide_verdict(
+    citation: CitationRecord,
+    url_match_status: str,
+    url_issues: list[str],
+    url_type_triggered: str,
+    evidence_sources: list[str] | None = None,
+) -> CitationVerdict | None:
+    """Decide whether Phase 0 alone is enough to return a final verdict.
+
+    Logic:
+    - Scholar URLs (arxiv / doi):
+        - mismatch with field issues → FAKE_REFERENCE with those H codes
+        - not_found → FAKE_REFERENCE with H6 (identifier error)
+    - Other URLs:
+        - mismatch → POTENTIAL_REFERENCE / P3
+        - not_found → POTENTIAL_REFERENCE / P3
+    - blocked / match / "" → return None (continue normal flow)
+
+    Returns CitationVerdict if a decision is made, otherwise None.
+    """
+    if url_match_status not in ("mismatch", "not_found"):
+        return None
+    if not url_type_triggered:
+        return None
+
+    is_scholar = url_type_triggered in ("arxiv", "doi", "scholar")
+    evidence_sources = evidence_sources or ["url_direct"]
+
+    if is_scholar:
+        if url_match_status == "not_found":
+            taxonomy = ["H6"]
+            reason = (
+                f"Phase 0: scholar identifier ({url_type_triggered}) not found. "
+                f"Identifier does not exist (H6)."
+            )
+        else:  # mismatch
+            taxonomy = list(url_issues) if url_issues else ["H2"]
+            reason = (
+                f"Phase 0: scholar identifier ({url_type_triggered}) resolved but "
+                f"fields don't match citation. Issues: {taxonomy}."
+            )
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=taxonomy,
+            adjudication_reason=reason,
+            taxonomy_subtype=taxonomy,
+            needs_human_review=True,
+        )
+
+    # Non-scholar URL → P3 / POTENTIAL
+    if url_match_status == "not_found":
+        reason = "Phase 0: non-scholar URL not reachable. Source unverifiable (P3)."
+    else:
+        reason = (
+            f"Phase 0: non-scholar URL resolved but fields don't match citation. "
+            f"Issues: {url_issues}. Source unverifiable (P3)."
+        )
+    return CitationVerdict(
+        citation_id=citation.citation_id,
+        verdict=VerdictLabel.POTENTIAL_REFERENCE,
+        evidence_sources=evidence_sources,
+        conflicts=list(url_issues) if url_issues else ["url_unverified"],
+        adjudication_reason=reason,
+        taxonomy_subtype=["P3"],
+        needs_human_review=True,
+    )
+
+
+# Domains / venue keywords that signal a non-academic citation source.
+_NON_ACADEMIC_URL_DOMAINS = {
+    "github.com", "gitlab.com", "bitbucket.org",
+    "cran.r-project.org", "r-project.org",
+    "pypi.org", "npmjs.com",
+    "huggingface.co",
+    "docs.python.org", "docs.pydantic.dev",
+    "medium.com", "substack.com",
+    "twitter.com", "x.com",
+    "alignmentforum.org", "lesswrong.com",
+}
+
+_NON_ACADEMIC_VENUE_KEYWORDS = {
+    "github", "gitlab", "blog", "tweet", "twitter",
+    "personal blog", "personal website", "website",
+    "package", "library", "software", "tool",
+    "documentation", "docs",
+    "medium", "substack",
+    "openai blog", "anthropic blog",
+}
+
+_NON_ACADEMIC_RAW_TEXT_KEYWORDS = {
+    "r package", "python package", "npm package",
+    "github repository", "gitlab repository",
+    "blog post", "tweet",
+}
+
+
+def is_non_academic_citation(citation: CitationRecord) -> bool:
+    """Detect whether a citation refers to a non-academic source.
+
+    Signals:
+      - URL domain in non-academic list
+      - Venue contains non-academic keywords
+      - raw_text mentions package/library/blog (when available)
+    """
+    url = (citation.url or "").lower()
+    if any(d in url for d in _NON_ACADEMIC_URL_DOMAINS):
+        return True
+
+    venue = (citation.venue or "").lower().strip()
+    if venue:
+        if any(kw in venue for kw in _NON_ACADEMIC_VENUE_KEYWORDS):
+            return True
+
+    raw = getattr(citation, "raw_text", None) or ""
+    raw_lower = raw.lower()
+    if raw_lower:
+        if any(kw in raw_lower for kw in _NON_ACADEMIC_RAW_TEXT_KEYWORDS):
+            return True
+
+    return False
+
+
+def downgrade_non_academic_fake(
+    citation: CitationRecord, verdict: CitationVerdict,
+) -> CitationVerdict:
+    """If verdict is FAKE_REFERENCE but the citation is non-academic, downgrade to P3.
+
+    Non-academic citations (R packages, GitHub repos, blog posts, tweets) often
+    have inconsistent / sparse metadata, so a strict FAKE judgment is too harsh.
+    Treat them as POTENTIAL/P3 (unverifiable) instead.
+    """
+    if verdict.verdict != VerdictLabel.FAKE_REFERENCE:
+        return verdict
+    if not is_non_academic_citation(citation):
+        return verdict
+    return CitationVerdict(
+        citation_id=verdict.citation_id,
+        verdict=VerdictLabel.POTENTIAL_REFERENCE,
+        evidence_sources=verdict.evidence_sources,
+        conflicts=verdict.conflicts,
+        adjudication_reason=(
+            f"Downgraded from FAKE to POTENTIAL because citation is non-academic "
+            f"(software/blog/tweet). Original reason: {verdict.adjudication_reason}"
+        ),
+        matched_candidate=verdict.matched_candidate,
+        reference_snapshot=verdict.reference_snapshot,
+        comparison=verdict.comparison,
+        candidate_evaluations=verdict.candidate_evaluations,
+        taxonomy_subtype=["P3"],
+        needs_human_review=True,
+        secondary_evidence=verdict.secondary_evidence,
+    )
+
+
+def cascading_adjudicate(
+    citation: CitationRecord,
+    candidates: list[CandidateMatch],
+    evidence_traces: list[Any],
+    extraction_quality: ExtractionQuality = ExtractionQuality.UNKNOWN,
+    valid_agent: ValidAgentProtocol | None = None,
+    potential_agent: PotentialAgentProtocol | None = None,
+    hallucinated_agent: HallucinatedAgentProtocol | None = None,
+    secondary_verifier: Any = None,
+    extractor_agent: Any = None,
+    source_paper_title: str = "",
+    build_comparison_func=None,
+    is_direct_valid_func=None,
+    url_match_status: str = "",
+    url_issues: list[str] | None = None,
+    url_type_triggered: str = "",
+    tavily_api_key: str = "",
+) -> CitationVerdict:
+    """Cascading 3-agent verification."""
+    from .adjudicate import _build_comparison, _is_direct_valid, _reference_snapshot
+
+    build_comp = build_comparison_func or _build_comparison
+    is_valid_func = is_direct_valid_func or _is_direct_valid
+
+    evidence_sources = sorted({
+        t.connector for t in evidence_traces if hasattr(t, 'connector') and t.error is None
+    })
+
+    # --- No candidates → H1 immediately ---
+    if not candidates:
+        source_errors = [t for t in evidence_traces if hasattr(t, 'error') and t.error]
+        if source_errors and len(source_errors) == len(evidence_traces):
+            return CitationVerdict(
+                citation_id=citation.citation_id,
+                verdict=VerdictLabel.INSUFFICIENT_EVIDENCE,
+                evidence_sources=evidence_sources,
+                conflicts=["no_candidate"],
+                adjudication_reason="All sources failed.",
+                taxonomy_subtype=[],
+                needs_human_review=True,
+            )
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=["no_candidate"],
+            adjudication_reason="No matching paper found.",
+            reference_snapshot=_reference_snapshot(citation),
+            taxonomy_subtype=["H1"],
+            needs_human_review=True,
+        )
+
+    # Phase 0 is now invoked from verifier.py BEFORE orchestrator.query.
+    # Its results are passed in via url_match_status / url_issues / url_type_triggered.
+    if url_issues is None:
+        url_issues = []
+
+    # --- Phase 1: Run ValidAgent on each candidate ---
+    all_valid_results: list[ValidAgentResult] = []
+    all_evaluations: list[dict[str, Any]] = []
+
+    for candidate in candidates:
+        # Extractor Agent: for web_search candidates, extract structured fields first
+        if candidate.connector in _WEB_CONNECTORS and not candidate.title and extractor_agent:
+            try:
+                candidate = extractor_agent.extract(candidate)
+            except Exception:
+                pass
+        # URL-direct enrichment: fetch URL page and use LLM to extract structured fields
+        if candidate.connector in _WEB_CONNECTORS and candidate.url and extractor_agent:
+            candidate = _enrich_web_candidate_via_url(candidate, tavily_api_key=tavily_api_key, extractor_agent=extractor_agent)
+
+        # Rule-based check first
+        result = rule_based_valid_check(citation, candidate, build_comp, is_valid_func)
+
+        # If rule-based says VALID → run post-validation guard
+        if result.is_valid:
+            override, override_reason, override_tax, override_verdict = _post_validate_valid_result(
+                citation, candidate, candidates, result.taxonomy,
+                result.field_result, build_comp, prior_evaluations=all_evaluations,
+            )
+            if override:
+                # Guard overrode — record but continue evaluating remaining candidates
+                all_evaluations.append({
+                    "connector": candidate.connector,
+                    "candidate": candidate_match_to_dict(candidate),
+                    "verdict": override_verdict.value,
+                    "taxonomy": override_tax,
+                    "reason": override_reason,
+                    "comparison": result.field_result.comparison if result.field_result else {},
+                })
+                # Don't return — continue to give other candidates a chance
+                continue
+            # Clean VALID + guard passed → early return
+            all_evaluations.append({
+                "connector": candidate.connector,
+                "candidate": candidate_match_to_dict(candidate),
+                "verdict": "VALID",
+                "taxonomy": result.taxonomy,
+                "reason": result.reason,
+                "comparison": result.field_result.comparison if result.field_result else {},
+            })
+            return _apply_url_cap(CitationVerdict(
+                citation_id=citation.citation_id,
+                verdict=VerdictLabel.VALID,
+                evidence_sources=evidence_sources,
+                conflicts=[],
+                adjudication_reason=result.reason,
+                matched_candidate=candidate_match_to_dict(candidate),
+                reference_snapshot=result.field_result.comparison.get("reference", {}),
+                comparison=result.field_result.comparison,
+                candidate_evaluations=all_evaluations,
+                taxonomy_subtype=result.taxonomy,
+                needs_human_review=False,
+            ), url_match_status, url_issues, url_type_triggered)
+
+        # Rule-based not valid → try LLM ValidAgent
+        if valid_agent and not result.is_valid:
+            try:
+                llm_result = valid_agent.evaluate(citation, candidate, result.field_result)
+                if llm_result.is_valid:
+                    override, override_reason, override_tax, override_verdict = _post_validate_valid_result(
+                        citation, candidate, candidates, llm_result.taxonomy,
+                        result.field_result, build_comp, prior_evaluations=all_evaluations,
+                    )
+                    if override:
+                        # LLM said VALID but guard overrode — continue to next candidate
+                        all_evaluations.append({
+                            "connector": candidate.connector,
+                            "candidate": candidate_match_to_dict(candidate),
+                            "verdict": override_verdict.value,
+                            "taxonomy": override_tax,
+                            "reason": f"LLM said VALID but overridden: {override_reason}",
+                            "comparison": result.field_result.comparison if result.field_result else {},
+                        })
+                        continue
+                    # LLM VALID + guard passed → early return
+                    all_evaluations.append({
+                        "connector": candidate.connector,
+                        "candidate": candidate_match_to_dict(candidate),
+                        "verdict": "VALID",
+                        "taxonomy": llm_result.taxonomy,
+                        "reason": llm_result.reason,
+                        "comparison": result.field_result.comparison if result.field_result else {},
+                    })
+                    return _apply_url_cap(CitationVerdict(
+                        citation_id=citation.citation_id,
+                        verdict=VerdictLabel.VALID,
+                        evidence_sources=evidence_sources,
+                        conflicts=[],
+                        adjudication_reason=f"ValidAgent LLM: {llm_result.reason}",
+                        matched_candidate=candidate_match_to_dict(candidate),
+                        reference_snapshot=result.field_result.comparison.get("reference", {}),
+                        comparison=result.field_result.comparison,
+                        candidate_evaluations=all_evaluations,
+                        taxonomy_subtype=llm_result.taxonomy,
+                        needs_human_review=False,
+                    ), url_match_status, url_issues, url_type_triggered)
+                # LLM says not valid → use its hint/issues
+                result = llm_result
+            except Exception:
+                pass  # Fall back to rule-based hint
+
+        all_valid_results.append(result)
+        all_evaluations.append({
+            "connector": candidate.connector,
+            "candidate": candidate_match_to_dict(candidate),
+            "verdict": "NOT_VALID",
+            "hint": result.hint,
+            "issues": result.issues,
+            "reason": result.reason,
+            "comparison": result.field_result.comparison if result.field_result else {},
+        })
+
+    # --- Phase 2: No VALID found → route downstream ---
+    best = select_best_candidate(all_valid_results)
+    if best is None:
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=[],
+            adjudication_reason="No candidates matched.",
+            taxonomy_subtype=["H1"],
+            candidate_evaluations=all_evaluations,
+            needs_human_review=True,
+        )
+
+    best_candidate = best.candidate
+    best_field_result = best.field_result
+    best_comparison = best_field_result.comparison if best_field_result else {}
+
+    # --- Phase 2a: likely_potential → PotentialAgent ---
+    if best.hint == "likely_potential":
+        # Gather evidence
+        sec_evidence: list[DiscrepancyEvidence] = []
+        if secondary_verifier and best_field_result:
+            try:
+                sec_evidence = secondary_verifier.gather_evidence(
+                    citation, best_candidate,
+                    best_field_result.field_status, best_field_result.conflicts,
+                )
+            except Exception:
+                sec_evidence = []
+
+        if potential_agent:
+            try:
+                downstream = potential_agent.evaluate(
+                    citation, best_candidate, best_field_result, best, sec_evidence,
+                )
+            except Exception as exc:
+                downstream = DownstreamAgentResult(
+                    label=VerdictLabel.FAKE_REFERENCE,
+                    reason=f"PotentialAgent error: {exc}",
+                )
+        else:
+            # No LLM → use evidence
+            all_explained = sec_evidence and all(e.evidence_found for e in sec_evidence)
+            if all_explained:
+                downstream = DownstreamAgentResult(
+                    label=VerdictLabel.POTENTIAL_REFERENCE,
+                    taxonomy=["P2"],
+                    reason="All discrepancies explained by evidence.",
+                )
+            else:
+                downstream = DownstreamAgentResult(
+                    label=VerdictLabel.FAKE_REFERENCE,
+                    reason="Some discrepancies unexplained.",
+                )
+
+        if downstream.label == VerdictLabel.POTENTIAL_REFERENCE:
+            all_evaluations.append({
+                "agent": "PotentialAgent",
+                "verdict": "POTENTIAL",
+                "taxonomy": downstream.taxonomy,
+                "reason": downstream.reason,
+            })
+            return CitationVerdict(
+                citation_id=citation.citation_id,
+                verdict=VerdictLabel.POTENTIAL_REFERENCE,
+                evidence_sources=evidence_sources,
+                conflicts=best.issues,
+                adjudication_reason=f"PotentialAgent: {downstream.reason}",
+                matched_candidate=candidate_match_to_dict(best_candidate),
+                reference_snapshot=best_comparison.get("reference", {}),
+                comparison=best_comparison,
+                candidate_evaluations=all_evaluations,
+                taxonomy_subtype=downstream.taxonomy,
+                secondary_evidence=sec_evidence,
+                needs_human_review=True,
+            )
+        # Escalate to HallucinatedAgent
+        best.hint = "likely_hallucinated"
+        best.issues = list(set(best.issues + (downstream.taxonomy or [])))
+        all_evaluations.append({
+            "agent": "PotentialAgent",
+            "verdict": "ESCALATED_TO_HALLUCINATED",
+            "taxonomy": downstream.taxonomy,
+            "reason": downstream.reason,
+        })
+
+    # --- Phase 2b: likely_hallucinated → HallucinatedAgent ---
+    if hallucinated_agent:
+        try:
+            downstream = hallucinated_agent.evaluate(
+                citation, best_candidate, best_field_result, best,
+            )
+        except Exception as exc:
+            downstream = DownstreamAgentResult(
+                label=VerdictLabel.FAKE_REFERENCE,
+                reason=f"HallucinatedAgent error: {exc}",
+            )
+    else:
+        # No LLM → use rule-based taxonomy
+        taxonomy = []
+        for issue in best.issues:
+            if "title" in issue: taxonomy.append("H2")
+            elif "author" in issue: taxonomy.append("H3")
+            elif "venue" in issue: taxonomy.append("H4")
+            elif "year" in issue: taxonomy.append("H5")
+            elif "doi" in issue: taxonomy.append("H6")
+            elif "pages" in issue: taxonomy.append("H7")
+            elif "volume" in issue: taxonomy.append("H7")
+            elif "publisher" in issue: taxonomy.append("H7")
+        downstream = DownstreamAgentResult(
+            label=VerdictLabel.FAKE_REFERENCE,
+            taxonomy=list(set(taxonomy)) or ["H1"],
+            reason=f"Hallucinated based on issues: {best.issues}",
+        )
+
+    # Rare downgrade: HallucinatedAgent says POTENTIAL
+    if downstream.label == VerdictLabel.POTENTIAL_REFERENCE:
+        verdict = VerdictLabel.POTENTIAL_REFERENCE
+    else:
+        verdict = VerdictLabel.FAKE_REFERENCE
+
+    all_evaluations.append({
+        "agent": "HallucinatedAgent",
+        "verdict": downstream.label.value,
+        "taxonomy": downstream.taxonomy,
+        "reason": downstream.reason,
+    })
+
+    return CitationVerdict(
+        citation_id=citation.citation_id,
+        verdict=verdict,
+        evidence_sources=evidence_sources,
+        conflicts=best.issues if best else [],
+        adjudication_reason=f"HallucinatedAgent: {downstream.reason}",
+        matched_candidate=candidate_match_to_dict(best_candidate),
+        reference_snapshot=best_comparison.get("reference", {}),
+        comparison=best_comparison,
+        candidate_evaluations=all_evaluations,
+        taxonomy_subtype=downstream.taxonomy,
+        needs_human_review=True,
+    )

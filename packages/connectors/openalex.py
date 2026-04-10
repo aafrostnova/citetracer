@@ -33,6 +33,15 @@ class OpenAlexConnector(BaseConnector):
                 doi = doi.rsplit("/", maxsplit=1)[-1]
             primary_location = work.get("primary_location") or {}
             source = primary_location.get("source") or {}
+            biblio = work.get("biblio") or {}
+            volume = str(biblio.get("volume", "") or "")
+            first_page = str(biblio.get("first_page", "") or "")
+            last_page = str(biblio.get("last_page", "") or "")
+            if first_page and last_page:
+                pages = f"{first_page}-{last_page}"
+            else:
+                pages = first_page or last_page
+            publisher = str(source.get("host_organization_name", "") or source.get("publisher", "") or "")
             records.append(
                 {
                     "title": str(work.get("display_name", "") or ""),
@@ -42,6 +51,9 @@ class OpenAlexConnector(BaseConnector):
                     "doi": doi.lower(),
                     "arxiv_id": "",
                     "url": str(work.get("id", "") or ""),
+                    "volume": volume,
+                    "pages": pages,
+                    "publisher": publisher,
                 }
             )
         return records

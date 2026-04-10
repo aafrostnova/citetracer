@@ -48,6 +48,9 @@ class DBLPOnlineConnector(BaseConnector):
                     "doi": str(info.get("doi", "") or "").lower(),
                     "arxiv_id": "",
                     "url": str(info.get("url", "") or ""),
+                    "volume": "" if "/" in str(info.get("volume", "") or "") else str(info.get("volume", "") or ""),
+                    "pages": str(info.get("pages", "") or ""),
+                    "publisher": str(info.get("publisher", "") or ""),
                 }
             )
         return records

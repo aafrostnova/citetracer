@@ -48,20 +48,79 @@ class URLDirectConnector(BaseConnector):
     name = "url_direct"
     ttl_s = 60 * 60 * 24
 
+    def __init__(self, tavily_api_key: str | None = None) -> None:
+        self.tavily_api_key = (tavily_api_key or "").strip()
+
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, object]]:
         url = str(citation.url or "").strip()
         if not url or not urlsplit(url).scheme:
             return []
 
-        body = self._request_text(
-            url,
-            {},
+        # First try direct fetch (HTML)
+        direct_error: Exception | None = None
+        try:
+            body = self._request_text(
+                url,
+                {},
+                policy,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            body = body[:512_000]
+            record = self._extract_record(url, body)
+            if any(record.values()):
+                return [record]
+        except RuntimeError as exc:
+            direct_error = exc
+
+        # Fallback to Tavily Extract API on failure (e.g. 429, 403, blocked)
+        if self.tavily_api_key:
+            try:
+                tavily_record = self._fetch_via_tavily(url, policy)
+                if tavily_record and any(tavily_record.values()):
+                    return [tavily_record]
+            except Exception:
+                pass
+
+        if direct_error is not None:
+            raise direct_error
+        return []
+
+    def _fetch_via_tavily(self, url: str, policy: RequestPolicy) -> dict[str, object]:
+        """Use Tavily Extract API as a fallback when direct fetch fails.
+
+        Returns a structured record using Tavily's title field directly,
+        and tries to extract a year from the markdown content.
+        """
+        payload = self._request_json_post(
+            "https://api.tavily.com/extract",
+            {
+                "urls": [url],
+                "extract_depth": "basic",
+                "format": "markdown",
+            },
             policy,
-            headers={"Accept": "text/html,application/xhtml+xml"},
+            headers={"Authorization": f"Bearer {self.tavily_api_key}"},
         )
-        body = body[:512_000]
-        record = self._extract_record(url, body)
-        return [record] if any(record.values()) else []
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        if not results:
+            return {}
+        first = results[0]
+        title = str(first.get("title", "") or "").strip()
+        raw_content = str(first.get("raw_content", "") or first.get("content", "") or "")
+        # Try to extract year from the first 4000 chars of content
+        year = _extract_year(raw_content[:4000]) if raw_content else None
+        # Try to extract DOI/arxiv from URL or content
+        doi = extract_identifier(url)[0] or extract_identifier(raw_content[:8000])[0]
+        arxiv_id = extract_identifier(url)[1] or extract_identifier(raw_content[:8000])[1]
+        return {
+            "title": title,
+            "authors": [],
+            "venue": "",
+            "year": year,
+            "doi": str(doi or "").lower(),
+            "arxiv_id": str(arxiv_id or "").lower(),
+            "url": url,
+        }
 
     def _extract_record(self, url: str, body: str) -> dict[str, object]:
         # --- Try structured cite block first (e.g. ACL Anthology) ---
@@ -122,6 +181,18 @@ class URLDirectConnector(BaseConnector):
             or extract_identifier(body[:8000])[0]
         )
         arxiv_id = extract_identifier(url)[1] or extract_identifier(body[:8000])[1]
+        volume = _first_meta(meta, "citation_volume") or ""
+        first_page = _first_meta(meta, "citation_firstpage") or ""
+        last_page = _first_meta(meta, "citation_lastpage") or ""
+        if first_page and last_page:
+            pages = f"{first_page}-{last_page}"
+        else:
+            pages = first_page or last_page
+        publisher = (
+            _first_meta(meta, "citation_publisher")
+            or _first_meta(meta, "dc.publisher")
+            or ""
+        )
         return {
             "title": title,
             "authors": list(authors),
@@ -130,6 +201,9 @@ class URLDirectConnector(BaseConnector):
             "doi": str(doi or "").lower(),
             "arxiv_id": str(arxiv_id or "").lower(),
             "url": url,
+            "volume": volume,
+            "pages": pages,
+            "publisher": publisher,
         }
 
 

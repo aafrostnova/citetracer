@@ -97,6 +97,9 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
     doi = str(record.get("doi", "") or "").lower()
     arxiv_id = normalize_arxiv_id(str(record.get("arxiv_id", "") or ""))
     url = str(record.get("url", "") or "")
+    volume = str(record.get("volume", "") or "")
+    pages = str(record.get("pages", "") or "")
+    publisher = str(record.get("publisher", "") or "")
     version_years = _extract_version_years(record)
 
     title_score = similarity(citation.title, title)
@@ -152,6 +155,9 @@ def build_candidate_match(citation: CitationRecord, connector: str, record: dict
         doi=doi,
         arxiv_id=arxiv_id,
         url=url,
+        volume=volume,
+        pages=pages,
+        publisher=publisher,
         matched_fields=matched_fields,
         conflicts=conflicts,
         raw_record=record,
