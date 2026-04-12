@@ -165,6 +165,31 @@ def _norm_pages(value: Any) -> str:
     return text.strip(" .,:;")
 
 
+_ROMAN_NUMERAL_MAP = {
+    "i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7, "viii": 8,
+    "ix": 9, "x": 10, "xi": 11, "xii": 12, "xiii": 13, "xiv": 14, "xv": 15,
+    "xvi": 16, "xvii": 17, "xviii": 18, "xix": 19, "xx": 20,
+}
+
+
+def _norm_volume(value: Any) -> str:
+    """Normalize volume: handle roman numerals and 'vol.' prefix.
+
+    Examples: 'II' → '2', 'vol. 5' → '5', 'Volume 12' → '12'
+    """
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    # Strip common prefixes
+    import re as _re
+    text = _re.sub(r"^(vol(?:ume)?\.?\s*)", "", text).strip()
+    text = text.strip(" .,:;")
+    # Convert roman numeral to arabic if applicable
+    if text in _ROMAN_NUMERAL_MAP:
+        return str(_ROMAN_NUMERAL_MAP[text])
+    return text
+
+
 def _norm_arxiv_id(value: Any) -> str:
     return normalize_arxiv_id(str(value or ""))
 
@@ -212,7 +237,9 @@ def _compare_scalar(reference: Any, candidate: Any, normalizer) -> dict[str, Any
 
 
 def _compare_venue(reference: Any, candidate: Any) -> dict[str, Any]:
-    """Venue comparison with containment and similarity fallback."""
+    """Venue comparison with containment, abbreviation, and similarity fallback."""
+    from .normalize import venues_equivalent_heuristic
+
     if _is_missing(reference) and _is_missing(candidate):
         status = "both_missing"
     elif _is_missing(reference):
@@ -225,10 +252,13 @@ def _compare_venue(reference: Any, candidate: Any) -> dict[str, Any]:
         if ref_norm == cand_norm:
             status = "match"
         elif ref_norm and cand_norm and (cand_norm in ref_norm or ref_norm in cand_norm):
-            # One is a substring of the other (e.g. "coling 2010 posters" in longer string)
+            status = "match"
+        elif venues_equivalent_heuristic(str(reference), str(candidate)):
+            # General acronym / word-truncation heuristic
+            # (e.g. "JMLR" ≡ "Journal of Machine Learning Research",
+            #       "J. Mach. Learn. Res." ≡ "Journal of Machine Learning Research")
             status = "match"
         elif ref_norm and cand_norm and similarity(ref_norm, cand_norm) >= 0.7:
-            # High similarity (handles minor abbreviation differences)
             status = "match"
         else:
             status = "mismatch"
@@ -444,7 +474,7 @@ def _build_comparison(
         "authors": _compare_authors(reference["authors"], candidate_core["authors"]),
         "venue": _compare_venue(reference["venue"], candidate_core["venue"]),
         "year": _compare_year(reference["year"], candidate_core["year"], candidate_version_years),
-        "volume": _compare_scalar(reference.get("volume", ""), candidate_core["volume"], _norm_text),
+        "volume": _compare_scalar(reference.get("volume", ""), candidate_core["volume"], _norm_volume),
         "pages": _compare_scalar(reference.get("pages", ""), candidate_core["pages"], _norm_pages),
         "publisher": _compare_scalar(reference.get("publisher", ""), candidate_core["publisher"], _norm_text),
         "location": _compare_scalar(reference.get("location", ""), candidate_core["location"], _norm_text),
@@ -453,10 +483,38 @@ def _build_comparison(
         "url": _compare_scalar(reference["url"], candidate_core["url"], _norm_url),
     }
 
+    # Recompute conflicts from field_status (authoritative) instead of sticking
+    # with the stale quick-match conflicts from build_candidate_match().
+    # The quick-match phase uses simple string overlap which can differ from
+    # the token-aware _compare_authors / _compare_venue / etc.
+    recomputed_conflicts: list[str] = []
+    _mismatch_statuses = {"mismatch"}
+    _field_to_conflict = {
+        "title": "title_mismatch",
+        "authors": "author_mismatch",
+        "venue": "venue_mismatch",
+        "year": "year_mismatch",
+        "doi": "doi_mismatch",
+        "arxiv_id": "arxiv_id_mismatch",
+        "volume": "volume_mismatch",
+        "pages": "pages_mismatch",
+        "publisher": "publisher_mismatch",
+    }
+    for fname, conflict_name in _field_to_conflict.items():
+        status = field_status.get(fname, {}).get("status", "")
+        if status in _mismatch_statuses:
+            recomputed_conflicts.append(conflict_name)
+    # authors has extra statuses
+    author_status = field_status.get("authors", {}).get("status", "")
+    if author_status == "reordered_match" and "author_reordered" not in recomputed_conflicts:
+        recomputed_conflicts.append("author_reordered")
+    elif author_status == "count_mismatch" and "author_count_mismatch" not in recomputed_conflicts:
+        recomputed_conflicts.append("author_count_mismatch")
+
     summary_pairs = [f"{name}:{meta['status']}" for name, meta in field_status.items()]
     return {
         "connector": candidate_data.get("connector", ""),
-        "conflicts": list(conflicts),
+        "conflicts": recomputed_conflicts,
         "reference": reference,
         "candidate": candidate_core,
         "field_status": field_status,

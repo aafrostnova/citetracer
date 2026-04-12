@@ -266,10 +266,14 @@ def rule_based_valid_check(
     is_direct_valid_func,
 ) -> ValidAgentResult:
     """Rule-based validation. If direct_valid passes, return REAL immediately."""
-    conflicts = list(candidate.conflicts)
-    comparison = build_comparison_func(citation, candidate, conflicts)
+    comparison = build_comparison_func(citation, candidate, list(candidate.conflicts))
+    # Use recomputed conflicts from field_status (authoritative) instead of
+    # the stale quick-match conflicts from build_candidate_match()
+    conflicts = list(comparison.get("conflicts", []))
     fs = comparison["field_status"]
     has_et_al = fs.get("authors", {}).get("has_et_al", False)
+    # Sync candidate.conflicts so downstream (reports, guards) see authoritative version
+    candidate.conflicts = conflicts
 
     field_result = FieldComparisonResult(
         field_status=fs,
@@ -302,8 +306,12 @@ def rule_based_valid_check(
             )
 
         # Check 2: Detect P2 (multi-letter author name variants)
-        # If authors status is "match" via token overlap but names differ in more than initial,
-        # this might be P2 not R1/R2
+        # Uses UNORDERED token matching to handle name-order differences:
+        #   "Billingsley, P" vs "Patrick Billingsley"  → R2 (initial expansion)
+        #   "H. W. Kuhn" vs "Kuhn, H. W."              → R1/R2 (same tokens)
+        #   "C. D. Aliprantis" vs "C. Aliprantis"      → R2 (first matches, middle dropped)
+        # Only flags P2 when there's a real multi-letter truncation that
+        # cannot be explained by reorder or dropped middle name.
         if ref_authors and cand_authors and len(ref_authors) == len(cand_authors):
             from .normalize import normalize_text
             import re as _re
@@ -311,20 +319,47 @@ def rule_based_valid_check(
             for r, c in zip(ref_authors, cand_authors):
                 r_parts = normalize_text(str(r)).split()
                 c_parts = normalize_text(str(c)).split()
-                # Strip DBLP suffixes from candidate
-                c_parts = [_re.sub(r"\s*\d{4,}$", "", p).strip() for p in c_parts]
+                # Strip DBLP suffixes and dots
+                r_parts = [p.replace(".", "").strip() for p in r_parts]
+                c_parts = [_re.sub(r"\s*\d{4,}$", "", p).replace(".", "").strip() for p in c_parts]
+                r_parts = [p for p in r_parts if p]
                 c_parts = [p for p in c_parts if p]
-                for rp, cp in zip(r_parts, c_parts):
-                    if rp == cp:
+
+                # Try to match each ref token to a cand token (unordered).
+                # Allow exact match or single-letter initial compatibility.
+                remaining = list(c_parts)
+                unmatched_refs: list[str] = []
+                for rp in r_parts:
+                    # 1) Exact match
+                    if rp in remaining:
+                        remaining.remove(rp)
                         continue
-                    # Single-letter initial is R2
-                    if len(rp) == 1 and cp.startswith(rp):
+                    # 2) Single-letter initial compatibility
+                    matched = False
+                    for cp in list(remaining):
+                        if (len(rp) == 1 and cp.startswith(rp)) or (len(cp) == 1 and rp.startswith(cp)):
+                            remaining.remove(cp)
+                            matched = True
+                            break
+                    if matched:
                         continue
-                    if len(cp) == 1 and rp.startswith(cp):
-                        continue
-                    # Multi-letter difference → P2
-                    if len(rp) > 1 and len(cp) > 1 and rp != cp:
-                        p2_detected = True
+                    unmatched_refs.append(rp)
+
+                # If any ref token is a multi-letter prefix of a remaining cand token
+                # (or vice versa), that's a true P2 multi-letter truncation.
+                for rp in unmatched_refs:
+                    for cp in remaining:
+                        if rp == cp:
+                            continue
+                        # Multi-letter prefix truncation → P2
+                        if len(rp) > 1 and len(cp) > 1 and (cp.startswith(rp) or rp.startswith(cp)):
+                            p2_detected = True
+                            break
+                        # Both multi-letter but neither is prefix → genuinely different name → P2
+                        if len(rp) > 1 and len(cp) > 1:
+                            p2_detected = True
+                            break
+                    if p2_detected:
                         break
                 if p2_detected:
                     break
@@ -1419,9 +1454,50 @@ def cascading_adjudicate(
             "comparison": result.field_result.comparison if result.field_result else {},
         })
 
+    # --- P4 fallback: check if every reference field was matched by SOME candidate ---
+    # Track which reference fields have been matched at least once across all evaluations.
+    # If every field the reference provides has a "match" status in at least one candidate,
+    # but no single candidate got everything right, route to P4 (needs human review).
+    _trackable_fields = ("title", "authors", "venue", "year", "volume", "pages", "publisher", "doi", "arxiv_id")
+    ref_fields_with_value: set[str] = set()
+    for fname in _trackable_fields:
+        val = getattr(citation, fname, None)
+        if val and str(val).strip():
+            ref_fields_with_value.add(fname)
+
+    matched_fields_across_candidates: set[str] = set()
+    for ev in all_evaluations:
+        fs = ev.get("comparison", {}).get("field_status", {})
+        for fname in ref_fields_with_value:
+            info = fs.get(fname, {})
+            if isinstance(info, dict) and info.get("status") == "match":
+                matched_fields_across_candidates.add(fname)
+
+    all_fields_covered = (
+        bool(ref_fields_with_value)
+        and ref_fields_with_value.issubset(matched_fields_across_candidates)
+    )
+
     # --- Phase 2: No VALID found → route downstream ---
     best = select_best_candidate(all_valid_results)
     if best is None:
+        # If every field was matched somewhere → P4 fallback
+        if all_fields_covered:
+            return CitationVerdict(
+                citation_id=citation.citation_id,
+                verdict=VerdictLabel.POTENTIAL_REFERENCE,
+                evidence_sources=evidence_sources,
+                conflicts=[],
+                adjudication_reason=(
+                    f"P4 fallback: every reference field {sorted(ref_fields_with_value)} "
+                    f"was independently verified by at least one candidate, but no single "
+                    f"candidate matched all fields cleanly. Needs human review."
+                ),
+                reference_snapshot=_reference_snapshot(citation),
+                candidate_evaluations=all_evaluations,
+                taxonomy_subtype=["P4"],
+                needs_human_review=True,
+            )
         return CitationVerdict(
             citation_id=citation.citation_id,
             verdict=VerdictLabel.FAKE_REFERENCE,
@@ -1540,6 +1616,37 @@ def cascading_adjudicate(
         verdict = VerdictLabel.POTENTIAL_REFERENCE
     else:
         verdict = VerdictLabel.FAKE_REFERENCE
+
+    # P4 fallback: if HallucinatedAgent wants FAKE but every reference field was
+    # matched by some candidate, downgrade to P4 (needs human review).
+    if verdict == VerdictLabel.FAKE_REFERENCE and all_fields_covered:
+        all_evaluations.append({
+            "agent": "P4_fallback",
+            "verdict": "POTENTIAL",
+            "taxonomy": ["P4"],
+            "reason": (
+                f"HallucinatedAgent said FAKE but every reference field "
+                f"{sorted(ref_fields_with_value)} was independently matched by some candidate. "
+                f"Downgraded to P4 for human review."
+            ),
+        })
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.POTENTIAL_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=best.issues if best else [],
+            adjudication_reason=(
+                f"P4 fallback: every reference field {sorted(ref_fields_with_value)} "
+                f"was independently verified by at least one candidate, but no single "
+                f"candidate matched all fields cleanly. Needs human review."
+            ),
+            matched_candidate=candidate_match_to_dict(best_candidate),
+            reference_snapshot=best_comparison.get("reference", {}),
+            comparison=best_comparison,
+            candidate_evaluations=all_evaluations,
+            taxonomy_subtype=["P4"],
+            needs_human_review=True,
+        )
 
     all_evaluations.append({
         "agent": "HallucinatedAgent",

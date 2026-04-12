@@ -64,15 +64,38 @@ To be REAL (valid=true), ALL of the following MUST hold:
   - title: match (after case normalization)
   - year: match
   - venue: match (after normalization/abbreviation/proceedings-prefix) OR both_missing OR candidate_missing
-    Treat as MATCH (not mismatch):
-      * Conference vs its proceedings: "NeurIPS" ≡ "Advances in Neural Information Processing Systems"
-        ≡ "Neural Information Processing Systems" ≡ "Proceedings of NeurIPS" ≡ "NIPS"
-      * "ICML" ≡ "International Conference on Machine Learning" ≡ "Proceedings of ICML"
-      * "ICLR" ≡ "International Conference on Learning Representations"
-      * "ACL" ≡ "Proceedings of the Annual Meeting of the Association for Computational Linguistics"
-      * "CVPR" ≡ "IEEE/CVF Conference on Computer Vision and Pattern Recognition"
-      * "EMNLP", "AAAI", "IJCAI", "KDD", "SIGGRAPH", etc. — same pattern: acronym ≡ full name ≡ "Advances in/Proceedings of ..." prefix
-      * Journal abbreviations: "Artif. Intell." ≡ "Artificial Intelligence", "J. Mach. Learn. Res." ≡ "JMLR"
+
+    USE YOUR WORLD KNOWLEDGE to recognize ALL of these as equivalent (match, not mismatch):
+
+    1. Acronym ≡ full name — recognize the acronym regardless of whether it's in your
+       training data. Rule: if the short form's letters match the initial letters of the
+       full form's content words (skipping "of", "on", "the", "and", "for", "in"), treat as match.
+       Examples: "JMLR" ≡ "Journal of Machine Learning Research",
+                 "SICOMP" ≡ "SIAM Journal on Computing",
+                 "COLT" ≡ "Conference on Learning Theory",
+                 "AISTATS" ≡ "Artificial Intelligence and Statistics",
+                 "STOC" ≡ "Symposium on Theory of Computing",
+                 "UAI" ≡ "Uncertainty in Artificial Intelligence"
+
+    2. Dot-truncated word abbreviations ≡ full name — when each dot-separated token is a
+       prefix of the corresponding full word.
+       Examples: "J. Mach. Learn. Res." ≡ "Journal of Machine Learning Research",
+                 "Artif. Intell." ≡ "Artificial Intelligence",
+                 "SIAM J. Comput." ≡ "SIAM Journal on Computing",
+                 "IEEE Trans. Pattern Anal. Mach. Intell." ≡ "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+
+    3. Conference vs proceedings prefix:
+       "NeurIPS" ≡ "Advances in Neural Information Processing Systems" ≡ "Proceedings of NeurIPS"
+       "ICML" ≡ "International Conference on Machine Learning" ≡ "Proceedings of ICML"
+       "AISTATS" ≡ "Proceedings of The 24th International Conference on Artificial Intelligence and Statistics"
+
+    4. Conference-proceedings book titles (Springer/LNCS style):
+       "Learning Theory and Kernel Machines" ≡ "COLT" (LNCS book title for COLT 2003 proceedings)
+
+    GENERAL PRINCIPLE: If you recognize both names as the same conference/journal (even if
+    the automated field_status says "mismatch"), OVERRIDE it and treat as match. You have
+    world knowledge the automated comparator doesn't.
+
     Only treat as MISMATCH when venues are genuinely different publishers/venues
     (e.g. "NeurIPS" vs "ICML", "Personal Blog" vs "NeurIPS", "ICLR" vs "arXiv").
   - authors: match (details vary by R-type below)
