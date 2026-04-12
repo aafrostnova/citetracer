@@ -710,13 +710,15 @@ def _extract_entries_with_bedrock(
     chunks = _split_text_chunks_for_model(cleaned, max_chars=max(2000, chunk_chars))
     raw_entries: list[str] = []
 
+    n_chunks = len(chunks)
     for idx, chunk in enumerate(chunks, start=1):
+        print(f"      [segment {idx}/{n_chunks}] extracting references via bedrock LLM...", end="\r", flush=True)
         prompt = (
             "You extract bibliography entries from noisy PDF text.\n"
             "Keep only reference list entries and preserve original order.\n"
             "Return ONLY valid JSON in the exact shape:\n"
             '{"references":[{"raw_reference":"..."}]}\n\n'
-            f"Chunk {idx}/{len(chunks)}:\n{chunk}"
+            f"Chunk {idx}/{n_chunks}:\n{chunk}"
         )
         response = client.converse(
             modelId=model_id,
@@ -729,6 +731,8 @@ def _extract_entries_with_bedrock(
 
         parsed = _parse_json_from_text(text)
         _append_raw_entries_from_json(parsed, raw_entries)
+    if n_chunks:
+        print(f"      [segment] bedrock extraction done ({n_chunks} chunks → {len(raw_entries)} entries)       ", flush=True)
 
     return _finalize_raw_entries(raw_entries)
 

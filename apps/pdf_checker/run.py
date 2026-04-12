@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -155,9 +157,63 @@ def _extract_and_parse(
 
     llm_cfg, llm_meta = _build_llm_reparse_config(cfg)
     _log(verbose, f"[3/7] Parsing references (citation_parse_method={cfg.citation_parse_method})")
+
+    # Render reference pages as images for VLM-assisted reparse (fixes OCR char errors).
+    # Build a per-citation image mapping: each citation gets the specific page(s) it appears on.
+    ref_start = extraction_metadata.get("reference_page_start", 0) - 1  # 0-indexed
+    ref_end = extraction_metadata.get("reference_page_end", 0) - 1
+    page_images: dict[int, bytes] = {}  # 0-indexed page → PNG bytes
+    if ref_start >= 0 and ref_end >= ref_start:
+        try:
+            from apps.pdf_checker.ingest.reference_segmenter import _render_pdf_reference_pages
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                image_paths = _render_pdf_reference_pages(pdf, ref_start, ref_end, Path(tmpdir), dpi=150)
+                for img_path in image_paths:
+                    # Parse page number from filename: "reference_page_12.png" → page_idx=11
+                    import re as _re
+                    m = _re.search(r"reference_page_(\d+)\.png$", img_path.name)
+                    if m:
+                        page_idx = int(m.group(1)) - 1  # 0-indexed
+                        page_images[page_idx] = img_path.read_bytes()
+            if page_images:
+                _log(verbose, f"      Rendered {len(page_images)} reference page image(s) for VLM reparse")
+        except Exception as exc:
+            _log(verbose, f"      Could not render reference pages: {exc}")
+
+    # Map each reference entry to the page(s) it appears on.
+    # Match by checking which reference page text contains the entry's raw_text.
+    ref_page_texts: list[tuple[int, str]] = []  # (0-indexed page, text)
+    for pi in range(max(0, ref_start), min(ref_end + 1, len(pages))):
+        ref_page_texts.append((pi, pages[pi]))
+
+    per_entry_images: list[list[bytes]] = []
+    for entry_text in reference_entries:
+        entry_pages: list[int] = []
+        # Use first 60 chars of entry as search key (enough to locate, handles line breaks)
+        search_key = entry_text[:60].strip().lower()
+        for pi, ptext in ref_page_texts:
+            if search_key and search_key in ptext.lower():
+                entry_pages.append(pi)
+        # If not found by prefix, check if entry spans consecutive pages
+        if not entry_pages and len(entry_text) > 80:
+            first_half = entry_text[:40].strip().lower()
+            second_half = entry_text[-40:].strip().lower()
+            for pi, ptext in ref_page_texts:
+                pl = ptext.lower()
+                if first_half in pl:
+                    entry_pages.append(pi)
+                elif second_half in pl:
+                    entry_pages.append(pi)
+        entry_pages = sorted(set(entry_pages))
+        # Collect images for these pages
+        imgs = [page_images[pi] for pi in entry_pages if pi in page_images]
+        per_entry_images.append(imgs)
+
     citations = parse_reference_entries(
         reference_entries,
         llm_reparse_config=llm_cfg,
+        reference_page_images=per_entry_images,
     )
     _log(verbose, f"      Parsed {len(citations)} citation records")
 
@@ -204,6 +260,7 @@ def _build_verifier(cfg, args: argparse.Namespace, verbose: bool) -> CitationVer
         google_cse_id=cfg.connectors.google_cse_id,
         serpapi_key=cfg.connectors.serpapi_key,
         tavily_api_key=cfg.connectors.tavily_api_key,
+        max_workers=getattr(args, "connector_workers", 8),
     )
 
     # Optional LLM-based source router
@@ -384,10 +441,14 @@ def run_pdf_check(
     _log(verbose, f"[6/7] Verifying citations (n={len(citations)})")
     paper_title = input_pdf.stem.replace("_", " ")
 
-    # Verify citation-by-citation with incremental writes (mirrors verification demo)
-    partial_verdicts: list[Any] = []
+    # Parallel citation verification, results stored in original order via index map
+    citation_workers = max(1, getattr(args, "citation_workers", 4))
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    for idx, citation in enumerate(citations, start=1):
+    verdicts_by_index: dict[int, Any] = {}
+    write_lock = threading.Lock()
+
+    def _verify_one(idx_citation: tuple[int, Any]) -> tuple[int, Any]:
+        idx, citation = idx_citation
         _log(
             verbose,
             f"      [{idx}/{len(citations)}] {citation.citation_id} "
@@ -398,31 +459,37 @@ def run_pdf_check(
             extraction_quality=quality_map.get(citation.citation_id, ExtractionQuality.UNKNOWN),
             source_paper_title=paper_title,
         )
-        partial_verdicts.append(verdict)
-        # Incremental save so a long run can be inspected mid-flight
-        report_dict = _build_report_dict(
-            input_pdf, partial_verdicts, pages, markers, link_quality,
-            extraction_quality, extraction_metadata,
-        )
-        _write_json_atomic(out_path, report_dict)
+        with write_lock:
+            verdicts_by_index[idx - 1] = verdict
+            ordered = [verdicts_by_index[i] for i in sorted(verdicts_by_index)]
+            report_dict = _build_report_dict(
+                input_pdf, ordered, pages, markers, link_quality,
+                extraction_quality, extraction_metadata,
+            )
+            _write_json_atomic(out_path, report_dict)
 
-        # Print verdict + full reason + conflicts. Reasons are wrapped at 200 chars
-        # so long Bedrock LLM explanations don't blow up the terminal.
-        verdict_label = verdict.verdict.value
-        taxonomy = verdict.taxonomy_subtype or []
-        reason = (verdict.adjudication_reason or "").strip()
-        conflicts = verdict.conflicts or []
-        _log(
-            verbose,
-            f"      → verdict={verdict_label} taxonomy={taxonomy}",
-        )
-        if reason:
-            # Wrap reason for terminal readability
-            wrapped = _wrap_for_terminal(reason, prefix="        reason: ", width=200)
-            _log(verbose, wrapped)
-        if conflicts:
-            _log(verbose, f"        conflicts: {conflicts}")
-        _log(verbose, "")  # blank line between citations
+            verdict_label = verdict.verdict.value
+            taxonomy = verdict.taxonomy_subtype or []
+            reason = (verdict.adjudication_reason or "").strip()
+            conflicts = verdict.conflicts or []
+            _log(verbose, f"      → verdict={verdict_label} taxonomy={taxonomy}")
+            if reason:
+                wrapped = _wrap_for_terminal(reason, prefix="        reason: ", width=200)
+                _log(verbose, wrapped)
+            if conflicts:
+                _log(verbose, f"        conflicts: {conflicts}")
+            _log(verbose, "")  # blank line between citations
+        return idx, verdict
+
+    if citation_workers == 1 or len(citations) <= 1:
+        # Serial path (also avoids ThreadPoolExecutor overhead for tiny inputs)
+        for pair in enumerate(citations, start=1):
+            _verify_one(pair)
+    else:
+        with ThreadPoolExecutor(max_workers=citation_workers) as pool:
+            list(pool.map(_verify_one, list(enumerate(citations, start=1))))
+
+    partial_verdicts = [verdicts_by_index[i] for i in sorted(verdicts_by_index)]
 
     final_report = _build_report_dict(
         input_pdf, partial_verdicts, pages, markers, link_quality,
@@ -553,14 +620,75 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Optional directory to also save the parsed citations JSON before verification.",
     )
 
+    # Parallelism (3-level: paper × citation × connector)
+    parser.add_argument(
+        "--connector-workers", type=int, default=8,
+        help="Max parallel connector queries per citation (default: 8).",
+    )
+    parser.add_argument(
+        "--citation-workers", type=int, default=4,
+        help="Max parallel citation verifications per paper (default: 4).",
+    )
+    parser.add_argument(
+        "--paper-workers", type=int, default=2,
+        help="Max parallel papers when --input is a directory (default: 2).",
+    )
+
     return parser
+
+
+def _collect_pdfs(input_path: Path) -> list[Path]:
+    """Return list of PDF files from a path. Single file → [path]; directory → recursive *.pdf."""
+    if input_path.is_file():
+        return [input_path]
+    if input_path.is_dir():
+        return sorted(input_path.rglob("*.pdf"))
+    raise FileNotFoundError(f"Input path does not exist: {input_path}")
 
 
 def main() -> None:
     args = build_arg_parser().parse_args()
     if args.offline_only:
         os.environ["CITATION_CHECKER_OFFLINE_ONLY"] = "1"
-    run_pdf_check(args.input, args.out, args=args)
+
+    input_path = Path(args.input)
+    out_arg = Path(args.out)
+
+    pdfs = _collect_pdfs(input_path)
+    if not pdfs:
+        print(f"[run] No PDFs found at {input_path}", flush=True)
+        return
+
+    # Single PDF → keep original behavior (out_arg is the report path)
+    if len(pdfs) == 1 and input_path.is_file():
+        run_pdf_check(pdfs[0], out_arg, args=args)
+        return
+
+    # Multiple PDFs → out_arg is treated as a directory; one report per paper
+    out_arg.mkdir(parents=True, exist_ok=True)
+    paper_workers = max(1, getattr(args, "paper_workers", 2))
+    print(f"[run] Found {len(pdfs)} PDFs; running with paper_workers={paper_workers}", flush=True)
+
+    def _run_one(pdf: Path) -> tuple[Path, Exception | None]:
+        report_path = out_arg / f"{pdf.stem}_report"
+        try:
+            run_pdf_check(pdf, report_path, args=args)
+            return pdf, None
+        except Exception as exc:  # noqa: BLE001
+            return pdf, exc
+
+    if paper_workers == 1:
+        for pdf in pdfs:
+            _, err = _run_one(pdf)
+            if err:
+                print(f"[run] FAILED {pdf}: {err}", flush=True)
+    else:
+        with ThreadPoolExecutor(max_workers=paper_workers) as pool:
+            for pdf, err in pool.map(_run_one, pdfs):
+                if err:
+                    print(f"[run] FAILED {pdf}: {err}", flush=True)
+                else:
+                    print(f"[run] DONE   {pdf}", flush=True)
 
 
 if __name__ == "__main__":

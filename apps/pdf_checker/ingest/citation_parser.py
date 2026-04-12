@@ -1092,11 +1092,35 @@ def _run_llm_reparse_on_raw_bedrock(
     bearer_token: str | None,
     max_new_tokens: int,
     temperature: float,
+    reference_page_images: list[bytes] | None = None,
 ) -> dict[str, Any] | None:
     client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+
+    n_images = len(reference_page_images) if reference_page_images else 0
+    image_instruction = ""
+    if n_images == 1:
+        image_instruction = (
+            "IMPORTANT: An image of the reference page is attached. "
+            "The OCR text below may contain character-level errors (e.g. dropped letters, "
+            "wrong capitalization like 'Sw-bench' instead of 'SWE-bench', or 'Codeelo' "
+            "instead of 'CodeElo'). Use the IMAGE as the ground truth for exact spelling "
+            "of titles, author names, and venue names. If the OCR text differs from what "
+            "you see in the image, trust the image.\n\n"
+        )
+    elif n_images >= 2:
+        image_instruction = (
+            f"IMPORTANT: {n_images} images of reference pages are attached. "
+            "This reference entry SPANS ACROSS PAGES — the beginning is on the first "
+            "image and continues on the second. "
+            "The OCR text below may contain character-level errors (e.g. dropped letters, "
+            "wrong capitalization). Use the IMAGES as the ground truth for exact spelling. "
+            "If the OCR text differs from what you see in the images, trust the images.\n\n"
+        )
+
     prompt = (
         "You are a strict bibliography parser. "
         "Extract structured fields from a raw reference string.\n"
+        + image_instruction +
         "Return only valid JSON with exact keys:\n"
         '{"title": "", "authors": [], "venue": "", "year": null, "volume": "", "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
         "Rules:\n"
@@ -1117,9 +1141,21 @@ def _run_llm_reparse_on_raw_bedrock(
         "- do not output explanations.\n\n"
         f"Reference:\n{raw_text}"
     )
+
+    # Build message content blocks — images first, then text prompt
+    content_blocks: list[dict] = []
+    for img_bytes in (reference_page_images or []):
+        content_blocks.append({
+            "image": {
+                "format": "png",
+                "source": {"bytes": img_bytes},
+            }
+        })
+    content_blocks.append({"text": prompt})
+
     response = client.converse(
         modelId=model_id,
-        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        messages=[{"role": "user", "content": content_blocks}],
         inferenceConfig={
             "temperature": max(0.0, float(temperature)),
             "maxTokens": max(64, int(max_new_tokens)),
@@ -1182,6 +1218,7 @@ def _apply_llm_reparse_if_needed(
     bedrock_bearer_token: str | None,
     max_new_tokens: int,
     temperature: float,
+    reference_page_images: list[bytes] | None = None,
 ) -> None:
     parsed_fields = dict(record.parsed_fields or {})
     parsed_fields["llm_reparse_attempted"] = True
@@ -1194,6 +1231,7 @@ def _apply_llm_reparse_if_needed(
                 bearer_token=bedrock_bearer_token,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
+                reference_page_images=reference_page_images,
             )
         else:
             parsed = _run_llm_reparse_on_raw(
@@ -1422,10 +1460,23 @@ def parse_reference_entry(entry: str, citation_id: str) -> CitationRecord:
 def parse_reference_entries(
     entries: list[str],
     llm_reparse_config: Mapping[str, Any] | None = None,
+    reference_page_images: list[list[bytes]] | None = None,
 ) -> list[CitationRecord]:
+    """Parse reference entries into CitationRecords.
+
+    Args:
+        entries: Raw reference strings.
+        llm_reparse_config: LLM reparse configuration.
+        reference_page_images: Per-entry list of page image(s) (PNG bytes).
+            reference_page_images[i] = list of images for entries[i].
+            For cross-page entries, the list has 2 images.
+    """
     records = []
+    total = len(entries)
     for idx, entry in enumerate(entries, start=1):
+        print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
         records.append(parse_reference_entry(entry, f"pdf-ref:{idx}"))
+    print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
 
     cfg = llm_reparse_config or {}
     if isinstance(cfg, Mapping):
@@ -1450,6 +1501,14 @@ def parse_reference_entries(
     parallel_workers = int(get_value("parallel_workers", 1) or 1)
     parallel_workers = max(1, parallel_workers)
 
+    # Build per-record image mapping for VLM-assisted reparse (Bedrock only).
+    # reference_page_images[i] = list of PNG bytes for the i-th entry.
+    _per_record_images: dict[str, list[bytes]] = {}
+    if provider == "bedrock" and reference_page_images:
+        for i, record in enumerate(records):
+            if i < len(reference_page_images) and reference_page_images[i]:
+                _per_record_images[record.citation_id] = reference_page_images[i]
+
     can_run = bool(model_path) if provider != "bedrock" else bool(bedrock_model_id)
     if enabled and can_run:
         targets = [
@@ -1457,8 +1516,13 @@ def parse_reference_entries(
             for record in records
             if force_all_entries or _citation_has_missing_core_fields(record)
         ]
-        if parallel_workers <= 1 or len(targets) <= 1:
-            for record in targets:
+        n_targets = len(targets)
+        n_with_images = sum(1 for r in targets if r.citation_id in _per_record_images)
+        img_tag = f" +image({n_with_images}/{n_targets})" if n_with_images else ""
+        print(f"      [reparse] LLM reparsing {n_targets} citations (provider={provider}{img_tag})...", flush=True)
+        if parallel_workers <= 1 or n_targets <= 1:
+            for i, record in enumerate(targets, start=1):
+                print(f"      [reparse {i}/{n_targets}] {record.citation_id} title={record.title[:50]!r}", end="\r", flush=True)
                 _apply_llm_reparse_if_needed(
                     record=record,
                     provider=provider,
@@ -1468,9 +1532,14 @@ def parse_reference_entries(
                     bedrock_bearer_token=bedrock_bearer_token,
                     max_new_tokens=max_new_tokens,
                     temperature=temperature,
+                    reference_page_images=_per_record_images.get(record.citation_id),
                 )
+            print(f"      [reparse] done ({n_targets} citations)                                        ", flush=True)
         else:
-            max_workers = min(parallel_workers, len(targets))
+            import threading
+            _reparse_counter = {"done": 0}
+            _reparse_lock = threading.Lock()
+            max_workers = min(parallel_workers, n_targets)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_map = {
                     executor.submit(
@@ -1483,9 +1552,14 @@ def parse_reference_entries(
                         bedrock_bearer_token=bedrock_bearer_token,
                         max_new_tokens=max_new_tokens,
                         temperature=temperature,
+                        reference_page_images=_per_record_images.get(record.citation_id),
                     ): record.citation_id
                     for record in targets
                 }
                 for fut in as_completed(future_map):
                     fut.result()
+                    with _reparse_lock:
+                        _reparse_counter["done"] += 1
+                        print(f"      [reparse {_reparse_counter['done']}/{n_targets}] {future_map[fut]}", end="\r", flush=True)
+            print(f"      [reparse] done ({n_targets} citations, workers={max_workers})                ", flush=True)
     return records
