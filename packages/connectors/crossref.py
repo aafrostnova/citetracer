@@ -12,7 +12,22 @@ class CrossrefConnector(BaseConnector):
     ttl_s = 60 * 60 * 24 * 7
 
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, Any]]:
-        query = citation.doi or citation.title or citation.raw_text
+        # If DOI is available, try exact lookup first (much more reliable than search)
+        doi = (citation.doi or "").strip()
+        if doi:
+            try:
+                item = self._request_json(
+                    f"https://api.crossref.org/works/{doi}",
+                    {},
+                    policy,
+                ).get("message", {})
+                if item and item.get("title"):
+                    return [self._normalize_item(item)]
+            except Exception:
+                pass  # DOI not found or network error → fall through to search
+
+        # Fallback: bibliographic search by title/raw_text
+        query = citation.title or citation.raw_text
         if not query:
             return []
         payload = self._request_json(

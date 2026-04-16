@@ -146,6 +146,8 @@ def main() -> None:
         offline_only=False,
         enable_llm_source_router=False,
         source_router_max_sources=0,
+        connector_workers=8,
+        citation_workers=4,
     )
     verifier = _build_verifier(cfg, fake_args, verbose=True)
 
@@ -183,14 +185,24 @@ def main() -> None:
         if isinstance(c, dict):
             _cid_to_idx[c.get("citation_id", "")] = i
 
-    # Re-verify each target citation — write after each one
+    # Re-verify target citations in parallel — write after each one
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     patched = 0
-    for idx, cid in enumerate(target_ids, start=1):
-        if cid not in parsed_records:
-            continue
-        record = parsed_records[cid]
+    write_lock = threading.Lock()
+    citation_workers = getattr(args, "citation_workers", 4) if hasattr(args, "citation_workers") else 4
+    # reverify uses fake_args, so read from it
+    citation_workers = max(1, int(getattr(fake_args, "citation_workers", 4)))
+
+    # Filter to only those in parsed_records
+    valid_targets = [(cid, parsed_records[cid]) for cid in target_ids if cid in parsed_records]
+
+    def _verify_one(item: tuple[int, str, CitationRecord]) -> None:
+        nonlocal patched
+        idx, cid, record = item
         print(
-            f"\n[{idx}/{len(target_ids)}] {cid} title={record.title[:60]!r}",
+            f"\n[{idx}/{len(valid_targets)}] {cid} title={record.title[:60]!r}",
             flush=True,
         )
         try:
@@ -201,22 +213,35 @@ def main() -> None:
             )
         except Exception as exc:
             print(f"  ERROR: {type(exc).__name__}: {exc}", flush=True)
-            continue
+            return
         verdict_dict = citation_verdict_to_dict(verdict)
-        print(
-            f"  → verdict={verdict.verdict.value} taxonomy={verdict.taxonomy_subtype}",
-            flush=True,
-        )
-        reason = (verdict.adjudication_reason or "").strip()
-        if reason:
-            print(f"  reason: {reason[:300]}", flush=True)
 
-        # Patch in-place and flush to disk immediately
-        if cid in _cid_to_idx:
-            report["citations"][_cid_to_idx[cid]].update(verdict_dict)
-            patched += 1
-            _flush_report()
-            print(f"  (saved to {out_path})", flush=True)
+        with write_lock:
+            print(
+                f"  → verdict={verdict.verdict.value} taxonomy={verdict.taxonomy_subtype}",
+                flush=True,
+            )
+            reason = (verdict.adjudication_reason or "").strip()
+            if reason:
+                print(f"  reason: {reason[:300]}", flush=True)
+
+            if cid in _cid_to_idx:
+                report["citations"][_cid_to_idx[cid]].update(verdict_dict)
+                patched += 1
+                _flush_report()
+                print(f"  (saved to {out_path})", flush=True)
+
+    items = [(idx, cid, rec) for idx, (cid, rec) in enumerate(valid_targets, start=1)]
+
+    if citation_workers <= 1 or len(items) <= 1:
+        for item in items:
+            _verify_one(item)
+    else:
+        print(f"Running with {citation_workers} parallel workers", flush=True)
+        with ThreadPoolExecutor(max_workers=citation_workers) as pool:
+            futures = [pool.submit(_verify_one, item) for item in items]
+            for fut in as_completed(futures):
+                fut.result()  # propagate exceptions
 
     print(f"\nDone. Patched {patched} citations total. Output: {out_path}")
     print(f"New summary: {report['summary']}")

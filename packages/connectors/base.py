@@ -6,7 +6,9 @@ import json
 import random
 import re
 import sqlite3
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,12 @@ class RequestPolicy:
     timeout_s: float = 6.0
     max_retries: int = 2
     backoff_base_s: float = 0.25
+    # 429 rate-limit retries use a separate, longer schedule because rate-limited
+    # endpoints typically need seconds of breathing room, not 0.25s. Server's
+    # Retry-After header wins when present.
+    rate_limit_max_retries: int = 5
+    rate_limit_backoff_base_s: float = 5.0
+    rate_limit_backoff_max_s: float = 60.0
     health_recover_step: float = 0.03
     health_decay_step: float = 0.15
 
@@ -41,19 +49,23 @@ class ConnectorResult:
 class SourceHealth:
     def __init__(self) -> None:
         self._scores: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def get(self, connector: str) -> float:
-        return self._scores.get(connector, 1.0)
+        with self._lock:
+            return self._scores.get(connector, 1.0)
 
     def success(self, connector: str, policy: RequestPolicy) -> float:
-        score = min(1.0, self.get(connector) + policy.health_recover_step)
-        self._scores[connector] = score
-        return score
+        with self._lock:
+            score = min(1.0, self._scores.get(connector, 1.0) + policy.health_recover_step)
+            self._scores[connector] = score
+            return score
 
     def failure(self, connector: str, policy: RequestPolicy) -> float:
-        score = max(0.0, self.get(connector) - policy.health_decay_step)
-        self._scores[connector] = score
-        return score
+        with self._lock:
+            score = max(0.0, self._scores.get(connector, 1.0) - policy.health_decay_step)
+            self._scores[connector] = score
+            return score
 
 
 class SQLiteCache:
@@ -199,21 +211,76 @@ class BaseConnector:
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    @staticmethod
+    def _is_rate_limited(exc: Exception) -> bool:
+        return isinstance(exc, HTTPError) and exc.code == 429
+
+    @staticmethod
+    def _retry_after_seconds(exc: Exception) -> float | None:
+        """Parse server's Retry-After header (seconds or HTTP-date); return None if absent/unusable."""
+        if not isinstance(exc, HTTPError):
+            return None
+        hdr = exc.headers.get("Retry-After") if exc.headers else None
+        if not hdr:
+            return None
+        hdr = hdr.strip()
+        try:
+            return max(0.0, float(hdr))
+        except ValueError:
+            pass
+        try:
+            from email.utils import parsedate_to_datetime
+            from datetime import datetime, timezone
+            dt = parsedate_to_datetime(hdr)
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return max(0.0, (dt - datetime.now(timezone.utc)).total_seconds())
+        except Exception:
+            return None
+
+    @classmethod
+    def _sleep_for_retry(cls, exc: Exception, attempt: int, policy: RequestPolicy) -> None:
+        """Sleep an appropriate backoff before the next retry.
+
+        - 429 responses use rate_limit_backoff (honors Retry-After header if present).
+        - Other errors use the regular short exponential backoff.
+        """
+        if cls._is_rate_limited(exc):
+            server_hint = cls._retry_after_seconds(exc)
+            if server_hint is not None:
+                delay = min(server_hint, policy.rate_limit_backoff_max_s)
+            else:
+                delay = min(
+                    policy.rate_limit_backoff_base_s * (2**attempt),
+                    policy.rate_limit_backoff_max_s,
+                )
+            delay += random.uniform(0.0, 0.5)
+        else:
+            delay = policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05)
+        time.sleep(delay)
+
+    @staticmethod
+    def _max_retries_for(exc: Exception, policy: RequestPolicy) -> int:
+        return policy.rate_limit_max_retries if BaseConnector._is_rate_limited(exc) else policy.max_retries
+
     def _request_json(self, url: str, params: dict[str, Any], policy: RequestPolicy, headers: dict[str, str] | None = None) -> dict[str, Any]:
         query = urlencode({k: v for k, v in params.items() if v is not None and v != ""})
         target = f"{url}?{query}" if query else url
         headers = headers or {}
         request = Request(target, headers={"User-Agent": "citation-checker/1.0", **headers})
         last_error: Exception | None = None
-        for attempt in range(policy.max_retries + 1):
+        max_attempts = max(policy.max_retries, policy.rate_limit_max_retries) + 1
+        for attempt in range(max_attempts):
             try:
                 with urlopen(request, timeout=policy.timeout_s) as response:
                     return json.loads(response.read().decode("utf-8"))
             except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = exc
-                if attempt >= policy.max_retries:
+                if attempt >= self._max_retries_for(exc, policy):
                     break
-                time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
+                self._sleep_for_retry(exc, attempt, policy)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
     def _request_json_post(
@@ -231,15 +298,16 @@ class BaseConnector:
             method="POST",
         )
         last_error: Exception | None = None
-        for attempt in range(policy.max_retries + 1):
+        max_attempts = max(policy.max_retries, policy.rate_limit_max_retries) + 1
+        for attempt in range(max_attempts):
             try:
                 with urlopen(request, timeout=policy.timeout_s) as response:
                     return json.loads(response.read().decode("utf-8"))
             except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = exc
-                if attempt >= policy.max_retries:
+                if attempt >= self._max_retries_for(exc, policy):
                     break
-                time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
+                self._sleep_for_retry(exc, attempt, policy)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
     def _request_text(
@@ -254,16 +322,17 @@ class BaseConnector:
         headers = headers or {}
         request = Request(target, headers={"User-Agent": "citation-checker/1.0", **headers})
         last_error: Exception | None = None
-        for attempt in range(policy.max_retries + 1):
+        max_attempts = max(policy.max_retries, policy.rate_limit_max_retries) + 1
+        for attempt in range(max_attempts):
             try:
                 with urlopen(request, timeout=policy.timeout_s) as response:
                     charset = response.headers.get_content_charset() or "utf-8"
                     return response.read().decode(charset, errors="replace")
             except (HTTPError, URLError, TimeoutError) as exc:
                 last_error = exc
-                if attempt >= policy.max_retries:
+                if attempt >= self._max_retries_for(exc, policy):
                     break
-                time.sleep(policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05))
+                self._sleep_for_retry(exc, attempt, policy)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
     @staticmethod
@@ -280,11 +349,13 @@ class ConnectorOrchestrator:
         cache: SQLiteCache,
         policy: RequestPolicy | None = None,
         source_health: SourceHealth | None = None,
+        max_workers: int = 8,
     ) -> None:
         self.connectors = connectors
         self.cache = cache
         self.policy = policy or RequestPolicy()
         self.source_health = source_health or SourceHealth()
+        self.max_workers = max(1, max_workers)
 
     @staticmethod
     def _norm_text(value: str) -> str:
@@ -313,48 +384,33 @@ class ConnectorOrchestrator:
         citation: CitationRecord,
         max_connectors: int | None = None,
     ) -> list[ConnectorResult]:
-        results: list[ConnectorResult] = []
-        for connector in self.connectors:
-            if max_connectors is not None and len(results) >= max_connectors:
-                break
-            started = time.perf_counter()
-            cache_identity = getattr(connector, "cache_identity", None) or connector.name
-            key = cache_key_for(cache_identity, citation)
-            cached = self.cache.get(key)
-            if cached is not None:
-                latency_ms = (time.perf_counter() - started) * 1000
-                results.append(
-                    ConnectorResult(
-                        connector=connector.name,
-                        records=cached,
-                        latency_ms=latency_ms,
-                        cache_hit=True,
-                        source_health=self.source_health.get(connector.name),
-                        error=None,
-                    )
-                )
-                continue
+        # Slice connector list up front so max_connectors is honored before parallel dispatch
+        connectors_to_query = self.connectors
+        if max_connectors is not None:
+            connectors_to_query = list(self.connectors)[:max_connectors]
 
+        def _query_one(connector: BaseConnector) -> ConnectorResult:
+            started = time.perf_counter()
             error: str | None = None
             records: list[dict[str, Any]] = []
             try:
                 records = connector.search(citation, self.policy)
-                if records:
-                    self.cache.set(key, records, connector.ttl_s)
                 health = self.source_health.success(connector.name, self.policy)
             except Exception as exc:  # noqa: BLE001 - connector failures should not crash the paper run
                 error = str(exc)
                 health = self.source_health.failure(connector.name, self.policy)
 
             latency_ms = (time.perf_counter() - started) * 1000
-            results.append(
-                ConnectorResult(
-                    connector=connector.name,
-                    records=records,
-                    latency_ms=latency_ms,
-                    cache_hit=False,
-                    source_health=health,
-                    error=error,
-                )
+            return ConnectorResult(
+                connector=connector.name,
+                records=records,
+                latency_ms=latency_ms,
+                cache_hit=False,
+                source_health=health,
+                error=error,
             )
-        return results
+
+        # Parallel dispatch with order preserved by pool.map
+        worker_count = min(self.max_workers, len(connectors_to_query)) or 1
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            return list(pool.map(_query_one, connectors_to_query))

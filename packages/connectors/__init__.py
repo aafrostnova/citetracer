@@ -38,6 +38,7 @@ def default_orchestrator(
     google_cse_id: str | None = None,
     serpapi_key: str | None = None,
     tavily_api_key: str | None = None,
+    max_workers: int = 8,
 ) -> ConnectorOrchestrator:
     configured_sqlite_path = str(dblp_sqlite_path or "").strip()
     env_sqlite_path = (os.getenv("CITATION_CHECKER_DBLP_SQLITE_PATH") or "").strip()
@@ -81,7 +82,12 @@ def default_orchestrator(
         connectors = [connector for connector in connectors if _connector_enabled(connector.name, enabled)]
     cache = SQLiteCache(cache_path)
     policy = RequestPolicy()
-    return ConnectorOrchestrator(connectors=connectors, cache=cache, policy=policy)
+    return ConnectorOrchestrator(
+        connectors=connectors,
+        cache=cache,
+        policy=policy,
+        max_workers=max_workers,
+    )
 
 
 def _connector_enabled(connector_name: str, enabled: set[str]) -> bool:

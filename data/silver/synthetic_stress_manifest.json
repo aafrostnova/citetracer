@@ -1,0 +1,18 @@
+{
+  "name": "synthetic_stress",
+  "description": "Small offline regression suite for source-based citation verification.",
+  "items": [
+    {
+      "paper_id": "sample_source",
+      "pipeline": "SOURCE",
+      "input_path": "data/latex_papers/sample_source",
+      "ground_truth_path": "data/silver/sample_source_ground_truth.json"
+    },
+    {
+      "paper_id": "synthetic_mixed_source",
+      "pipeline": "SOURCE",
+      "input_path": "data/latex_papers/synthetic_mixed_source",
+      "ground_truth_path": "data/latex_papers/synthetic_mixed_source/expected_labels.json"
+    }
+  ]
+}

@@ -78,11 +78,8 @@ def _classify_taxonomy(
     has_et_al: bool,
     has_candidates: bool,
 ) -> str:
-    """Classify the verdict into a taxonomy subtype (R1-R4, P1-P3, H1-H7)."""
+    """Classify the verdict into a taxonomy subtype (R1-R3, P1-P4, H1-H6)."""
     if verdict == VerdictLabel.VALID:
-        # Check if it's a non-academic source (web_search only)
-        if candidate_connector in {"google_search", "web_search"}:
-            return "R4"
         # Check if authors used et al.
         if has_et_al:
             return "R3"
@@ -92,49 +89,43 @@ def _classify_taxonomy(
     if verdict == VerdictLabel.POTENTIAL_REFERENCE:
         author_status = field_status.get("authors", {}).get("status", "")
         if author_status in ("partial_overlap",):
-            return "P2"  # Author name variant
-        # Check if it's a non-academic unstable source (P3)
+            return "P1"  # Author name variant
+        # Check if it's a non-academic unstable source (P2)
         url_status = field_status.get("url", {}).get("status", "")
         if candidate_connector in {"google_search", "web_search"} and url_status == "mismatch":
-            return "P3"  # Non-academic source unstable (deleted/moved)
-        return "P1"  # Version difference or other
+            return "P2"  # Non-academic source unstable (deleted/moved)
+        return "P1"  # Default potential
 
     if verdict == VerdictLabel.FAKE_REFERENCE:
         if not has_candidates:
-            return "H1"  # No candidates = completely fabricated
+            return "H1"  # No candidates → title unverifiable
         title_status = field_status.get("title", {}).get("status", "")
         author_status = field_status.get("authors", {}).get("status", "")
         venue_status = field_status.get("venue", {}).get("status", "")
         year_status = field_status.get("year", {}).get("status", "")
         doi_status = field_status.get("doi", {}).get("status", "")
 
-        # Author issues
-        if author_status == "count_mismatch":
-            return "H3a"  # Author addition/deletion
-        if author_status == "mismatch":
-            return "H3c"  # Author fabrication
-
         # Title issues
         if title_status == "mismatch":
-            return "H2a"  # Title mutation (could be H2a/H2b/H2c, hard to distinguish)
+            return "H1"  # Title error
+
+        # Author issues
+        if author_status in ("count_mismatch", "mismatch"):
+            return "H2"  # Author error
 
         # DOI issues
         if doi_status == "mismatch":
-            return "H5a"  # DOI fabrication
+            return "H5"  # DOI/identifier error
 
         # Venue/year issues
         if venue_status == "mismatch" and year_status == "mismatch":
-            return "H4"  # Venue+year fabrication
+            return "H3"  # Venue error (with year)
         if venue_status == "mismatch":
-            return "H5d"  # Venue mismatch
+            return "H3"  # Venue error
         if year_status == "mismatch":
-            return "H5c"  # Date error
+            return "H4"  # Year error
 
-        # Non-academic source not found
-        if candidate_connector in {"google_search", "web_search"}:
-            return "H7"  # Non-existent source
-
-        return "H1"  # Default: completely fabricated
+        return "H1"  # Default fallback
 
     return ""  # INSUFFICIENT_EVIDENCE
 
@@ -153,7 +144,12 @@ def _norm_identifier(value: Any) -> str:
 
 
 def _norm_pages(value: Any) -> str:
-    """Normalize page ranges: '1877--1901' / '1877—1901' / 'pp. 1877-1901' → '1877-1901'."""
+    """Normalize page ranges: '1877--1901' / '1877—1901' / 'pp. 1877-1901' → '1877-1901'.
+
+    Also handles ACM article-number format: '766:1-766:28' → '1-28'.
+    The pattern is <article_num>:<start>-<article_num>:<end>.
+    """
+    import re as _re
     text = str(value or "").lower().strip()
     if not text:
         return ""
@@ -162,7 +158,17 @@ def _norm_pages(value: Any) -> str:
     for sep in ("\u2013", "\u2014", "\u2212", "--", "—", "–"):
         text = text.replace(sep, "-")
     text = " ".join(text.split())
-    return text.strip(" .,:;")
+    text = text.strip(" .,:;")
+    # ACM article-number format: "766:1-766:28" → "1-28"
+    # Pattern: <num>:<start> - <num>:<end>  (same article number on both sides)
+    m = _re.match(r"^(\d+):(\d+)\s*-\s*(\d+):(\d+)$", text)
+    if m and m.group(1) == m.group(3):
+        text = f"{m.group(2)}-{m.group(4)}"
+    # Also handle single-sided: "29:1" → "1" (JMLR style, less common in ranges)
+    m2 = _re.match(r"^\d+:(\d+)\s*-\s*\d+:(\d+)$", text)
+    if m2:
+        text = f"{m2.group(1)}-{m2.group(2)}"
+    return text
 
 
 _ROMAN_NUMERAL_MAP = {
@@ -539,7 +545,7 @@ def _has_soft_discrepancies(field_status: dict[str, dict[str, Any]], conflicts: 
         "candidate_missing",
         "reference_missing",
     }
-    for field_name in ("authors", "venue", "doi", "arxiv_id", "pages", "publisher", "location", "volume"):
+    for field_name in ("authors", "venue", "doi", "pages", "publisher", "location", "volume"):
         if field_name in field_status and _status_in(field_status[field_name], review_statuses):
             return True
 
@@ -565,7 +571,7 @@ def _is_direct_valid(field_status: dict[str, dict[str, Any]], conflicts: list[st
     # All optional fields: if reference has a value, candidate must also have it and match.
     # - both_missing / reference_missing → reference didn't provide it, OK to skip
     # - candidate_missing → reference HAS a value but candidate doesn't → NOT valid
-    for f in ("venue", "doi", "arxiv_id", "pages", "publisher", "location", "volume"):
+    for f in ("venue", "doi", "pages", "publisher", "location", "volume"):
         if f in field_status:
             if not _status_in(field_status[f], {"match", "both_missing", "reference_missing"}):
                 return False
@@ -651,7 +657,7 @@ def adjudicate(
             reference_snapshot=_reference_snapshot(citation),
             comparison=_build_comparison(citation, None, ["no_candidate"]),
             candidate_evaluations=[],
-            taxonomy_subtype=["H1"] if verdict_label == VerdictLabel.FAKE_REFERENCE else [],
+            taxonomy_subtype=["H1"] if verdict_label == VerdictLabel.FAKE_REFERENCE else [],  # H1: no candidates found
             llm_recheck_reason="",
             needs_human_review=True,
             extraction_quality=extraction_quality,

@@ -1,0 +1,68 @@
+{
+  "H1": {
+    "count": 200,
+    "samples_file": "H1.json",
+    "label": "HALLUCINATED",
+    "category": "Title"
+  },
+  "H2": {
+    "count": 200,
+    "samples_file": "H2.json",
+    "label": "HALLUCINATED",
+    "category": "Author"
+  },
+  "H3": {
+    "count": 200,
+    "samples_file": "H3.json",
+    "label": "HALLUCINATED",
+    "category": "Meta"
+  },
+  "H4": {
+    "count": 200,
+    "samples_file": "H4.json",
+    "label": "HALLUCINATED",
+    "category": "Meta"
+  },
+  "H5": {
+    "count": 200,
+    "samples_file": "H5.json",
+    "label": "HALLUCINATED",
+    "category": "Meta"
+  },
+  "H6": {
+    "count": 166,
+    "samples_file": "H6.json",
+    "label": "HALLUCINATED",
+    "category": "Meta"
+  },
+  "P1": {
+    "count": 200,
+    "samples_file": "P1.json",
+    "label": "POTENTIAL_HALLUCINATED",
+    "category": "Author"
+  },
+  "R1": {
+    "count": 200,
+    "samples_file": "R1.json",
+    "label": "REAL",
+    "category": "None"
+  },
+  "R2": {
+    "count": 200,
+    "samples_file": "R2.json",
+    "label": "REAL",
+    "category": "Format"
+  },
+  "R3": {
+    "count": 200,
+    "samples_file": "R3.json",
+    "label": "REAL",
+    "category": "Author"
+  },
+  "P4": {
+    "count": 200,
+    "samples_file": "P4.json",
+    "label": "POTENTIAL_HALLUCINATED",
+    "category": "Meta"
+  }
+}

@@ -52,11 +52,63 @@ class URLDirectConnector(BaseConnector):
         self.tavily_api_key = (tavily_api_key or "").strip()
 
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, object]]:
+        """Fetch URL content and return raw content for LLM extraction.
+
+        Returns a list with one record containing the raw page content
+        (HTML or Tavily markdown). The actual structured field extraction
+        is done downstream by ExtractorAgent LLM, not by regex here.
+        """
         url = str(citation.url or "").strip()
         if not url or not urlsplit(url).scheme:
             return []
 
         # First try direct fetch (HTML)
+        direct_error: Exception | None = None
+        try:
+            body = self._request_text(
+                url,
+                {},
+                policy,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            body = body[:512_000]
+            return [{
+                "title": "",
+                "authors": [],
+                "venue": "",
+                "year": None,
+                "doi": "",
+                "arxiv_id": "",
+                "url": url,
+                "raw_content": body[:8000],
+                "_fetch_method": "http_get",
+            }]
+        except RuntimeError as exc:
+            direct_error = exc
+
+        # Fallback to Tavily Extract API on failure (e.g. 429, 403, blocked)
+        if self.tavily_api_key:
+            try:
+                tavily_record = self._fetch_via_tavily_raw(url, policy)
+                if tavily_record:
+                    return [tavily_record]
+            except Exception:
+                pass
+
+        if direct_error is not None:
+            raise direct_error
+        return []
+
+    def search_with_extraction(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, object]]:
+        """Legacy method: fetch URL and extract fields via regex (meta tags / BibTeX).
+
+        Kept for backward compatibility with code that needs immediate structured data
+        without an LLM.
+        """
+        url = str(citation.url or "").strip()
+        if not url or not urlsplit(url).scheme:
+            return []
+
         direct_error: Exception | None = None
         try:
             body = self._request_text(
@@ -72,7 +124,6 @@ class URLDirectConnector(BaseConnector):
         except RuntimeError as exc:
             direct_error = exc
 
-        # Fallback to Tavily Extract API on failure (e.g. 429, 403, blocked)
         if self.tavily_api_key:
             try:
                 tavily_record = self._fetch_via_tavily(url, policy)
@@ -84,6 +135,37 @@ class URLDirectConnector(BaseConnector):
         if direct_error is not None:
             raise direct_error
         return []
+
+    def _fetch_via_tavily_raw(self, url: str, policy: RequestPolicy) -> dict[str, object]:
+        """Fetch raw content via Tavily Extract API (no field extraction)."""
+        payload = self._request_json_post(
+            "https://api.tavily.com/extract",
+            {
+                "urls": [url],
+                "extract_depth": "basic",
+                "format": "markdown",
+            },
+            policy,
+            headers={"Authorization": f"Bearer {self.tavily_api_key}"},
+        )
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        if not results:
+            return {}
+        first = results[0]
+        raw_content = str(first.get("raw_content", "") or first.get("content", "") or "")
+        if not raw_content.strip():
+            return {}
+        return {
+            "title": "",
+            "authors": [],
+            "venue": "",
+            "year": None,
+            "doi": "",
+            "arxiv_id": "",
+            "url": url,
+            "raw_content": raw_content[:8000],
+            "_fetch_method": "tavily_extract",
+        }
 
     def _fetch_via_tavily(self, url: str, policy: RequestPolicy) -> dict[str, object]:
         """Use Tavily Extract API as a fallback when direct fetch fails.

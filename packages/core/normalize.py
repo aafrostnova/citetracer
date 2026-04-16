@@ -115,6 +115,9 @@ VENUE_ALIASES = {
     "arxiv": "arxiv",
     "corr": "arxiv",
     "arxiv preprint": "arxiv",
+    "preprint": "arxiv",
+    "preprint arxiv": "arxiv",
+    "arxiv.org": "arxiv",
 }
 
 NAME_ALIASES = {

@@ -108,7 +108,7 @@ def compare_fields(
     # Signal 3: Soft discrepancy
     soft_fields = []
     if has_soft_discrepancies_func(field_status, conflicts):
-        for fname in ("authors", "venue", "doi", "arxiv_id", "pages", "publisher", "location"):
+        for fname in ("authors", "venue", "doi", "pages", "publisher", "location"):
             status = field_status.get(fname, {}).get("status", "")
             if status in ("mismatch", "partial_overlap", "candidate_missing", "reference_missing"):
                 soft_fields.append(f"{fname}:{status}")
@@ -147,8 +147,6 @@ def _classify_taxonomy_from_fields(
     if signal == "direct_valid":
         if has_et_al:
             return ["R3"]
-        if connector in _WEB_CONNECTORS:
-            return ["R4"]
         return ["R1"]
 
     if signal == "hard_mismatch":
@@ -157,11 +155,11 @@ def _classify_taxonomy_from_fields(
         year_s = field_status.get("year", {}).get("status", "")
         author_s = field_status.get("authors", {}).get("status", "")
         if title_s == "mismatch":
-            issues.append("H2")
+            issues.append("H1")
         if author_s == "count_mismatch":
-            issues.append("H3")
+            issues.append("H2")
         if year_s == "mismatch":
-            issues.append("H5")
+            issues.append("H4")
         return issues or ["H1"]
 
     if signal == "soft_discrepancy":
@@ -172,14 +170,16 @@ def _classify_taxonomy_from_fields(
         pages_s = field_status.get("pages", {}).get("status", "")
         volume_s = field_status.get("volume", {}).get("status", "")
         publisher_s = field_status.get("publisher", {}).get("status", "")
+        location_s = field_status.get("location", {}).get("status", "")
         if author_s in ("mismatch", "partial_overlap", "reordered_match", "count_mismatch"):
-            issues.append("H3")
+            issues.append("H2")
         if venue_s == "mismatch":
-            issues.append("H4")
+            issues.append("H3")
         if doi_s == "mismatch":
+            issues.append("H5")
+        if (pages_s == "mismatch" or volume_s == "mismatch"
+                or publisher_s == "mismatch" or location_s == "mismatch"):
             issues.append("H6")
-        if pages_s == "mismatch" or volume_s == "mismatch" or publisher_s == "mismatch":
-            issues.append("H7")
         return issues or ["H1"]
 
     return []
@@ -245,7 +245,7 @@ def aggregate_verdict(
             verdict = VerdictLabel.POTENTIAL_REFERENCE
             if llm_verdict == VerdictLabel.FAKE_REFERENCE:
                 verdict = VerdictLabel.FAKE_REFERENCE
-            taxonomy = llm_taxonomy or ["P2"]
+            taxonomy = llm_taxonomy or ["P1"]
             reason = f"All discrepancies explained. Agent3: {llm_verdict.value}. {llm_note}"
 
         # Rule 4b: Some unexplained → default FAKE, LLM can upgrade to POTENTIAL
@@ -270,7 +270,7 @@ def aggregate_verdict(
             llm_confidence = existence_judgment.confidence
         else:
             llm_verdict = VerdictLabel.POTENTIAL_REFERENCE
-            llm_taxonomy = ["P3"]
+            llm_taxonomy = ["P2"]
             llm_note = "No LLM available."
             llm_confidence = 0.0
 
@@ -283,14 +283,14 @@ def aggregate_verdict(
             cand_year = candidate.year
             cite_year = citation.year
             if cite_year and cand_year and cite_year != cand_year:
-                web_issues.append("H5")
+                web_issues.append("H4")
             # Check venue if citation has one and candidate has one
             cite_venue = (citation.venue or "").strip().lower()
             cand_venue = (candidate.venue or "").strip().lower()
             if cite_venue and cand_venue and cite_venue != cand_venue:
                 from .normalize import normalize_venue
                 if normalize_venue(citation.venue) != normalize_venue(candidate.venue):
-                    web_issues.append("H4")
+                    web_issues.append("H3")
             # If web found issues that contradict the citation → HALLUCINATED
             if web_issues:
                 llm_verdict = VerdictLabel.FAKE_REFERENCE
@@ -299,13 +299,13 @@ def aggregate_verdict(
 
         if llm_verdict == VerdictLabel.VALID:
             verdict = VerdictLabel.VALID
-            taxonomy = llm_taxonomy or ["R4"]
+            taxonomy = llm_taxonomy or ["R1"]
         elif llm_verdict == VerdictLabel.POTENTIAL_REFERENCE:
             verdict = VerdictLabel.POTENTIAL_REFERENCE
-            taxonomy = llm_taxonomy or ["P3"]
+            taxonomy = llm_taxonomy or ["P2"]
         else:
             verdict = VerdictLabel.FAKE_REFERENCE
-            taxonomy = llm_taxonomy or ["P3"]
+            taxonomy = llm_taxonomy or ["P2"]
 
         # Confidence threshold
         if llm_confidence < 0.5 and verdict == VerdictLabel.VALID:
@@ -501,11 +501,11 @@ def multi_agent_adjudicate(
         if is_web and has_structured_hard_mismatch and current.verdict == VerdictLabel.VALID:
             if has_structured_hard_mismatch == "hard":
                 cap_verdict = VerdictLabel.FAKE_REFERENCE
-                cap_taxonomy = current.taxonomy_subtype or ["H2"]
+                cap_taxonomy = current.taxonomy_subtype or ["H1"]
                 cap_reason = "Structured DB found hard mismatch; web search overridden to FAKE."
             else:
                 cap_verdict = VerdictLabel.POTENTIAL_REFERENCE
-                cap_taxonomy = current.taxonomy_subtype or ["P2"]
+                cap_taxonomy = current.taxonomy_subtype or ["P1"]
                 cap_reason = "Structured DB found soft mismatch; web search capped to POTENTIAL."
 
             current = CitationVerdict(

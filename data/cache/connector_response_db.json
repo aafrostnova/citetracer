@@ -1,0 +1,2319 @@
+[
+  {
+    "citation": {
+      "title": "Exploring Length Generalization in Large Language Models",
+      "authors": [
+        "Cem Anil",
+        "Yuhuai Wu",
+        "Anders Andreassen",
+        "Aitor Lewkowycz",
+        "Vedant Misra",
+        "Vinay V. Ramasesh",
+        "Ambrose Slone",
+        "Guy Gur-Ari",
+        "Ethan Dyer",
+        "Behnam Neyshabur"
+      ],
+      "venue": "NeurIPS",
+      "year": 2022,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/AnilWALMRSGDN22",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2022
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Exploring Length Generalization in Large Language Models.",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2022
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Exploring Length Generalization in Large Language Models",
+        "candidate_venue": "Advances in Neural Information Processing Systems 35",
+        "candidate_year": 2022
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Precise Length Control in Large Language Models",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2024
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Exploring Length Generalization in Large Language Models",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2022
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Automated LOINC Standardization Using Pre-trained Large Language Models",
+      "authors": [
+        "Tao Tu",
+        "Eric Loreaux",
+        "Emma Chesley",
+        "Ádám D. Lelkes",
+        "Paul Gamble",
+        "Mathias Bellaiche",
+        "Martin Seneviratne",
+        "Ming-Jun Chen"
+      ],
+      "venue": "ML4H@NeurIPS",
+      "year": 2022,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/ml4h/TuLCLGBSC22",
+      "volume": "",
+      "pages": "343-355",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2022
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Automated LOINC Standardization Using Pre-trained Large Language Models.",
+        "candidate_venue": "ML4H@NeurIPS",
+        "candidate_year": 2022
+      },
+      "crossref": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "mismatch",
+          "volume": "reference_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Automated Assessment of Inferences Using Pre-Trained Language Models",
+        "candidate_venue": "Applied Sciences",
+        "candidate_year": 2024
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Semantic Importance-Aware Communications Using Pre-trained Language Models",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2023
+      },
+      "openalex": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "mismatch",
+          "volume": "reference_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Electronic Health Records: Then, Now, and in the Future",
+        "candidate_venue": "Yearbook of Medical Informatics",
+        "candidate_year": 2016
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "TGEA 2.0: A Large-Scale Diagnostically Annotated Dataset with Benchmark Tasks for Text Generation of Pretrained Language Models",
+      "authors": [
+        "Huibin Ge",
+        "Xiaohu Zhao",
+        "Chuang Liu",
+        "Yulong Zeng",
+        "Qun Liu",
+        "Deyi Xiong"
+      ],
+      "venue": "NeurIPS",
+      "year": 2022,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/GeZLZ0X22",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2022
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "TGEA 2.0: A Large-Scale Diagnostically Annotated Dataset with Benchmark Tasks for Text Generation of",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2022
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "TGEA 2.0: A Large-Scale Diagnostically Annotated Dataset with Benchmark Tasks for Text Generation of",
+        "candidate_venue": "Advances in Neural Information Processing Systems 35",
+        "candidate_year": 2022
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Observation of the rare $B^0_s\\toμ^+μ^-$ decay from the combined analysis of CMS and LHCb data",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2014
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "candidate_missing",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "TGEA 2.0: A Large-Scale Diagnostically Annotated Dataset with Benchmark Tasks for Text Generation of",
+        "candidate_venue": "",
+        "candidate_year": 2022
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Large language models implicitly learn to straighten neural sentence trajectories to construct a predictive representation of natural language",
+      "authors": [
+        "Eghbal A. Hosseini",
+        "Evelina Fedorenko"
+      ],
+      "venue": "NeurIPS",
+      "year": 2023,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/HosseiniF23",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2023
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Large language models implicitly learn to straighten neural sentence trajectories to construct a pre",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2023
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Large language models implicitly learn to straighten neural sentence trajectories to construct a pre",
+        "candidate_venue": "Advances in Neural Information Processing Systems 36",
+        "candidate_year": 2023
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Observation of the rare $B^0_s\\toμ^+μ^-$ decay from the combined analysis of CMS and LHCb data",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2014
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Large language models implicitly learn to straighten neural sentence trajectories to construct a pre",
+        "candidate_venue": "bioRxiv (Cold Spring Harbor Laboratory)",
+        "candidate_year": 2023
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Leveraging Pre-trained Large Language Models to Construct and Utilize World Models for Model-based Task Planning",
+      "authors": [
+        "Lin Guan",
+        "Karthik Valmeekam",
+        "Sarath Sreedharan",
+        "Subbarao Kambhampati"
+      ],
+      "venue": "NeurIPS",
+      "year": 2023,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/GuanVSK23",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2023
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging Pre-trained Large Language Models to Construct and Utilize World Models for Model-based T",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2023
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging Pre-trained Large Language Models to Construct and Utilize World Models for Model-based T",
+        "candidate_venue": "Advances in Neural Information Processing Systems 36",
+        "candidate_year": 2023
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging Pre-trained Large Language Models to Construct and Utilize World Models for Model-based T",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2023
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging Pre-trained Large Language Models to Construct and Utilize World Models for Model-based T",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2023
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Cheap and Quick: Efficient Vision-Language Instruction Tuning for Large Language Models",
+      "authors": [
+        "Gen Luo",
+        "Yiyi Zhou",
+        "Tianhe Ren",
+        "Shengxin Chen",
+        "Xiaoshuai Sun",
+        "Rongrong Ji"
+      ],
+      "venue": "NeurIPS",
+      "year": 2023,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/LuoZRCSJ23",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2023
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Cheap and Quick: Efficient Vision-Language Instruction Tuning for Large Language Models.",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2023
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Cheap and Quick: Efficient Vision-Language Instruction Tuning for Large Language Models",
+        "candidate_venue": "Advances in Neural Information Processing Systems 36",
+        "candidate_year": 2023
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Demystifying Instruction Mixing for Fine-tuning Large Language Models",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2023
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Cheap and Quick: Efficient Vision-Language Instruction Tuning for Large Language Models",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2023
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Leveraging the Inductive Bias of Large Language Models for Abstract Textual Reasoning",
+      "authors": [
+        "Christopher Michael Rytting",
+        "David Wingate"
+      ],
+      "venue": "NeurIPS",
+      "year": 2021,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/RyttingW21",
+      "volume": "",
+      "pages": "17111-17122",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2021
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging the Inductive Bias of Large Language Models for Abstract Textual Reasoning.",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2021
+      },
+      "crossref": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "mismatch",
+          "volume": "reference_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Evaluating Inductive Reasoning and Programming Capabilities of Large Language Models With The One-Di",
+        "candidate_venue": "Intelligenza Artificiale",
+        "candidate_year": 2025
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging the Inductive Bias of Large Language Models for Abstract Textual Reasoning",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2021
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "reference_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Leveraging the Inductive Bias of Large Language Models for Abstract Textual Reasoning",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2021
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Weak-to-Strong Search: Align Large Language Models via Searching over Small Language Models",
+      "authors": [
+        "Zhanhui Zhou",
+        "Zhixuan Liu",
+        "Jie Liu",
+        "Zhichen Dong",
+        "Chao Yang",
+        "Yu Qiao"
+      ],
+      "venue": "NeurIPS",
+      "year": 2024,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/ZhouLLDYQ24",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2024
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Weak-to-Strong Search: Align Large Language Models via Searching over Small Language Models.",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2024
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Weak-to-Strong Search: Align Large Language Models via Searching over Small Language Models",
+        "candidate_venue": "Advances in Neural Information Processing Systems 37",
+        "candidate_year": 2024
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Weak-to-Strong Search: Align Large Language Models via Searching over Small Language Models",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2024
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Weak-to-Strong Search: Align Large Language Models via Searching over Small Language Models",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2024
+      },
+      "semanticscholar": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "reference_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Weak-to-Strong Search: Align Large Language Models via Searching over Small Language Models",
+        "candidate_venue": "Neural Information Processing Systems",
+        "candidate_year": 2024
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "SmallToLarge (S2L): Scalable Data Selection for Fine-tuning Large Language Models by Summarizing Training Trajectories of Small Models",
+      "authors": [
+        "Yu Yang",
+        "Siddhartha Mishra",
+        "Jeffrey N. Chiang",
+        "Baharan Mirzasoleiman"
+      ],
+      "venue": "NeurIPS",
+      "year": 2024,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/0007MCM24",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2024
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "SmallToLarge (S2L): Scalable Data Selection for Fine-tuning Large Language Models by Summarizing Tra",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2024
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "SmallToLarge (S2L): Scalable Data Selection for Fine-tuning Large Language Models by Summarizing Tra",
+        "candidate_venue": "Advances in Neural Information Processing Systems 37",
+        "candidate_year": 2024
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "SmallToLarge (S2L): Scalable Data Selection for Fine-tuning Large Language Models by Summarizing Tra",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2024
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "candidate_missing",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "SmallToLarge (S2L): Scalable Data Selection for Fine-tuning Large Language Models by Summarizing Tra",
+        "candidate_venue": "",
+        "candidate_year": 2024
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "WenMind: A Comprehensive Benchmark for Evaluating Large Language Models in Chinese Classical Literature and Language Arts",
+      "authors": [
+        "Jiahuan Cao",
+        "Yang Liu",
+        "Yongxin Shi",
+        "Kai Ding",
+        "Lianwen Jin"
+      ],
+      "venue": "NeurIPS",
+      "year": 2024,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/nips/CaoLS0J24",
+      "volume": "",
+      "pages": "",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "NeurIPS",
+      "_query_year": 2024
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "WenMind: A Comprehensive Benchmark for Evaluating Large Language Models in Chinese Classical Literat",
+        "candidate_venue": "NeurIPS",
+        "candidate_year": 2024
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "WenMind: A Comprehensive Benchmark for Evaluating Large Language Models in Chinese Classical Literat",
+        "candidate_venue": "Advances in Neural Information Processing Systems 37",
+        "candidate_year": 2024
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Observation of the rare $B^0_s\\toμ^+μ^-$ decay from the combined analysis of CMS and LHCb data",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2014
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "candidate_missing",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "reference_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "reordered_match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "WenMind: A Comprehensive Benchmark for Evaluating Large Language Models in Chinese Classical Literat",
+        "candidate_venue": "",
+        "candidate_year": 2024
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Learning Why: Data-Driven Causal Evaluations of Climate Models.",
+      "authors": [
+        "Jeffrey Nichol",
+        "Matthew Peterson",
+        "Kara Peterson"
+      ],
+      "venue": "Proposed for presentation at the ICML 2021 Workshop Tackling Climate Change with Machine Learning held July 23-23, 2021 in ,",
+      "year": 2021,
+      "doi": "10.2172/1884401",
+      "arxiv_id": "",
+      "url": "https://doi.org/10.2172/1884401",
+      "volume": "",
+      "pages": "",
+      "publisher": "US DOE",
+      "location": "",
+      "_source": "crossref",
+      "_query_topic": "large language models",
+      "_query_venue": "ICML",
+      "_query_year": 2021
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": false,
+        "error": null
+      },
+      "crossref": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "match",
+          "arxiv_id": "both_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "match",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Learning Why: Data-Driven Causal Evaluations of Climate Models.",
+        "candidate_venue": "Proposed for presentation at the ICML 2021 Workshop Tackling",
+        "candidate_year": 2021
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "candidate_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "both_missing",
+          "volume": "both_missing",
+          "publisher": "candidate_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "location",
+          "pages",
+          "volume"
+        ],
+        "candidate_title": "Invasive species, extreme fire risk, and toxin release under a changing climate",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2020
+      },
+      "openalex": {
+        "found": false,
+        "error": null
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "TeraPipe: Token-Level Pipeline Parallelism for Training Large-Scale Language Models",
+      "authors": [
+        "Zhuohan Li",
+        "Siyuan Zhuang",
+        "Shiyuan Guo",
+        "Danyang Zhuo",
+        "Hao Zhang",
+        "Dawn Song",
+        "Ion Stoica"
+      ],
+      "venue": "ICML",
+      "year": 2021,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/icml/LiZGZZSS21",
+      "volume": "",
+      "pages": "6543-6552",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "ICML",
+      "_query_year": 2021
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "TeraPipe: Token-Level Pipeline Parallelism for Training Large-Scale Language Models.",
+        "candidate_venue": "ICML",
+        "candidate_year": 2021
+      },
+      "crossref": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "candidate_missing",
+          "year": "candidate_missing",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Adaptive asynchronous pipeline parallelism for large language models",
+        "candidate_venue": "",
+        "candidate_year": null
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "TeraPipe: Token-Level Pipeline Parallelism for Training Large-Scale Language Models",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2021
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "TeraPipe: Token-Level Pipeline Parallelism for Training Large-Scale Language Models",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2021
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Co-training Improves Prompt-based Learning for Large Language Models",
+      "authors": [
+        "Hunter Lang",
+        "Monica N. Agrawal",
+        "Yoon Kim",
+        "David A. Sontag"
+      ],
+      "venue": "ICML",
+      "year": 2022,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/icml/LangAKS22",
+      "volume": "",
+      "pages": "11985-12003",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "ICML",
+      "_query_year": 2022
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Co-training Improves Prompt-based Learning for Large Language Models.",
+        "candidate_venue": "ICML",
+        "candidate_year": 2022
+      },
+      "crossref": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "mismatch",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "candidate_missing"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Chapter 3: Prompt Engineering (2)",
+        "candidate_venue": "Large Language Models for Developers",
+        "candidate_year": 2024
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Co-training Improves Prompt-based Learning for Large Language Models",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2022
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Co-training Improves Prompt-based Learning for Large Language Models",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2022
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models",
+      "authors": [
+        "Junnan Li",
+        "Dongxu Li",
+        "Silvio Savarese",
+        "Steven C. H. Hoi"
+      ],
+      "venue": "ICML",
+      "year": 2023,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/icml/0008LSH23",
+      "volume": "",
+      "pages": "19730-19742",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "ICML",
+      "_query_year": 2023
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Mode",
+        "candidate_venue": "ICML",
+        "candidate_year": 2023
+      },
+      "crossref": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "mismatch",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "FLAME: Frozen Large Language Models Enable Data-Efficient Language-Image Pre-training",
+        "candidate_venue": "2025 IEEE/CVF Conference on Computer Vision and Pattern Reco",
+        "candidate_year": 2025
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Mode",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2023
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Mode",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2023
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU",
+      "authors": [
+        "Ying Sheng",
+        "Lianmin Zheng",
+        "Binhang Yuan",
+        "Zhuohan Li",
+        "Max Ryabinin",
+        "Beidi Chen",
+        "Percy Liang",
+        "Christopher Ré",
+        "Ion Stoica",
+        "Ce Zhang"
+      ],
+      "venue": "ICML",
+      "year": 2023,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/icml/0007ZYLRCLRSZ23",
+      "volume": "",
+      "pages": "31094-31116",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "ICML",
+      "_query_year": 2023
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU.",
+        "candidate_venue": "ICML",
+        "candidate_year": 2023
+      },
+      "crossref": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "match",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "mismatch",
+          "volume": "reference_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "venue",
+          "volume"
+        ],
+        "candidate_title": "Offloading with prefetch-aware memory optimization: enabling efficient single-GPU inference for larg",
+        "candidate_venue": "IET Conference Proceedings",
+        "candidate_year": 2025
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "count_mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Observation of the rare $B^0_s\\toμ^+μ^-$ decay from the combined analysis of CMS and LHCb data",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2014
+      },
+      "openalex": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "partial_overlap"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2023
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  },
+  {
+    "citation": {
+      "title": "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies",
+      "authors": [
+        "Gati V. Aher",
+        "Rosa I. Arriaga",
+        "Adam Tauman Kalai"
+      ],
+      "venue": "ICML",
+      "year": 2023,
+      "doi": "",
+      "arxiv_id": "",
+      "url": "https://dblp.org/rec/conf/icml/AherAK23",
+      "volume": "",
+      "pages": "337-371",
+      "publisher": "",
+      "location": "",
+      "_source": "dblp",
+      "_query_topic": "large language models",
+      "_query_venue": "ICML",
+      "_query_year": 2023
+    },
+    "connectors": {
+      "dblp_online": {
+        "found": true,
+        "signal": "direct_valid",
+        "direct_valid": true,
+        "field_status": {
+          "venue": "match",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "both_missing",
+          "pages": "match",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "pages",
+          "publisher",
+          "venue",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies.",
+        "candidate_venue": "ICML",
+        "candidate_year": 2023
+      },
+      "crossref": {
+        "found": true,
+        "signal": "soft_discrepancy",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "candidate_missing",
+          "year": "candidate_missing",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "candidate_missing",
+          "authors": "candidate_missing"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "",
+        "candidate_venue": "",
+        "candidate_year": null
+      },
+      "arxiv": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "match",
+          "doi": "both_missing",
+          "arxiv_id": "reference_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "both_missing",
+          "location": "both_missing",
+          "title": "mismatch",
+          "authors": "mismatch"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume",
+          "year"
+        ],
+        "candidate_title": "RRHF: Rank Responses to Align Language Models with Human Feedback without tears",
+        "candidate_venue": "arXiv",
+        "candidate_year": 2023
+      },
+      "openalex": {
+        "found": true,
+        "signal": "hard_mismatch",
+        "direct_valid": false,
+        "field_status": {
+          "venue": "mismatch",
+          "year": "mismatch",
+          "doi": "reference_missing",
+          "arxiv_id": "both_missing",
+          "pages": "candidate_missing",
+          "volume": "both_missing",
+          "publisher": "reference_missing",
+          "location": "both_missing",
+          "title": "match",
+          "authors": "match"
+        },
+        "matched_fields": [
+          "arxiv_id",
+          "doi",
+          "location",
+          "publisher",
+          "volume"
+        ],
+        "candidate_title": "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies",
+        "candidate_venue": "arXiv (Cornell University)",
+        "candidate_year": 2022
+      },
+      "semanticscholar": {
+        "found": false,
+        "error": "semantic_scholar request failed: HTTP Error 429: "
+      }
+    }
+  }
+]

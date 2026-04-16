@@ -14,7 +14,7 @@ from .cascading_agents import (
     phase0_decide_verdict,
     downgrade_non_academic_fake,
 )
-from .matching import CandidateMatch, collect_candidates
+from .matching import CandidateMatch, build_candidate_match, collect_candidates
 from .models import CheckReport, CitationRecord, CitationVerdict, EvidenceTrace, ExtractionQuality, VerdictLabel
 from .normalize import extract_identifier, normalize_title, similarity
 from .report import build_summary, compute_risk_score
@@ -56,10 +56,10 @@ class CitationVerifier:
         self.extractor_agent = extractor_agent
         self.verified_ref_cache = verified_ref_cache
 
-    _CACHEABLE_TAXONOMY = {"R1", "R3", "R4"}
+    _CACHEABLE_TAXONOMY = {"R1", "R3"}
 
     def _cache_if_valid(self, citation: CitationRecord, verdict: CitationVerdict) -> None:
-        """Cache the verified reference if verdict is VALID with R1/R3/R4."""
+        """Cache the verified reference if verdict is VALID with R1/R3."""
         if self.verified_ref_cache is None:
             return
         taxonomy = set(verdict.taxonomy_subtype or [])
@@ -232,12 +232,21 @@ class CitationVerifier:
         extraction_quality: ExtractionQuality | None = None,
         source_paper_title: str = "",
     ):
-        # Check verified reference cache — skip entire pipeline if already confirmed VALID
+        # Check verified reference cache — re-validate cached candidate against current citation
         if self.verified_ref_cache is not None:
             cached = self.verified_ref_cache.get(citation)
-            if cached is not None:
+            if cached is not None and cached.get("matched_candidate"):
+                from .adjudicate import _build_comparison, _is_direct_valid, _has_soft_discrepancies
+                from .agents import compare_fields
                 from .models import citation_verdict_from_dict
-                return citation_verdict_from_dict(cached, citation.citation_id)
+
+                candidate = build_candidate_match(citation, "cache", cached["matched_candidate"])
+                field_result = compare_fields(
+                    citation, candidate,
+                    _build_comparison, _is_direct_valid, _has_soft_discrepancies,
+                )
+                if field_result.signal == "direct_valid":
+                    return citation_verdict_from_dict(cached, citation.citation_id)
 
         citation = self._enrich_citation_from_url(citation)
         extraction_quality = extraction_quality or self.config.default_extraction_quality
@@ -252,14 +261,31 @@ class CitationVerifier:
         # - Other URL mismatch or not_found → POTENTIAL_REFERENCE / P3
         phase0_verdict = phase0_decide_verdict(
             citation, url_match_status, url_issues, url_type_triggered,
+            fetched_records=phase0_records,
         )
         if phase0_verdict is not None:
-            return phase0_verdict
+            return downgrade_non_academic_fake(citation, phase0_verdict)
 
         # If identifiers resolve to a clearly different paper → immediate FAKE
+        # (but downgrade to P3 if the citation is non-academic)
         id_mismatch = self._check_identifier_mismatch(citation, phase0_records)
         if id_mismatch:
-            return id_mismatch
+            return downgrade_non_academic_fake(citation, id_mismatch)
+
+        # Build Phase 0 evaluation record for the report (always included)
+        _phase0_eval: dict | None = None
+        if phase0_records or url_match_status:
+            _phase0_eval = {
+                "connector": "url_direct (Phase 0)",
+                "verdict": f"PHASE0_{url_match_status.upper()}" if url_match_status else "PHASE0_SKIPPED",
+                "url_type": url_type_triggered,
+                "issues": url_issues,
+                "candidates": phase0_records,
+                "reason": (
+                    f"Phase 0: url_match_status={url_match_status}, "
+                    f"url_type={url_type_triggered}, issues={url_issues}"
+                ),
+            }
 
         # Query all other connectors (url_direct is NOT in the orchestrator anymore)
         connector_results = self.orchestrator.query(citation, max_connectors=None)
@@ -313,6 +339,9 @@ class CitationVerifier:
             )
             # Final downgrade: non-academic FAKE → P3 (R packages, GitHub, blogs)
             verdict = downgrade_non_academic_fake(citation, verdict)
+            # Prepend Phase 0 evaluation to candidate_evaluations for the report
+            if _phase0_eval:
+                verdict.candidate_evaluations.insert(0, _phase0_eval)
             self._cache_if_valid(citation, verdict)
             return verdict
 
@@ -328,6 +357,8 @@ class CitationVerifier:
                 secondary_verifier=self.secondary_verifier,
                 source_paper_title=source_paper_title,
             )
+            if _phase0_eval:
+                verdict.candidate_evaluations.insert(0, _phase0_eval)
             self._cache_if_valid(citation, verdict)
             return verdict
 
@@ -341,6 +372,8 @@ class CitationVerifier:
             policy=self.policy,
             secondary_verifier=self.secondary_verifier,
         )
+        if _phase0_eval:
+            verdict.candidate_evaluations.insert(0, _phase0_eval)
         self._cache_if_valid(citation, verdict)
         return verdict
 

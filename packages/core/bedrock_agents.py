@@ -92,9 +92,22 @@ To be REAL (valid=true), ALL of the following MUST hold:
     4. Conference-proceedings book titles (Springer/LNCS style):
        "Learning Theory and Kernel Machines" ≡ "COLT" (LNCS book title for COLT 2003 proceedings)
 
-    GENERAL PRINCIPLE: If you recognize both names as the same conference/journal (even if
-    the automated field_status says "mismatch"), OVERRIDE it and treat as match. You have
-    world knowledge the automated comparator doesn't.
+    5. Preprint server synonyms:
+       "Preprint" ≡ "arXiv" ≡ "arXiv preprint" ≡ "CoRR" — all refer to the same arXiv preprint server.
+       Many citation styles (ICML, NeurIPS bib templates) render arXiv-only papers with venue="Preprint".
+
+    6. Publisher acronym ≡ full name (applies to publisher field):
+       "ACM" ≡ "Association for Computing Machinery"
+       "IEEE" ≡ "Institute of Electrical and Electronics Engineers"
+       "PMLR" ≡ "Proceedings of Machine Learning Research"
+       "Springer" ≡ "Springer Nature" ≡ "Springer-Verlag"
+       "Elsevier" ≡ "Elsevier B.V." ≡ "Elsevier Ltd."
+       "OUP" ≡ "Oxford University Press"
+       "CUP" ≡ "Cambridge University Press"
+
+    GENERAL PRINCIPLE: If you recognize both names as the same conference/journal/publisher
+    (even if the automated field_status says "mismatch"), OVERRIDE it and treat as match.
+    You have world knowledge the automated comparator doesn't.
 
     Only treat as MISMATCH when venues are genuinely different publishers/venues
     (e.g. "NeurIPS" vs "ICML", "Personal Blog" vs "NeurIPS", "ICLR" vs "arXiv").
@@ -123,14 +136,12 @@ NOTE on authors=reordered_match:
 - R3. Et al. abbreviation: Base rules pass, PLUS author list uses "et al."/"Others",
   all listed authors are correct AND in correct order.
   R3 ONLY relaxes author count — venue and year must STILL match.
-- R4. Non-academic source verified: Tweet, blog, GitHub confirmed via web search
-  with matching title+author+year.
 
 ### NOT VALID (valid=false) — give hint
 - hint="likely_potential": Discrepancy requires WORLD KNOWLEDGE to explain:
-  * Nickname: "Mike" vs "Michael", "Bob" vs "Robert", "Kate" vs "Katherine" → P2
-  * Multi-letter truncation: "Edw." vs "Edward", "Séb." vs "Sébastien" → P2 (more than 1 letter)
-  * Transliteration: "Wei Zhang" vs "William Zhang" → P2
+  * Nickname: "Mike" vs "Michael", "Bob" vs "Robert", "Kate" vs "Katherine" → P1
+  * Multi-letter truncation: "Edw." vs "Edward", "Séb." vs "Sébastien" → P1 (more than 1 letter)
+  * Transliteration: "Wei Zhang" vs "William Zhang" → P1
 - hint="likely_hallucinated": Discrepancies are real errors:
   * Title word changed, wrong author count, wrong year by >1, fabricated DOI, venue mismatch.
 
@@ -139,11 +150,11 @@ KEY DISTINCTION for author names:
     "G. Hao" vs "Gao Hao" → R2 ✓ (G is one letter)
     "S. Bubeck" vs "Sébastien Bubeck" → R2 ✓ (S is one letter)
     "D. D. Johnson" vs "Daniel D. Johnson" → R2 ✓ (D is one letter)
-  P2 = EVERYTHING ELSE (multi-letter truncation, nickname, transliteration):
-    "Edw. Hu" vs "Edward Hu" → P2 ✗ (Edw is 3 letters, not single-letter initial)
-    "Mike Chen" vs "Michael Chen" → P2 ✗ (nickname, not abbreviation)
-    "Bob Smith" vs "Robert Smith" → P2 ✗ (nickname)
-    "Aar. Gokaslan" vs "Aaron Gokaslan" → P2 ✗ (3-letter truncation)
+  P1 = EVERYTHING ELSE (multi-letter truncation, nickname, transliteration):
+    "Edw. Hu" vs "Edward Hu" → P1 ✗ (Edw is 3 letters, not single-letter initial)
+    "Mike Chen" vs "Michael Chen" → P1 ✗ (nickname, not abbreviation)
+    "Bob Smith" vs "Robert Smith" → P1 ✗ (nickname)
+    "Aar. Gokaslan" vs "Aaron Gokaslan" → P1 ✗ (3-letter truncation)
 
 ## Examples
 
@@ -163,7 +174,7 @@ Example 3 — likely_potential (multi-letter truncation → NOT R2):
 Citation: Title="Paper X" Authors=["Edw. Hu","Yel. Shen"] Year=2024
 Candidate: Title="Paper X" Authors=["Edward Hu","Yelong Shen"] Year=2024
 Field: title=match, authors=partial_overlap, year=match
-→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "Edw=3 letters (not single-letter initial), Yel=3 letters. Multi-letter truncation → P2, not R2."}}
+→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "Edw=3 letters (not single-letter initial), Yel=3 letters. Multi-letter truncation → P1, not R2."}}
 
 Example 4 — R3 et al. (venue must still match!):
 Citation: Title="Attention Is All You Need" Authors=["Ashish Vaswani","Others"] Venue="NeurIPS" Year=2017
@@ -181,7 +192,7 @@ Example 5 — likely_potential (nickname, NOT rule-derivable):
 Citation: Title="Large Language Models" Authors=["Mike Chen","Bob Smith"] Year=2024
 Candidate: Title="Large Language Models" Authors=["Michael Chen","Robert Smith"] Year=2024
 Field: title=match, authors=partial_overlap, year=match
-→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "Mike≠initial of Michael (M≠Mi), Bob≠initial of Robert (B≠Bo). These are nicknames requiring world knowledge → P2."}}
+→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "Mike≠initial of Michael (M≠Mi), Bob≠initial of Robert (B≠Bo). These are nicknames requiring world knowledge → P1."}}
 
 Example 6 — likely_hallucinated (title word substitution):
 Citation: Title="Training novel language models to reason" Authors=["Charlie Chen"] Year=2024
@@ -307,29 +318,23 @@ POTENTIAL_AGENT_PROMPT = """You are a citation discrepancy analyst. The citation
 ## Taxonomy
 
 ### POTENTIAL (discrepancies are explainable)
-- P1. Version difference: Metadata matches an older arXiv version (confirmed by version history).
-- P2. Author name variant: Name is a plausible nickname/transliteration. E.g., "Katherine" vs "Kate", "Mike" vs "Michael", "Wei Zhang" vs "William Zhang".
-- P3. Non-academic source unverifiable: Citation references a non-academic source (blog, tweet, GitHub, personal website) whose existence cannot be fully verified through structured databases. The source may have been deleted/moved, or may still exist but is not indexed by academic databases. Indirect evidence (reposts, caches, web search snippets) may or may not confirm it.
+- P1. Author name variant: Name is a plausible nickname/transliteration. E.g., "Katherine" vs "Kate", "Mike" vs "Michael", "Wei Zhang" vs "William Zhang".
+- P2. Non-academic source unverifiable: Citation references a non-academic source (blog, tweet, GitHub, personal website) whose existence cannot be fully verified through structured databases. The source may have been deleted/moved, or may still exist but is not indexed by academic databases. Indirect evidence (reposts, caches, web search snippets) may or may not confirm it.
 
 ### HALLUCINATED (unexplained errors → escalate)
-- If ANY discrepancy cannot be explained by P1/P2/P3, return HALLUCINATED.
+- If ANY discrepancy cannot be explained by P1/P2, return HALLUCINATED.
 
 ## Examples
 
-Example 1 — P2 (author name variant):
+Example 1 — P1 (author name variant):
 Issues: ["author_name_variant"]
 Evidence: authors: [EXPLAINED] 'Edw.' is a prefix of 'Edward' — plausible abbreviation.
-→ {{"label": "POTENTIAL", "taxonomy": ["P2"], "reason": "Author 'Edw.' is a plausible abbreviation of 'Edward'."}}
+→ {{"label": "POTENTIAL", "taxonomy": ["P1"], "reason": "Author 'Edw.' is a plausible abbreviation of 'Edward'."}}
 
-Example 2 — P1 (version difference):
-Issues: ["year_off_by_one", "venue_preprint_gap"]
-Evidence: venue: [EXPLAINED] Paper has both arXiv and DOI, confirming preprint-to-publication.
-→ {{"label": "POTENTIAL", "taxonomy": ["P1"], "reason": "Year and venue difference explained by preprint→publication transition."}}
-
-Example 3 — Escalate to HALLUCINATED:
+Example 2 — Escalate to HALLUCINATED:
 Issues: ["author_name_variant", "venue_mismatch"]
 Evidence: authors: [EXPLAINED] prefix match. venue: [UNEXPLAINED] 'Personal Blog' vs 'NeurIPS'.
-→ {{"label": "HALLUCINATED", "taxonomy": ["H4"], "reason": "Venue 'Personal Blog' cannot be explained as a variant of 'NeurIPS'."}}
+→ {{"label": "HALLUCINATED", "taxonomy": ["H3"], "reason": "Venue 'Personal Blog' cannot be explained as a variant of 'NeurIPS'."}}
 
 ## Now evaluate:
 
@@ -343,7 +348,7 @@ Secondary evidence:
 {evidence_lines}
 
 Return JSON only:
-{{"label": "POTENTIAL"/"HALLUCINATED", "taxonomy": ["P2"], "reason": "..."}}"""
+{{"label": "POTENTIAL"/"HALLUCINATED", "taxonomy": ["P1"], "reason": "..."}}"""
 
 
 class BedrockPotentialAgent:
@@ -407,19 +412,56 @@ class BedrockPotentialAgent:
 
 HALLUCINATED_AGENT_PROMPT = """You are a citation error classifier. The citation has confirmed errors. Your job: list ALL errors found.
 
+## CRITICAL RULE: Trust the field_status
+The field comparison was done by an automated system with proper normalization (case, dashes,
+abbreviations, etc.). If field_status says a field is "match", it IS correct — do NOT override
+it based on cosmetic differences you see in the raw values. Only flag errors for fields where
+field_status says "mismatch" or "candidate_missing".
+
 ## Taxonomy — list ALL that apply
 
-- H1: Completely fabricated — no matching paper found anywhere.
-- H2: Title error — title differs from real paper (word substitution, paraphrase, or fabrication).
+- H1: Title error — title differs from real paper (word substitution, paraphrase, or fabrication).
   Example: "Attention Is What You Need" vs real "Attention Is All You Need"
-- H3: Author error — wrong authors: addition, deletion, reordering, or fabrication.
-  Example: Real "Alice, Bob" → "Alice, Bob, Carol" (addition) or "Bob, Alice" (reorder)
-- H4: Venue error — paper exists but at a different venue.
-  Example: "In EACL, 2024" but paper only on arXiv.
-- H5: Year error — year is verifiably wrong.
+  NOTE: If field_status says title=match, it IS a match. Capitalization differences
+  (e.g. "Tree of thoughts" vs "Tree of Thoughts") are NOT title errors — they are
+  already handled by normalization. Trust the field_status.
+- H2: Author error — wrong authors: addition, deletion, or fabrication.
+  NOTE: these are NOT errors (do NOT flag as H2):
+    * "LastName, F" vs "FirstName LastName" (e.g. "Guedj, B" vs "Benjamin Guedj") — format variant, not an error
+    * Single-letter initial expansion (e.g. "J. Langford" vs "John Langford") — R2, not an error
+    * Name order "First Last" vs "Last, First" — just a citation style difference
+- H3: Venue error — paper exists but at a GENUINELY different venue.
+  NOTE: these are NOT errors (do NOT flag as H3):
+    * Acronym ≡ full name: "ICML" ≡ "International Conference on Machine Learning"
+    * Proceedings prefix: "Proceedings of the 36th ICML" ≡ "ICML"
+    * Dot-abbreviated: "J. Mach. Learn. Res." ≡ "Journal of Machine Learning Research"
+    * "NeurIPS" ≡ "NIPS" ≡ "Advances in Neural Information Processing Systems"
+    * "AISTATS" ≡ "International Conference on Artificial Intelligence and Statistics"
+    * "Preprint" ≡ "arXiv" ≡ "arXiv preprint" ≡ "CoRR" — all refer to the same arXiv preprint server
+    USE YOUR WORLD KNOWLEDGE: if both names refer to the same conference/journal, it's NOT H3.
+- H4: Year error — year is verifiably wrong.
   Example: Citation says 2027 but paper published 2025.
-- H6: DOI/identifier error — DOI resolves to a different paper or doesn't exist.
-- H7: Pages/volume error — page numbers or volume are wrong.
+- H5: DOI/identifier error — DOI resolves to a different paper or doesn't exist.
+- H6: Pages/volume/publisher/location error — page numbers, volume, publisher, or location are wrong OR missing from candidate.
+  If the reference has volume/pages/publisher/location but candidate does not → H6.
+  NOTE: these are NOT errors:
+    * Dash format differences: "1025–1068" vs "1025-1068" — same page range
+    * Roman numeral vs arabic: "II" vs "2" — same volume
+    * Publisher acronym ≡ full name (USE YOUR WORLD KNOWLEDGE):
+      - "ACM" ≡ "Association for Computing Machinery"
+      - "IEEE" ≡ "Institute of Electrical and Electronics Engineers"
+      - "PMLR" ≡ "Proceedings of Machine Learning Research"
+      - "MIT Press" ≡ "The MIT Press"
+      - "Springer" ≡ "Springer Nature" ≡ "Springer-Verlag"
+      - "Elsevier" ≡ "Elsevier B.V." ≡ "Elsevier Ltd."
+      - "OUP" ≡ "Oxford University Press"
+      - "CUP" ≡ "Cambridge University Press"
+      If both names refer to the same publisher, it's NOT H6 — even if field_status says "mismatch".
+
+## Important: candidate_missing IS an error
+If the reference provides a value for a field (e.g. volume, pages, publisher, location) but the candidate
+does not have it, this means the candidate CANNOT verify that field → flag as H6.
+You must ALWAYS return label="HALLUCINATED", never downgrade to "POTENTIAL".
 
 ## Examples
 
@@ -427,25 +469,19 @@ Example 1 — single error (title):
 Citation: Title="Training novel language models" Authors=["Alice"] Year=2024
 Candidate: Title="Training large language models" Authors=["Alice"] Year=2024
 Field: title=mismatch, authors=match, year=match
-→ {{"label": "HALLUCINATED", "taxonomy": ["H2"], "reason": "Title word 'novel' substituted for 'large'."}}
+→ {{"label": "HALLUCINATED", "taxonomy": ["H1"], "reason": "Title word 'novel' substituted for 'large'."}}
 
 Example 2 — multiple errors:
 Citation: Title="Paper X" Authors=["Alice","Bob","Carol"] Venue="ICML" Year=2027
 Candidate: Title="Paper X" Authors=["Alice","Bob"] Venue="NeurIPS" Year=2025
 Field: title=match, authors=count_mismatch, venue=mismatch, year=mismatch
-→ {{"label": "HALLUCINATED", "taxonomy": ["H3","H4","H5"], "reason": "Author 'Carol' added; venue ICML vs NeurIPS; year 2027 vs 2025."}}
+→ {{"label": "HALLUCINATED", "taxonomy": ["H2","H3","H4"], "reason": "Author 'Carol' added; venue ICML vs NeurIPS; year 2027 vs 2025."}}
 
-Example 3 — author reorder:
-Citation: Title="Paper X" Authors=["Bob","Alice"] Year=2024
-Candidate: Title="Paper X" Authors=["Alice","Bob"] Year=2024
-Field: title=match, authors=reordered_match, year=match
-→ {{"label": "HALLUCINATED", "taxonomy": ["H3"], "reason": "Author order changed: Bob,Alice vs published Alice,Bob."}}
-
-Example 4 — rare downgrade to POTENTIAL:
-Citation: Title="Paper X" Authors=["Mike Chen"] Year=2024
-Candidate: Title="Paper X" Authors=["Michael Chen"] Year=2024
-Field: title=match, authors=partial_overlap, year=match
-→ {{"label": "POTENTIAL", "taxonomy": ["P2"], "reason": "Mike is a common nickname for Michael — plausible variant."}}
+Example 3 — candidate_missing fields → H6:
+Citation: Title="Paper X" Authors=["Alice"] Year=2024 Volume='33' Pages='100-200' Publisher='PMLR'
+Candidate: Title="Paper X" Authors=["Alice"] Year=2024 Volume='' Pages='' Publisher=''
+Field: title=match, authors=match, year=match, volume=candidate_missing, pages=candidate_missing, publisher=candidate_missing
+→ {{"label": "HALLUCINATED", "taxonomy": ["H6"], "reason": "Reference provides volume=33, pages=100-200, publisher=PMLR but candidate cannot verify these fields."}}
 
 ## Now classify:
 
@@ -458,8 +494,8 @@ Field comparison:
 Issues from ValidAgent: {issues}
 ValidAgent reason: {valid_reason}
 
-Return JSON only. List ALL errors:
-{{"label": "HALLUCINATED"/"POTENTIAL", "taxonomy": ["H2", "H5"], "reason": "..."}}"""
+Return JSON only. List ALL errors. Always return label="HALLUCINATED":
+{{"label": "HALLUCINATED", "taxonomy": ["H1", "H4"], "reason": "..."}}"""
 
 
 class BedrockHallucinatedAgent:
