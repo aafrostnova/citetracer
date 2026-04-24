@@ -113,6 +113,66 @@ The weakest buckets are `R` (58 false alarms on real citations) and `H4` (9
 year errors mislabeled as a neighbouring `H*` code). All `P*` and the
 remaining `H*` buckets score at or near ceiling.
 
+## Supported bibliographic APIs
+
+Stage 2 queries the ten sources below in parallel. Most are free public APIs;
+three require a key for unthrottled throughput, and the web-search fallback
+needs whichever provider you configure. All endpoints are called from
+`packages/connectors/`; each source is independent and can be toggled via
+`connectors.enabled_sources` in `config.json`.
+
+| Connector (`source` name) | Provider       | Endpoint                                                  | Auth required                           |
+| ------------------------- | -------------- | --------------------------------------------------------- | --------------------------------------- |
+| `dblp_sqlite`             | DBLP           | local SQLite mirror built from `https://dblp.org/xml/`    | none (local file)                       |
+| `dblp_online`             | DBLP           | `https://dblp.org/search/publ/api`                        | none                                    |
+| `crossref`                | Crossref       | `https://api.crossref.org/works`                          | none (polite pool via user-agent email) |
+| `openalex`                | OpenAlex       | `https://api.openalex.org/works`                          | optional `openalex_api_key` + `openalex_mailto` for the polite pool |
+| `semantic_scholar`        | Semantic Scholar | `https://api.semanticscholar.org/graph/v1/paper/search` | `semantic_scholar_api_key` recommended (unauthenticated calls are heavily rate-limited) |
+| `arxiv`                   | arXiv          | `https://export.arxiv.org/api/query`                      | none                                    |
+| `pubmed`                  | NCBI PubMed    | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/`          | optional `ncbi_api_key` + `ncbi_email`  |
+| `europepmc`               | Europe PMC     | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | none                                    |
+| `acl_anthology`           | ACL Anthology  | `https://aclanthology.org/search/` and local `.bib` mirror | none (local clone speeds up bulk runs) |
+| `url_direct`              | Publisher HTML | follows the citation's explicit URL and reads `<meta name="citation_*">` tags | none                                    |
+| `web_search` (fallback)   | Tavily / SerpAPI / Google Custom Search | `https://api.tavily.com/search` or `https://serpapi.com/search.json` or `https://www.googleapis.com/customsearch/v1` | one of `tavily_api_key`, `serpapi_key`, or `google_api_key` + `google_cse_id` |
+
+The pipeline always prefers structured connectors; the web-search fallback
+runs only when every structured source returns no qualifying candidate, and
+its raw results pass through a small LLM extractor (`packages/core/extractor_agent.py`)
+before entering adjudication.
+
+## LLM provider for Stage 1 extraction and the Potential judge
+
+The pipeline invokes an LLM in two places: the entry extractor that turns
+OCR output or web-search raw content into structured fields
+(`packages/core/extractor_agent.py`), and the Potential judge that
+adjudicates `P1` / `P3` cases (`packages/core/bedrock_agents.py`). Both are
+configured under `entry_extraction` and `verification_llm` in `config.json`.
+
+**Currently supported.**
+
+- **AWS Bedrock** (default) — any Bedrock-hosted model accessible via the
+  Converse API. Configure `region`, `bearer_token` (or AWS credentials), and
+  `model_id` (for example `qwen.qwen3-vl-235b-a22b`). This is the path all
+  released results use.
+- **Local HuggingFace / vLLM** — usable for the entry extractor only by
+  setting `entry_extraction.provider: "local"` and pointing
+  `entry_extraction.local.model_path` at a DeepSeek-OCR checkpoint.
+
+**Planned extensions.** The LLM interface is a thin wrapper around a single
+`_call_bedrock(client, model_id, prompt)` function, so adding a new provider
+means writing one parallel adapter and routing through
+`verification_llm.provider`. Targets under consideration:
+
+- **OpenAI** — GPT-4o / GPT-4.1 via the Chat Completions API.
+- **Anthropic** — Claude 3.5 / 4 family via the Messages API.
+- **Google** — Gemini 1.5 / 2 via the Generative Language API.
+- **Azure OpenAI** — the same OpenAI API surface behind Azure auth.
+- **Self-hosted** — vLLM or TGI endpoints exposing an OpenAI-compatible API.
+
+Once a new adapter lands, switching providers will be a one-line change in
+`config.json` (`verification_llm.provider`) plus the matching auth fields;
+the rule-based Valid and Hallucinated agents stay unchanged.
+
 ## Repository layout
 
 ```
