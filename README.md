@@ -1,214 +1,333 @@
 # Citation Hallucination Detection
 
-Prototype implementation of a citation integrity checker with two pipelines:
+A three-stage cascading multi-agent pipeline that detects fabricated citations
+in research papers. Each citation is adjudicated against an **11-code
+taxonomy** across three classes (`REAL`, `POTENTIAL`, `HALLUCINATED`), so a
+reviewer learns both *whether* a citation is wrong and *which field* is wrong.
 
-- `apps/source_checker`: checks LaTeX + BibTeX source references.
-- `apps/pdf_checker`: checks rendered PDF references.
+- **Stage 1** parses PDF, LaTeX, and HTML sources into structured citation records.
+- **Stage 2** collects candidate matches through an ordered cascade: local
+  memory cache → URL fetch → ten bibliographic connectors in parallel → web
+  search fallback.
+- **Stage 3** adjudicates each citation with a rule-based matcher plus three
+  specialist judge agents (`Valid`, `Potential`, `Hallucinated`); only
+  `Potential` uses an LLM.
 
-Both pipelines share verifier logic in `packages/core` and connectors in `packages/connectors`.
+See [docs/taxonomy.md](docs/taxonomy.md) for full subtype definitions and
+[docs/metric_guide.md](docs/metric_guide.md) for the scoring protocol.
 
-## Data Layout
+## Taxonomy summary
 
-Paper assets are now organized under two top-level directories:
+The full taxonomy enumerates 13 codes across three classes. Two codes
+(`R4`, `P2`) are defined for completeness but are **not part of the current
+evaluation set**. We explain why below the table.
 
-- `data/latex_papers/`: LaTeX source papers
-- `data/pdf_papers/`: PDF papers
+| Class          | Code | Description                                                                            | Evaluated |
+| ----------------| ------| ----------------------------------------------------------------------------------------| :---------:|
+| `REAL`         | R1   | Exact field-wise match                                                                 | ✓         |
+|                | R2   | Normalizable format variant (initials, abbreviated venue, etc.)                        | ✓         |
+|                | R3   | `et al.` truncation; listed authors are correct                                        | ✓         |
+|                | R4   | No single candidate covers all fields, but the union across connectors does            | ✗         |
+| `POTENTIAL`    | P1   | One author's given name is a plausible nickname variant                                | ✓         |
+|                | P2   | Non-academic source (blog post, tweet, GitHub repo, etc.); existence partly verifiable | ✗         |
+|                | P3   | Core fields match; peripheral fields fabricated and unverifiable across every source   | ✓         |
+| `HALLUCINATED` | H1   | Title error (word substitution, paraphrase, fabrication)                               | ✓         |
+|                | H2   | Author error (addition, deletion, reordering, fabrication)                             | ✓         |
+|                | H3   | Venue error (paper exists, cited at a different venue)                                 | ✓         |
+|                | H4   | Year error                                                                             | ✓         |
+|                | H5   | DOI or identifier error (resolves elsewhere or not at all)                             | ✓         |
+|                | H6   | Peripheral error verifiable against a source (pages, volume, publisher, location)      | ✓         |
 
-Current examples:
+**Why `R4` and `P2` are excluded from the evaluation.**
 
-- `data/latex_papers/sample_source`
-- `data/pdf_papers/sample_pdf/2510.06445v2.pdf`
-- `data/pdf_papers/hallucinated_iclr_2026`
-- `data/pdf_papers/hallucinated_neurips_2025`
-- `data/pdf_papers/benign_icml_oral_2026`
-- `data/pdf_papers/benign_iclr_oral_2026`
+- `R4` (cross-source coverage): no single targeted dataset exists, because
+  the condition depends on the current union of connector indices at query
+  time. The same citation can flip between `R1` and `R4` as any connector
+  updates its records, which makes reproducible ground truth difficult.
+  Our pipeline still recognizes and emits `R4` at runtime; we just do not
+  score it.
+- `P2` (non-academic source): reliable evaluation requires a curated corpus
+  of citations to blog posts, tweets, repositories, and similar web sources,
+  with verified live URLs and cached snapshots. Collecting and maintaining
+  such a set is out of scope for this release (broken-link rot alone would
+  force continuous re-curation). `P2` remains a first-class runtime verdict
+  for deployed use, but it has no row in our paper tables.
 
-## Quickstart
+For scoring we therefore work with **11 evaluated codes** and collapse
+`R1`/`R2`/`R3` into a single bucket `R`, giving **9 scoring buckets**:
+`R, P1, P3, H1..H6`.
+
+## Synthetic dataset distribution
+
+The current evaluation set contains **2,450 citations** across the 11
+evaluated codes. Each subtype has its own JSON file under
+`data/synthetic_data/v2/`. The `R*_plus` files are an extended real set
+harvested from an independent BibTeX seed corpus; each `_plus` file rolls
+up into its parent subtype (`R1_plus` → `R1`, and so on) for every count,
+table, and metric.
+
+| Class          | Code          | Count     | File(s)                                                   |
+| -------------- | ------------- | --------: | --------------------------------------------------------- |
+| `REAL`         | R1            | 338       | `R1.json` (171) + `R1_plus.json` (167)                    |
+|                | R2            | 342       | `R2.json` (175) + `R2_plus.json` (167)                    |
+|                | R3            | 343       | `R3.json` (177) + `R3_plus.json` (166)                    |
+|                | **R (total)** | **1,023** | scoring bucket `R`                                        |
+| `POTENTIAL`    | P1            | 91        | `P1.json`                                                 |
+|                | P3            | 180       | `P3.json`                                                 |
+|                | **P (total)** | **271**   |                                                           |
+| `HALLUCINATED` | H1            | 200       | `H1.json`                                                 |
+|                | H2            | 198       | `H2.json`                                                 |
+|                | H3            | 197       | `H3.json`                                                 |
+|                | H4            | 195       | `H4.json`                                                 |
+|                | H5            | 200       | `H5.json`                                                 |
+|                | H6            | 166       | `H6.json`                                                 |
+|                | **H (total)** | **1,156** |                                                           |
+| **Total**      |               | **2,450** |                                                           |
+
+Ground truth for `R1`..`R3`, `P1`/`P3`, and `H1`..`H6` lives in
+`data/synthetic_data/v2/meta.json`. The `R*_plus` entries carry no meta
+entry and default to `REAL` / `VALID` at scoring time.
+
+## Current benchmark accuracy
+
+Per-bucket accuracy of the default pipeline (rule-based `Valid` and
+`Hallucinated` judges, LLM `Potential` judge with `P1`/`P3` short-circuit
+rules) on the 2,450-citation evaluation set. Correctness is defined per the
+[metric guide](docs/metric_guide.md): class-level for the `R` bucket,
+subtype-level for every other bucket.
+
+| Subtype | N     | Correct | Accuracy | Errors |
+| ------- | ----: | ------: | -------: | -----: |
+| R       |  1023 |     965 |    94.3% |     58 |
+| P1      |    91 |      91 |   100.0% |      0 |
+| P3      |   180 |     179 |    99.4% |      1 |
+| H1      |   200 |     200 |   100.0% |      0 |
+| H2      |   198 |     196 |    99.0% |      2 |
+| H3      |   197 |     196 |    99.5% |      1 |
+| H4      |   195 |     186 |    95.4% |      9 |
+| H5      |   200 |     200 |   100.0% |      0 |
+| H6      |   166 |     166 |   100.0% |      0 |
+| **Total** | **2450** | **2379** | **97.1%** | **71** |
+
+The weakest buckets are `R` (58 false alarms on real citations) and `H4` (9
+year errors mislabeled as a neighbouring `H*` code). All `P*` and the
+remaining `H*` buckets score at or near ceiling.
+
+## Repository layout
+
+```
+apps/
+  pdf_checker/          # end-to-end PDF auditor
+  source_checker/       # LaTeX-source auditor
+packages/
+  core/                 # agents, adjudication, taxonomy, cache
+  connectors/           # DBLP, Crossref, OpenAlex, ACL Anthology, arXiv, ...
+data/
+  synthetic_data/v2/    # evaluation dataset (11 JSON files + meta.json)
+  bst/                  # BibTeX styles used to render benchmark PDFs
+  bib/harvested_seeds_clean.json   # seed pool for R*_plus expansion
+pdf_samples_full/       # regenerable benchmark PDFs (5 styles × 10 papers)
+scripts/                # evaluation, dataset construction, diagnostic tools
+results/                # eval JSONs + aggregate stats (detailed_stats.csv)
+docs/
+  taxonomy.md           # full taxonomy definitions
+  metric_guide.md       # scoring protocol (confusion matrix + tables)
+```
+
+## Setup
+
+### 1. Install dependencies
 
 ```bash
-python3 -m apps.source_checker.run \
-  --input data/latex_papers/sample_source \
-  --out artifacts/sample_source_report.json
-
-python3 -m apps.pdf_checker.run \
-  --input /project/pi_shiqingma_umass_edu/mingzheli/Citation_Hallucination_Detection/data/pdf_papers/hallucinated_iclr_2026/A_superpersuasive_autonomous_policy_debating_system.pdf \
-  --out artifacts/sample_pdf_report.json
-
-python3 -m apps.pdf_checker.run \
-  --input data/pdf_papers/hallucinated_iclr_2026/A_superpersuasive_autonomous_policy_debating_system.pdf \
-  --out artifacts/A_superpersuasive_autonomous_policy_debating_system.json
+conda create -n citeaudit python=3.10 -y && conda activate citeaudit
+pip install -r requirements.txt
 ```
 
-## PDF Reference Extraction Demo
+The pipeline also needs `pdflatex` and `bibtex` on `PATH` if you plan to
+regenerate the benchmark PDFs.
 
-Use `pdf_extractor_demo.py` to run extraction/parsing only (without full checker adjudication).
+### 2. Configure
 
-Single PDF:
-
-```bash
-python3 pdf_extractor_demo.py \
-  --input data/pdf_papers/hallucinated_iclr_2026/C3-OWD_A_Curriculum_Cross-modal_Contrastive_Learning_Framework_for_Open-World_Detection.pdf \
-  --out artifacts/C3-OWD_reference_extract.json
-```
-
-Batch folder:
-
-```bash
-python3 pdf_extractor_demo.py \
-  --input data/pdf_papers/hallucinated_iclr_2026 \
-  --out artifacts/iclr_2026_reference_extracts \
-  --workers 1 \
-  --continue-on-error
-
-python3 pdf_extractor_demo.py \
-  --input data/pdf_papers/benign_icml_oral_2026 \
-  --out artifacts/icml_2025_reference_extracts_1 \
-  --workers 1 \
-```
-
-Notes:
-
-- `--workers` is forced to `1` for local GPU OCR model mode to avoid contention/OOM.
-- Batch mode writes `_batch_manifest.json` in output directory.
-
-## LLM Reparse (Optional)
-
-The parser can run an LLM-based reparsing pass on citations with missing core fields.
-
-Config block (see `config.example.json`):
-
-```json
-"citation_reparse": {
-  "enabled": false,
-  "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/Qwen3-0.6B",
-  "max_new_tokens": 32768,
-  "temperature": 0.0
-}
-```
-
-Run reparsing test on existing artifact JSON files:
-
-```bash
-python3 scripts/test_llm_reparse_on_artifacts.py \
-  --input-dir artifacts/icml_oral_2026_reference_extracts_20260301_215912 \
-  --output-dir artifacts/icml_oral_2026_reference_extracts_20260301_215912_llm_reparse_test \
-  --config-path config.json \
-  --model-path /project/pi_shiqingma_umass_edu/mingzheli/model/Qwen3-0.6B \
-  --max-new-tokens 32768 \
-  --temperature 0
-```
-
-## Synthetic LaTeX Fixture
-
-Generate a mixed verified/flawed/fabricated citation fixture:
-
-```bash
-python3 scripts/generate_synthetic_latex_fixture.py \
-  --output-dir data/latex_papers/synthetic_mixed_source
-```
-
-## Real ArXiv Seed Scripts
-
-Fetch real arXiv metadata (and optional PDFs + LaTeX sources):
-
-```bash
-python3 scripts/fetch_arxiv_seed.py \
-  --query "cat:cs.LG" \
-  --max-results 3 \
-  --metadata-out data/real_world/arxiv_seed_metadata.jsonl \
-  --manifest-out data/real_world/arxiv_seed_manifest.json \
-  --mirror-out data/real_world/arxiv_seed_mirror.jsonl
-```
-
-Download real PDFs and source archives:
-
-```bash
-python3 scripts/fetch_arxiv_seed.py \
-  --query "cat:cs.LG" \
-  --max-results 3 \
-  --pdf-output-dir data/seed/arxiv_pdfs \
-  --source-output-dir data/seed/arxiv_sources \
-  --download-pdfs \
-  --download-sources \
-  --extract-sources
-```
-
-Smoke check fetched arXiv assets:
-
-```bash
-python3 scripts/run_arxiv_seed_smoke.py \
-  --manifest data/real_world/arxiv_seed_manifest.json \
-  --out artifacts/arxiv_smoke \
-  --pipelines both
-```
-
-## Runtime Environment Knobs
-
-- `CITATION_CHECKER_CONFIG_PATH=...`: JSON config path (default `config.json`)
-- `CITATION_CHECKER_OFFLINE_ONLY=1`: disable online connectors
-- `CITATION_CHECKER_CACHE_PATH=/tmp/cache.sqlite`: override connector cache
-- `CITATION_CHECKER_DBLP_MIRROR_PATH=/path/to/mirror.jsonl`: override DBLP mirror
-- `CITATION_CHECKER_DBLP_SQLITE_PATH=/path/to/dblp.sqlite`: use DBLP SQLite
-- `CITATION_CHECKER_PDF_ENTRY_EXTRACTION=heuristic|model`: extraction mode
-- `CITATION_CHECKER_PDF_MODEL_PROVIDER=bedrock|local`: model backend in model mode
-- `CITATION_CHECKER_PDF_ENTRY_CHUNK_CHARS=12000`: model extraction chunk size
-- `CITATION_CHECKER_BEDROCK_MODEL_ID=...`: override Bedrock model id
-- `AWS_BEARER_TOKEN_BEDROCK=...`: bearer token for Bedrock auth
-- `CITATION_CHECKER_LOCAL_MODEL_PATH=/path/to/DeepSeek-OCR-2`: local OCR model path
-- `CITATION_CHECKER_LOCAL_OCR_DEBUG=1`: dump local OCR debug artifacts under `.tmp/`
-- `CITATION_CHECKER_LOCAL_OCR_DEBUG_RAISE=1`: fail fast on local OCR exceptions
-- `CITATION_CHECKER_VERBOSE=1`: print pipeline step logs + verification progress
-- `CITATION_CHECKER_LLM_REPARSE_ENABLED=1`: enable LLM reparsing pass
-- `CITATION_CHECKER_LLM_REPARSE_MODEL_PATH=/path/to/model`: LLM reparse model
-- `CITATION_CHECKER_LLM_REPARSE_MAX_NEW_TOKENS=32768`: reparse generation budget
-- `CITATION_CHECKER_LLM_REPARSE_TEMPERATURE=0`: reparse temperature
-
-## JSON Config
-
-Copy and edit:
+Copy the example config and fill in your API keys and local paths:
 
 ```bash
 cp config.example.json config.json
 ```
 
-Runtime priority:
+Key fields:
 
-`environment variables > config.json > code defaults`
+| Field | Purpose |
+| ----- | ------- |
+| `connectors.enabled_sources` | Which bibliographic connectors to query. Remove any source you cannot authenticate. |
+| `connectors.dblp_sqlite_path` | Path to a local DBLP SQLite mirror (fastest connector). Leave empty to skip. |
+| `connectors.semantic_scholar_api_key` | Semantic Scholar API key. Without it, rate limits throttle the connector heavily. |
+| `connectors.openalex_api_key`, `openalex_mailto` | Authenticated OpenAlex access (polite pool). |
+| `connectors.web_search_provider` | `tavily`, `serpapi`, or `google_cse`. Only needed when structured connectors miss a citation. |
+| `connectors.tavily_api_key` / `serpapi_key` / `google_api_key` + `google_cse_id` | Credentials for the chosen web search provider. |
+| `connectors.ncbi_api_key`, `ncbi_email` | PubMed/Europe PMC credentials. |
+| `entry_extraction.local.model_path` | Path to the local OCR/extractor model. Set to a DeepSeek-OCR checkpoint for the `local` provider. |
+| `entry_extraction.bedrock.*` | AWS Bedrock model id + bearer token for the `bedrock` provider. |
+| `verification_llm.bedrock.model_id` | The LLM used by the `Potential` judge. |
 
-Minimal local OCR + optional reparse example:
+Example provider selection in `config.json`:
 
 ```json
 {
-  "connectors": {
-    "dblp_sqlite_path": "/project/pi_shiqingma_umass_edu/mingzheli/Ref_Agent/data/dblp.sqlite"
-  },
   "entry_extraction": {
     "mode": "model",
-    "provider": "local",
-    "chunk_chars": 12000,
-    "local": {
-      "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/DeepSeek-OCR-2"
-    },
+    "provider": "bedrock",
     "bedrock": {
       "region": "us-east-1",
-      "bearer_token": ""
+      "bearer_token": "AWSV2-..."
     }
   },
-  "citation_reparse": {
-    "enabled": false,
-    "model_path": "/project/pi_shiqingma_umass_edu/mingzheli/model/Qwen3-0.6B",
-    "max_new_tokens": 32768,
-    "temperature": 0.0
+  "verification_llm": {
+    "enabled": true,
+    "provider": "bedrock",
+    "bedrock": {
+      "region": "us-east-1",
+      "model_id": "qwen.qwen3-vl-235b-a22b"
+    }
   }
 }
 ```
 
-## Project Layout
+### 3. Pre-fetch caches (optional)
 
-- `apps/`: source and PDF checker applications
-- `packages/core/`: models, normalization, matching, adjudication, report logic
-- `packages/connectors/`: bibliographic connectors, cache, request policy
-- `packages/eval/`: benchmark runner and metrics
-- `data/`: paper fixtures and cache
-- `docs/`: architecture and annotation guidelines
+```bash
+mkdir -p data/cache
+# DBLP SQLite mirror: download from https://dblp.org/xml/ and run an
+# offline indexer, then point dblp_sqlite_path at it.
+# ACL Anthology: clone https://github.com/acl-org/acl-anthology.git into
+# data/cache/acl_anthology_repo (its data/ subdir becomes acl_anthology_data_dir).
+```
 
+## Running the checker on your own paper
+
+### PDF
+
+```bash
+python -m apps.pdf_checker.run \
+  --input data/pdf_papers/your_paper.pdf \
+  --out artifacts/your_paper_report.json
+```
+
+### LaTeX source
+
+```bash
+python -m apps.source_checker.run \
+  --input path/to/your_latex_project \
+  --out artifacts/your_paper_report.json
+```
+
+The report JSON contains one entry per citation with the full adjudication
+trail; see the **Output glossary** section below for every field.
+
+## Reproducing the benchmark
+
+### 1. Dataset (already materialized)
+
+The evaluation set lives under `data/synthetic_data/v2/`:
+
+```
+R1.json  R2.json  R3.json             # real citations, 523 total
+R1_plus.json  R2_plus.json  R3_plus.json   # extended real set, 500 more
+P1.json  P3.json                       # potential, 271 total
+H1.json  H2.json  H3.json  H4.json  H5.json  H6.json   # hallucinated, 1156 total
+meta.json                              # ground-truth labels + seeds
+```
+
+Total: **2450 citations**.
+
+### 2. Rendered PDFs (optional)
+
+```bash
+python scripts/gen_exhaustive_pdfs.py
+```
+
+Produces `pdf_samples_full/{acm,splncs04,iclr,ieee,plain}/paper_XXX/main.pdf`.
+Each paper bundles 40–50 citations sampled from the dataset; `refs.bib` and
+`main.bbl` align 1:1 (verified).
+
+### 3. Run the pipeline against the dataset
+
+```bash
+# R (real): use meta.json as ground truth
+python scripts/test_synthetic_samples.py \
+  --samples data/synthetic_data/v2/R1.json \
+  --meta    data/synthetic_data/v2/meta.json \
+  --workers 8 \
+  --rule-based-valid-agent --rule-based-hallucinated-agent \
+  --out results/eval_R1_rule_based.json
+
+# R_plus (extended real, no meta entry): declare expected verdict directly
+python scripts/test_synthetic_samples.py \
+  --samples data/synthetic_data/v2/R1_plus.json \
+  --expected-verdict VALID \
+  --workers 8 \
+  --rule-based-valid-agent --rule-based-hallucinated-agent \
+  --out results/eval_R1_plus_rule_based.json
+
+# P1, P3, H1..H6 follow the same pattern as R, with --meta.
+```
+
+Batched versions live in `scripts/eval_R_rule_based.sbatch` and
+`scripts/eval_H_rule_based.sbatch` for SLURM.
+
+### 4. Aggregate results
+
+```bash
+python scripts/build_detailed_stats.py
+```
+
+Produces:
+
+- `results/detailed_stats.csv` — one row per citation with `expected_label`,
+  `predicted_label`, `expected_subtype`, `predicted_taxonomy`, `match_label`,
+  `match_taxonomy`.
+- `results/detailed_stats_summary.json` — per-bucket totals and accuracies.
+
+### 5. Score against the metric guide
+
+Use [docs/metric_guide.md](docs/metric_guide.md) to produce the three paper
+artifacts from `detailed_stats.csv`:
+
+1. **9 × 9 confusion matrix** — rows = true bucket, columns = predicted bucket
+   (`R, P1, P3, H1..H6`).
+2. **Per-bucket table** — `N, TP, FP, FN, Precision, Recall, F1, Accuracy` for
+   each of the 9 buckets (one-versus-rest).
+3. **Safe-error analysis** — per-class safe/dangerous error counts, plus
+   dataset-wide `SER`, `DER`, and identity `class_accuracy = 1 − SER − DER`.
+
+Our rule-based pipeline reaches `class_accuracy ≈ 97.1%` on the 2450-citation
+set, with `DER` dominated by `H4` and `H2` subtype drift (see the per-bucket
+table for the full breakdown).
+
+## Output glossary
+
+Every run produces one JSON per citation with the fields below. The pipeline
+commits to a single class (`predicted`) and a set of fine-grained codes
+(`taxonomy`):
+
+| Field                   | Type      | Meaning                                                                                              |
+| ----------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
+| `citation_id`           | string    | Stable ID, e.g. `H1-0042`.                                                                           |
+| `input_citation`        | object    | Parsed fields from Stage 1.                                                                          |
+| `predicted`             | string    | `VALID` / `POTENTIAL_REFERENCE` / `FAKE_REFERENCE`.                                                  |
+| `taxonomy`              | string[]  | Fine-grained codes (`R`, `P1`, `P3`, `H1`..`H6`); multi-code sets appear when several fields mismatch. |
+| `adjudication_reason`   | string    | One-sentence explanation from whichever judge closed the case.                                       |
+| `evidence_sources`      | string[]  | Connectors that returned at least one candidate.                                                     |
+| `conflicts`             | string[]  | Fields that mismatched at least one qualifying candidate.                                            |
+| `field_status`          | object    | Per-field verdict (`match`, `mismatch`, `candidate_missing`, `reference_missing`, `both_missing`).   |
+| `matched_candidate`     | object?   | Best-matching candidate (or null if none qualified).                                                 |
+| `candidate_evaluations` | object[]  | Full per-connector evaluation trail for the citation.                                                |
+| `needs_human_review`    | bool      | `true` when the pipeline is uncertain.                                                               |
+
+`predicted` maps one-to-one to the taxonomy classes: `VALID` ↔ `REAL`,
+`POTENTIAL_REFERENCE` ↔ `POTENTIAL`, `FAKE_REFERENCE` ↔ `HALLUCINATED`.
+
+## Citing and contributing
+
+The benchmark, taxonomy, and pipeline are released together. Issues and pull
+requests are welcome, especially new connectors, additional subtypes, and
+independent scorers against the metric guide.

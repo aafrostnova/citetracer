@@ -29,9 +29,9 @@ class RequestPolicy:
     # 429 rate-limit retries use a separate, longer schedule because rate-limited
     # endpoints typically need seconds of breathing room, not 0.25s. Server's
     # Retry-After header wins when present.
-    rate_limit_max_retries: int = 5
-    rate_limit_backoff_base_s: float = 5.0
-    rate_limit_backoff_max_s: float = 60.0
+    rate_limit_max_retries: int = 4       # 5 attempts total (initial + 4 retries)
+    rate_limit_backoff_base_s: float = 2.0 # 2s, 4s, 8s, 16s exponential
+    rate_limit_backoff_max_s: float = 20.0 # cap per-sleep (caps Retry-After too)
     health_recover_step: float = 0.03
     health_decay_step: float = 0.15
 
@@ -119,14 +119,18 @@ class SQLiteCache:
 
 
 class VerifiedReferenceCache:
-    """Cache for references that have been verified as VALID (R1/R3/R4).
+    """Two-tier cache for references that have been verified as VALID (R1/R3).
 
-    This caches the *reference* (not individual candidates). When the same
-    reference appears in another paper, the cached verdict is returned
-    immediately, skipping the entire verification pipeline.
+    Tier 1 (exact): keyed by a hash of ALL citation fields. Hit = the exact
+    same citation string (identical formatting) was verified before → return
+    the cached verdict as-is, bypassing re-validation.
+
+    Tier 2 (loose): keyed by title + year only. Hit = some form of this paper
+    was verified before → use cached matched_candidate but re-run the
+    verification flow on the current citation (catches format variants with
+    current logic).
     """
 
-    # Verified references are unlikely to become invalid; use a long TTL.
     DEFAULT_TTL_S = 60 * 60 * 24 * 30  # 30 days
 
     def __init__(self, db_path: str | Path) -> None:
@@ -136,56 +140,113 @@ class VerifiedReferenceCache:
     def _init_db(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
+            # Detect legacy schema (ref_key PK, no full_key/loose_key columns).
+            # If found, drop and recreate — legacy cache is inherently narrower
+            # and values can be recomputed on next run.
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(verified_references)")]
+            if cols and "full_key" not in cols:
+                conn.execute("DROP TABLE verified_references")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS verified_references (
-                    ref_key TEXT PRIMARY KEY,
+                    full_key TEXT PRIMARY KEY,
+                    loose_key TEXT NOT NULL,
                     verdict_json TEXT NOT NULL,
                     expires_at INTEGER NOT NULL
                 )
                 """
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vr_loose ON verified_references(loose_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vr_expires ON verified_references(expires_at)"
+            )
 
     @staticmethod
-    def _ref_key(citation: CitationRecord) -> str:
-        """Build a cache key from title + year."""
+    def _full_key(citation: CitationRecord) -> str:
+        """Exact-match key: all user-facing citation fields."""
+        authors = [str(a).strip() for a in (citation.authors or [])]
+        payload = {
+            "title": (citation.title or "").strip(),
+            "authors": authors,
+            "venue": (citation.venue or "").strip(),
+            "year": citation.year,
+            "doi": (citation.doi or "").strip().lower(),
+            "arxiv_id": (citation.arxiv_id or "").strip().lower(),
+            "pages": (citation.pages or "").strip(),
+            "volume": (citation.volume or "").strip(),
+            "publisher": (citation.publisher or "").strip(),
+            "location": (citation.location or "").strip(),
+            "url": (citation.url or "").strip(),
+        }
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        return f"full:{digest}"
+
+    @staticmethod
+    def _loose_key(citation: CitationRecord) -> str:
+        """Loose-match key: title (lowercased) + year."""
         payload = {
             "title": (citation.title or "").strip().lower(),
             "year": citation.year,
         }
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
-        return f"ref:{digest}"
+        return f"loose:{digest}"
 
-    def get(self, citation: CitationRecord) -> dict[str, Any] | None:
-        key = self._ref_key(citation)
+    def get_exact(self, citation: CitationRecord) -> dict[str, Any] | None:
+        """Tier 1: exact field-for-field match on the full citation."""
+        key = self._full_key(citation)
         now = int(time.time())
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT verdict_json, expires_at FROM verified_references WHERE ref_key = ?",
+                "SELECT verdict_json, expires_at FROM verified_references WHERE full_key = ?",
                 (key,),
             ).fetchone()
             if not row:
                 return None
             verdict_json, expires_at = row
             if expires_at < now:
-                conn.execute("DELETE FROM verified_references WHERE ref_key = ?", (key,))
+                conn.execute("DELETE FROM verified_references WHERE full_key = ?", (key,))
                 return None
             return json.loads(verdict_json)
 
+    def get_loose(self, citation: CitationRecord) -> dict[str, Any] | None:
+        """Tier 2: title+year match (any formatting). Caller should re-validate."""
+        key = self._loose_key(citation)
+        now = int(time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT verdict_json, expires_at FROM verified_references "
+                "WHERE loose_key = ? ORDER BY expires_at DESC LIMIT 1",
+                (key,),
+            ).fetchone()
+            if not row:
+                return None
+            verdict_json, expires_at = row
+            if expires_at < now:
+                return None
+            return json.loads(verdict_json)
+
+    # Back-compat alias (was the only method before two-tier design)
+    def get(self, citation: CitationRecord) -> dict[str, Any] | None:
+        return self.get_loose(citation)
+
     def set(self, citation: CitationRecord, verdict_dict: dict[str, Any], ttl_s: int | None = None) -> None:
-        key = self._ref_key(citation)
+        full_key = self._full_key(citation)
+        loose_key = self._loose_key(citation)
         expires_at = int(time.time()) + (ttl_s or self.DEFAULT_TTL_S)
         payload = json.dumps(verdict_dict, ensure_ascii=False)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO verified_references(ref_key, verdict_json, expires_at)
-                VALUES(?, ?, ?)
-                ON CONFLICT(ref_key) DO UPDATE SET
+                INSERT INTO verified_references(full_key, loose_key, verdict_json, expires_at)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(full_key) DO UPDATE SET
+                    loose_key = excluded.loose_key,
                     verdict_json = excluded.verdict_json,
                     expires_at = excluded.expires_at
                 """,
-                (key, payload, expires_at),
+                (full_key, loose_key, payload, expires_at),
             )
 
 
@@ -241,22 +302,40 @@ class BaseConnector:
             return None
 
     @classmethod
-    def _sleep_for_retry(cls, exc: Exception, attempt: int, policy: RequestPolicy) -> None:
+    def _sleep_for_retry(
+        cls, exc: Exception, attempt: int, policy: RequestPolicy,
+        url: str = "", connector_name: str = "",
+    ) -> None:
         """Sleep an appropriate backoff before the next retry.
 
         - 429 responses use rate_limit_backoff (honors Retry-After header if present).
         - Other errors use the regular short exponential backoff.
+
+        Always logs 429 events to stderr so callers can see rate-limit pressure
+        regardless of which API is being throttled.
         """
+        import sys as _sys
         if cls._is_rate_limited(exc):
             server_hint = cls._retry_after_seconds(exc)
             if server_hint is not None:
                 delay = min(server_hint, policy.rate_limit_backoff_max_s)
+                hint_src = f"Retry-After={server_hint:.1f}s"
             else:
                 delay = min(
                     policy.rate_limit_backoff_base_s * (2**attempt),
                     policy.rate_limit_backoff_max_s,
                 )
+                hint_src = "exp-backoff"
             delay += random.uniform(0.0, 0.5)
+            # ALWAYS surface 429 to stderr (don't swallow silently)
+            _src = connector_name or cls.__name__
+            _url_short = (url[:120] + "...") if len(url) > 120 else url
+            print(
+                f"[rate-limit] {_src} 429 (attempt {attempt+1}/"
+                f"{policy.rate_limit_max_retries+1}): sleeping {delay:.1f}s "
+                f"[{hint_src}] url={_url_short}",
+                file=_sys.stderr, flush=True,
+            )
         else:
             delay = policy.backoff_base_s * (2**attempt) + random.uniform(0.0, 0.05)
         time.sleep(delay)
@@ -264,6 +343,18 @@ class BaseConnector:
     @staticmethod
     def _max_retries_for(exc: Exception, policy: RequestPolicy) -> int:
         return policy.rate_limit_max_retries if BaseConnector._is_rate_limited(exc) else policy.max_retries
+
+    def _log_final_failure(self, url: str, exc: Exception) -> None:
+        """Print a stderr line when all retries are exhausted — especially
+        important for 429 so callers see sustained rate-limit exhaustion."""
+        import sys as _sys
+        if self._is_rate_limited(exc):
+            _url_short = (url[:120] + "...") if len(url) > 120 else url
+            print(
+                f"[rate-limit] {self.name} 429 FINAL: all retries exhausted, "
+                f"giving up. url={_url_short}",
+                file=_sys.stderr, flush=True,
+            )
 
     def _request_json(self, url: str, params: dict[str, Any], policy: RequestPolicy, headers: dict[str, str] | None = None) -> dict[str, Any]:
         query = urlencode({k: v for k, v in params.items() if v is not None and v != ""})
@@ -280,7 +371,8 @@ class BaseConnector:
                 last_error = exc
                 if attempt >= self._max_retries_for(exc, policy):
                     break
-                self._sleep_for_retry(exc, attempt, policy)
+                self._sleep_for_retry(exc, attempt, policy, url=target, connector_name=self.name)
+        self._log_final_failure(target, last_error)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
     def _request_json_post(
@@ -307,7 +399,8 @@ class BaseConnector:
                 last_error = exc
                 if attempt >= self._max_retries_for(exc, policy):
                     break
-                self._sleep_for_retry(exc, attempt, policy)
+                self._sleep_for_retry(exc, attempt, policy, url=url, connector_name=self.name)
+        self._log_final_failure(url, last_error)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
     def _request_text(
@@ -332,7 +425,8 @@ class BaseConnector:
                 last_error = exc
                 if attempt >= self._max_retries_for(exc, policy):
                     break
-                self._sleep_for_retry(exc, attempt, policy)
+                self._sleep_for_retry(exc, attempt, policy, url=target, connector_name=self.name)
+        self._log_final_failure(target, last_error)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
     @staticmethod

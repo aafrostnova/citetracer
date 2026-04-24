@@ -7,9 +7,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2021,
-    "doi": "10.1609/aaai.v35i4.16437",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v35i4.16437",
+    "url": "",
     "volume": "35",
     "pages": "3261-3269",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -30,9 +30,9 @@
     ],
     "venue": "Proc. 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
     "year": 2020,
-    "doi": "10.18653/v1/2020.emnlp-main.20",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2020.emnlp-main.20/",
+    "url": "",
     "volume": "",
     "pages": "285-294",
     "publisher": "Association for Computational Linguistics",
@@ -52,9 +52,9 @@
     ],
     "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "year": 2021,
-    "doi": "10.1109/tpami.2019.2938499",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/tpami.2019.2938499",
+    "url": "",
     "volume": "43",
     "pages": "1777-1790",
     "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
@@ -125,8 +125,8 @@
     "venue": "arXiv",
     "year": 2022,
     "doi": "",
-    "arxiv_id": "2202.09061v4",
-    "url": "http://arxiv.org/abs/2202.09061v4",
+    "arxiv_id": "",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -149,9 +149,9 @@
     ],
     "venue": "Proc. 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
     "year": 2022,
-    "doi": "10.18653/v1/2022.acl-long.5",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2022.acl-long.5/",
+    "url": "",
     "volume": "",
     "pages": "57-69",
     "publisher": "Association for Computational Linguistics",
@@ -200,9 +200,9 @@
     ],
     "venue": "ACL",
     "year": 2024,
-    "doi": "10.18653/v1/2024.acl-demos.1",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/acl/0001DLZ0J024",
+    "url": "",
     "volume": "",
     "pages": "1-8",
     "publisher": "",
@@ -222,9 +222,9 @@
     ],
     "venue": "Proc. 2024 Conference on Empirical Methods in Natural Language Processing",
     "year": 2024,
-    "doi": "10.18653/v1/2024.emnlp-main.32",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2024.emnlp-main.32/",
+    "url": "",
     "volume": "",
     "pages": "522-556",
     "publisher": "Association for Computational Linguistics",
@@ -265,9 +265,9 @@
     ],
     "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "year": 2024,
-    "doi": "10.1109/tpami.2024.3385920",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/tpami.2024.3385920",
+    "url": "",
     "volume": "46",
     "pages": "6688-6698",
     "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
@@ -291,7 +291,7 @@
     "year": 2022,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/iclr/NiSSGG22",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -397,30 +397,6 @@
     "citation_id": "R2-0017"
   },
   {
-    "title": "personalization improves privacy-accuracy tradeoffs in federated learning",
-    "authors": [
-      "A. Bietti",
-      "C. Wei",
-      "M. Dudík",
-      "J. Langford",
-      "Z. Steven Wu"
-    ],
-    "venue": "ICML",
-    "year": 2022,
-    "doi": "",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/BiettiWD0W22",
-    "volume": "",
-    "pages": "1945-1962",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "federated learning",
-    "_query_venue": "ICML",
-    "_query_year": 2022,
-    "citation_id": "R2-0018"
-  },
-  {
     "title": "how helpful is inverse reinforcement learning for table-to-text generation?",
     "authors": [
       "S. Ghosh",
@@ -430,9 +406,9 @@
     ],
     "venue": "ACL/IJCNLP",
     "year": 2021,
-    "doi": "10.18653/v1/2021.acl-short.11",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/acl/GhoshQCS20",
+    "url": "",
     "volume": "",
     "pages": "71-79",
     "publisher": "",
@@ -476,9 +452,9 @@
     ],
     "venue": "2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2024,
-    "doi": "10.1109/cvpr52733.2024.02550",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52733.2024.02550",
+    "url": "",
     "volume": "",
     "pages": "26994-27004",
     "publisher": "IEEE",
@@ -615,9 +591,9 @@
     ],
     "venue": "Proc. 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
     "year": 2022,
-    "doi": "10.18653/v1/2022.acl-long.61",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2022.acl-long.61/",
+    "url": "",
     "volume": "",
     "pages": "863-877",
     "publisher": "Association for Computational Linguistics",
@@ -636,9 +612,9 @@
     ],
     "venue": "Proc. 2023 Conference on Empirical Methods in Natural Language Processing",
     "year": 2023,
-    "doi": "10.18653/v1/2023.emnlp-main.41",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2023.emnlp-main.41/",
+    "url": "",
     "volume": "",
     "pages": "619-637",
     "publisher": "Association for Computational Linguistics",
@@ -686,7 +662,7 @@
     "year": 2022,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/iclr/LevineWJNHS22",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -755,9 +731,9 @@
     ],
     "venue": "2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2024,
-    "doi": "10.1109/cvpr52733.2024.01074",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52733.2024.01074",
+    "url": "",
     "volume": "",
     "pages": "11302-11312",
     "publisher": "IEEE",
@@ -790,31 +766,6 @@
     "citation_id": "R2-0034"
   },
   {
-    "title": "extend and explain: interpreting very long language models",
-    "authors": [
-      "J. Stremmel",
-      "B. Hill",
-      "J. S. Hertzberg",
-      "J. Murillo",
-      "L. Allotey",
-      "E. Halperin"
-    ],
-    "venue": "ML4H@NeurIPS",
-    "year": 2022,
-    "doi": "10.48550/arxiv.2209.01174",
-    "arxiv_id": "2209.01174",
-    "url": "",
-    "volume": "abs/2209.01174",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "semanticscholar",
-    "_query_topic": "transformer attention",
-    "_query_venue": "NeurIPS",
-    "_query_year": 2022,
-    "citation_id": "R2-0035"
-  },
-  {
     "title": "effective pretraining objectives for transformer-based autoencoders",
     "authors": [
       "L. Di Liello",
@@ -823,9 +774,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics: EMNLP 2022",
     "year": 2022,
-    "doi": "10.18653/v1/2022.findings-emnlp.405",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2022.findings-emnlp.405",
+    "url": "",
     "volume": "",
     "pages": "5533-5547",
     "publisher": "Association for Computational Linguistics",
@@ -834,32 +785,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "EMNLP",
     "_query_year": 2022,
-    "citation_id": "R2-0036"
-  },
-  {
-    "title": "the inductive bias of in-context learning: rethinking pretraining example design",
-    "authors": [
-      "Y. Levine",
-      "N. Wies",
-      "D. Jannai",
-      "D. Navon",
-      "Y. Hoshen",
-      "A. Shashua"
-    ],
-    "venue": "ICLR",
-    "year": 2022,
-    "doi": "",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/iclr/LevineWJNHS22",
-    "volume": "",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "in-context learning",
-    "_query_venue": "ICLR",
-    "_query_year": 2022,
-    "citation_id": "R2-0037"
+    "citation_id": "R2-0035"
   },
   {
     "title": "gnn-encoder: learning a dual-encoder architecture via graph neural networks for dense passage retrieval",
@@ -874,9 +800,9 @@
     ],
     "venue": "EMNLP",
     "year": 2022,
-    "doi": "10.18653/v1/2022.findings-emnlp.39",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/emnlp/LiuLYWW0Y22",
+    "url": "",
     "volume": "",
     "pages": "564-575",
     "publisher": "",
@@ -885,7 +811,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "EMNLP",
     "_query_year": 2022,
-    "citation_id": "R2-0038"
+    "citation_id": "R2-0036"
   },
   {
     "title": "joint audio/text training for transformer rescorer of streaming speech recognition",
@@ -911,7 +837,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "EMNLP",
     "_query_year": 2022,
-    "citation_id": "R2-0039"
+    "citation_id": "R2-0037"
   },
   {
     "title": "transformers are rnns: fast autoregressive transformers with linear attention",
@@ -934,7 +860,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "ICML",
     "_query_year": 2020,
-    "citation_id": "R2-0040"
+    "citation_id": "R2-0038"
   },
   {
     "title": "ra-clip: retrieval augmented contrastive language-image pre-training",
@@ -948,9 +874,9 @@
     ],
     "venue": "2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2023,
-    "doi": "10.1109/cvpr52729.2023.01846",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52729.2023.01846",
+    "url": "",
     "volume": "",
     "pages": "19265-19274",
     "publisher": "IEEE",
@@ -959,7 +885,7 @@
     "_query_topic": "retrieval augmented generation",
     "_query_venue": "CVPR",
     "_query_year": 2023,
-    "citation_id": "R2-0041"
+    "citation_id": "R2-0039"
   },
   {
     "title": "memorisation cartography: mapping out the memorisation-generalisation continuum in neural machine translation",
@@ -981,7 +907,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "EMNLP",
     "_query_year": 2023,
-    "citation_id": "R2-0042"
+    "citation_id": "R2-0040"
   },
   {
     "title": "plugmed: improving specificity in patient-centered medical dialogue generation using in-context learning",
@@ -995,9 +921,9 @@
     ],
     "venue": "EMNLP",
     "year": 2023,
-    "doi": "10.18653/v1/2023.findings-emnlp.336",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/emnlp/DouJJZZT23",
+    "url": "",
     "volume": "",
     "pages": "5050-5066",
     "publisher": "",
@@ -1006,7 +932,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "EMNLP",
     "_query_year": 2023,
-    "citation_id": "R2-0043"
+    "citation_id": "R2-0041"
   },
   {
     "title": "automated loinc standardization using pre-trained large language models",
@@ -1024,7 +950,7 @@
     "year": 2022,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/ml4h/TuLCLGBSC22",
+    "url": "",
     "volume": "",
     "pages": "343-355",
     "publisher": "",
@@ -1033,7 +959,7 @@
     "_query_topic": "large language models",
     "_query_venue": "NeurIPS",
     "_query_year": 2022,
-    "citation_id": "R2-0044"
+    "citation_id": "R2-0042"
   },
   {
     "title": "fast composite optimization and statistical recovery in federated learning",
@@ -1047,7 +973,7 @@
     "year": 2022,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/BaoCLL22",
+    "url": "",
     "volume": "",
     "pages": "1508-1536",
     "publisher": "",
@@ -1056,7 +982,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "ICML",
     "_query_year": 2022,
-    "citation_id": "R2-0045"
+    "citation_id": "R2-0043"
   },
   {
     "title": "visual hallucination elevates speech recognition",
@@ -1070,9 +996,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2024,
-    "doi": "10.1609/aaai.v38i17.29926",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v38i17.29926",
+    "url": "",
     "volume": "38",
     "pages": "19542-19550",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -1081,7 +1007,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0046"
+    "citation_id": "R2-0044"
   },
   {
     "title": "cocos: enhancing semi-supervised learning on graphs with unlabeled data via contrastive context sharing",
@@ -1103,7 +1029,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0047"
+    "citation_id": "R2-0045"
   },
   {
     "title": "exploring intrinsic language-specific subspaces in fine-tuning multilingual neural machine translation",
@@ -1115,9 +1041,9 @@
     ],
     "venue": "EMNLP",
     "year": 2024,
-    "doi": "10.18653/v1/2024.emnlp-main.1177",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/emnlp/CaoQKW24",
+    "url": "",
     "volume": "",
     "pages": "21142-21157",
     "publisher": "",
@@ -1126,28 +1052,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "EMNLP",
     "_query_year": 2024,
-    "citation_id": "R2-0048"
-  },
-  {
-    "title": "distributionally robust model-based offline reinforcement learning with near-optimal sample complexity",
-    "authors": [
-      "L. Shi",
-      "Y. Chi"
-    ],
-    "venue": "Journal of machine learning research",
-    "year": 2022,
-    "doi": "10.48550/arxiv.2208.05767",
-    "arxiv_id": "2208.05767",
-    "url": "",
-    "volume": "abs/2208.05767",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "semanticscholar",
-    "_query_topic": "reinforcement learning",
-    "_query_venue": "Journal of Machine Learning Research",
-    "_query_year": 2022,
-    "citation_id": "R2-0049"
+    "citation_id": "R2-0046"
   },
   {
     "title": "contrastive learning with stronger augmentations",
@@ -1157,9 +1062,9 @@
     ],
     "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "year": 2022,
-    "doi": "10.1109/tpami.2022.3203630",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/tpami.2022.3203630",
+    "url": "",
     "volume": "",
     "pages": "1-12",
     "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
@@ -1168,7 +1073,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2022,
-    "citation_id": "R2-0050"
+    "citation_id": "R2-0047"
   },
   {
     "title": "error detection in large-scale natural language understanding systems using transformer models",
@@ -1191,7 +1096,7 @@
     "_query_topic": "large language models",
     "_query_venue": "ACL",
     "_query_year": 2021,
-    "citation_id": "R2-0051"
+    "citation_id": "R2-0048"
   },
   {
     "title": "deciphering oracle bone language with diffusion models",
@@ -1218,7 +1123,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ACL",
     "_query_year": 2024,
-    "citation_id": "R2-0052"
+    "citation_id": "R2-0049"
   },
   {
     "title": "synchronous interactive decoding for multilingual neural machine translation",
@@ -1243,7 +1148,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "AAAI",
     "_query_year": 2021,
-    "citation_id": "R2-0053"
+    "citation_id": "R2-0050"
   },
   {
     "title": "dynamic schema graph fusion network for multi-domain dialogue state tracking",
@@ -1267,7 +1172,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "ACL",
     "_query_year": 2022,
-    "citation_id": "R2-0054"
+    "citation_id": "R2-0051"
   },
   {
     "title": "radardistill: boosting radar-based object detection performance via knowledge distillation from lidar features",
@@ -1280,9 +1185,9 @@
     ],
     "venue": "CVPR",
     "year": 2024,
-    "doi": "10.1109/cvpr52733.2024.01467",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/cvpr/BangCKKC24",
+    "url": "",
     "volume": "",
     "pages": "15491-15500",
     "publisher": "",
@@ -1291,7 +1196,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "CVPR",
     "_query_year": 2024,
-    "citation_id": "R2-0055"
+    "citation_id": "R2-0052"
   },
   {
     "title": "fedtgp: trainable global prototypes with adaptive-margin-enhanced contrastive learning for data and model heterogeneity in federated learning",
@@ -1303,9 +1208,9 @@
     ],
     "venue": "AAAI",
     "year": 2024,
-    "doi": "10.1609/aaai.v38i15.29617",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/aaai/ZhangLHC24",
+    "url": "",
     "volume": "",
     "pages": "16768-16776",
     "publisher": "",
@@ -1314,7 +1219,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0056"
+    "citation_id": "R2-0053"
   },
   {
     "title": "distillmike: editing distillation of massive in-context knowledge editing in large language models",
@@ -1336,7 +1241,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "ACL",
     "_query_year": 2024,
-    "citation_id": "R2-0057"
+    "citation_id": "R2-0054"
   },
   {
     "title": "data-free knowledge distillation for heterogeneous federated learning",
@@ -1349,7 +1254,7 @@
     "year": 2021,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/ZhuHZ21",
+    "url": "",
     "volume": "",
     "pages": "12878-12889",
     "publisher": "",
@@ -1358,7 +1263,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "ICML",
     "_query_year": 2021,
-    "citation_id": "R2-0058"
+    "citation_id": "R2-0055"
   },
   {
     "title": "accelerate multi-agent reinforcement learning in zero-sum games with subgame curriculum learning",
@@ -1375,9 +1280,9 @@
     ],
     "venue": "AAAI",
     "year": 2024,
-    "doi": "10.1609/aaai.v38i10.29011",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/aaai/ChenXLYSY00W24",
+    "url": "",
     "volume": "",
     "pages": "11320-11328",
     "publisher": "",
@@ -1386,7 +1291,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0059"
+    "citation_id": "R2-0056"
   },
   {
     "title": "waypoint transformer: reinforcement learning via supervised learning with intermediate targets",
@@ -1409,7 +1314,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2023,
-    "citation_id": "R2-0060"
+    "citation_id": "R2-0057"
   },
   {
     "title": "revisiting classifier: transferring vision-language models for video recognition",
@@ -1420,9 +1325,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2023,
-    "doi": "10.1609/aaai.v37i3.25386",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v37i3.25386",
+    "url": "",
     "volume": "37",
     "pages": "2847-2855",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -1431,56 +1336,7 @@
     "_query_topic": "vision language models",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0061"
-  },
-  {
-    "title": "a tutorial on meta-reinforcement learning",
-    "authors": [
-      "J. Beck",
-      "R. Vuorio",
-      "E. Zheran Liu",
-      "Z. Xiong",
-      "L. Zintgraf",
-      "C. Finn",
-      "S. Whiteson"
-    ],
-    "venue": "arXiv",
-    "year": 2023,
-    "doi": "",
-    "arxiv_id": "2301.08028v4",
-    "url": "http://arxiv.org/abs/2301.08028v4",
-    "volume": "",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "arxiv",
-    "_query_topic": "reinforcement learning",
-    "_query_venue": "NeurIPS",
-    "_query_year": 2023,
-    "citation_id": "R2-0062"
-  },
-  {
-    "title": "domain generalization for crop segmentation with standardized ensemble knowledge distillation",
-    "authors": [
-      "S. Angarano",
-      "M. Martini",
-      "A. Navone",
-      "M. Chiaberge"
-    ],
-    "venue": "CVPR Workshops",
-    "year": 2024,
-    "doi": "10.1109/cvprw63382.2024.00554",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/cvpr/AngaranoMNC22",
-    "volume": "",
-    "pages": "5450-5459",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "knowledge distillation",
-    "_query_venue": "CVPR",
-    "_query_year": 2024,
-    "citation_id": "R2-0063"
+    "citation_id": "R2-0058"
   },
   {
     "title": "the inefficiency of language models in scholarly retrieval: an experimental walk-through",
@@ -1490,9 +1346,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics: ACL 2022",
     "year": 2022,
-    "doi": "10.18653/v1/2022.findings-acl.249",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2022.findings-acl.249",
+    "url": "",
     "volume": "",
     "pages": "3153-3173",
     "publisher": "Association for Computational Linguistics",
@@ -1501,7 +1357,7 @@
     "_query_topic": "retrieval augmented generation",
     "_query_venue": "ACL",
     "_query_year": 2022,
-    "citation_id": "R2-0064"
+    "citation_id": "R2-0059"
   },
   {
     "title": "federated learning with manifold regularization and normalized update reaggregation",
@@ -1515,7 +1371,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/nips/AnS0L23",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -1524,7 +1380,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2023,
-    "citation_id": "R2-0065"
+    "citation_id": "R2-0060"
   },
   {
     "title": "human versus machine intelligence: assessing natural language generation models through complex systems theory",
@@ -1535,9 +1391,9 @@
     ],
     "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "year": 2024,
-    "doi": "10.1109/tpami.2024.3358168",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/tpami.2024.3358168",
+    "url": "",
     "volume": "46",
     "pages": "4812-4829",
     "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
@@ -1546,7 +1402,7 @@
     "_query_topic": "large language models",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2024,
-    "citation_id": "R2-0066"
+    "citation_id": "R2-0061"
   },
   {
     "title": "generalized contrastive divergence: joint training of energy-based model and diffusion model through inverse reinforcement learning",
@@ -1570,7 +1426,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "NeurIPS",
     "_query_year": 2023,
-    "citation_id": "R2-0067"
+    "citation_id": "R2-0062"
   },
   {
     "title": "branchformer: parallel mlp-attention architectures to capture local and global context for speech recognition and understanding",
@@ -1593,7 +1449,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "ICML",
     "_query_year": 2022,
-    "citation_id": "R2-0068"
+    "citation_id": "R2-0063"
   },
   {
     "title": "nacl: noise-robust cross-domain contrastive learning for unsupervised domain adaptation",
@@ -1603,9 +1459,9 @@
     ],
     "venue": "Machine Learning",
     "year": 2023,
-    "doi": "10.1007/s10994-023-06343-8",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1007/s10994-023-06343-8",
+    "url": "",
     "volume": "112",
     "pages": "3473-3496",
     "publisher": "Springer Science and Business Media LLC",
@@ -1614,7 +1470,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "Journal of Machine Learning Research",
     "_query_year": 2023,
-    "citation_id": "R2-0069"
+    "citation_id": "R2-0064"
   },
   {
     "title": "minillm: knowledge distillation of large language models",
@@ -1637,7 +1493,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "ICLR",
     "_query_year": 2024,
-    "citation_id": "R2-0070"
+    "citation_id": "R2-0065"
   },
   {
     "title": "prompting large language models with answer heuristics for knowledge-based visual question answering",
@@ -1649,9 +1505,9 @@
     ],
     "venue": "2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2023,
-    "doi": "10.1109/cvpr52729.2023.01438",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52729.2023.01438",
+    "url": "",
     "volume": "",
     "pages": "14974-14983",
     "publisher": "IEEE",
@@ -1660,7 +1516,7 @@
     "_query_topic": "large language models",
     "_query_venue": "CVPR",
     "_query_year": 2023,
-    "citation_id": "R2-0071"
+    "citation_id": "R2-0066"
   },
   {
     "title": "game of gradients: mitigating irrelevant clients in federated learning",
@@ -1670,9 +1526,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2021,
-    "doi": "10.1609/aaai.v35i10.17093",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v35i10.17093",
+    "url": "",
     "volume": "35",
     "pages": "9046-9054",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -1681,7 +1537,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "AAAI",
     "_query_year": 2021,
-    "citation_id": "R2-0072"
+    "citation_id": "R2-0067"
   },
   {
     "title": "tebner: domain specific named entity recognition with type expanded boundary-aware network",
@@ -1707,7 +1563,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "EMNLP",
     "_query_year": 2021,
-    "citation_id": "R2-0073"
+    "citation_id": "R2-0068"
   },
   {
     "title": "how do large language models learn in-context? query and key matrices of in-context heads are two towers for metric learning",
@@ -1717,9 +1573,9 @@
     ],
     "venue": "EMNLP",
     "year": 2024,
-    "doi": "10.18653/v1/2024.emnlp-main.192",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/emnlp/YuA24a",
+    "url": "",
     "volume": "",
     "pages": "3281-3292",
     "publisher": "",
@@ -1728,7 +1584,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "EMNLP",
     "_query_year": 2024,
-    "citation_id": "R2-0074"
+    "citation_id": "R2-0069"
   },
   {
     "title": "uncovering the root of hate speech: a dataset for identifying hate instigating speech",
@@ -1739,9 +1595,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics: EMNLP 2023",
     "year": 2023,
-    "doi": "10.18653/v1/2023.findings-emnlp.412",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2023.findings-emnlp.412",
+    "url": "",
     "volume": "",
     "pages": "6236-6245",
     "publisher": "Association for Computational Linguistics",
@@ -1750,32 +1606,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "EMNLP",
     "_query_year": 2023,
-    "citation_id": "R2-0075"
-  },
-  {
-    "title": "detecting and tracking political abuse in social media",
-    "authors": [
-      "A. Ratkiewicz",
-      "M. Conover",
-      "M. Meiss",
-      "B. Gonçalves",
-      "A. Flammini",
-      "F. Menczer"
-    ],
-    "venue": "Proc. International AAAI Conference on Web and Social Media",
-    "year": 2021,
-    "doi": "10.1609/icwsm.v5i1.14127",
-    "arxiv_id": "",
-    "url": "https://openalex.org/W202178741",
-    "volume": "5",
-    "pages": "297-304",
-    "publisher": "",
-    "location": "",
-    "_source": "openalex",
-    "_query_topic": "diffusion models",
-    "_query_venue": "AAAI",
-    "_query_year": 2021,
-    "citation_id": "R2-0076"
+    "citation_id": "R2-0070"
   },
   {
     "title": "stationary diffusion state neural estimation for multiview clustering",
@@ -1798,7 +1629,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0077"
+    "citation_id": "R2-0071"
   },
   {
     "title": "unsupervised adaptation of question answering systems via generative self-training",
@@ -1811,9 +1642,9 @@
     ],
     "venue": "Proc. 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
     "year": 2020,
-    "doi": "10.18653/v1/2020.emnlp-main.87",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2020.emnlp-main.87/",
+    "url": "",
     "volume": "",
     "pages": "1148-1157",
     "publisher": "Association for Computational Linguistics",
@@ -1822,7 +1653,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "EMNLP",
     "_query_year": 2020,
-    "citation_id": "R2-0078"
+    "citation_id": "R2-0072"
   },
   {
     "title": "model-contrastive federated learning",
@@ -1833,9 +1664,9 @@
     ],
     "venue": "2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2021,
-    "doi": "10.1109/cvpr46437.2021.01057",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr46437.2021.01057",
+    "url": "",
     "volume": "",
     "pages": "10708-10717",
     "publisher": "IEEE",
@@ -1844,30 +1675,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "CVPR",
     "_query_year": 2021,
-    "citation_id": "R2-0079"
-  },
-  {
-    "title": "federated learning with manifold regularization and normalized update reaggregation",
-    "authors": [
-      "X. An",
-      "L. Shen",
-      "H. Hu",
-      "Y. Luo"
-    ],
-    "venue": "NeurIPS",
-    "year": 2023,
-    "doi": "",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/nips/AnS0L23",
-    "volume": "",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "federated learning",
-    "_query_venue": "NeurIPS",
-    "_query_year": 2023,
-    "citation_id": "R2-0080"
+    "citation_id": "R2-0073"
   },
   {
     "title": "link-context learning for multimodal llms",
@@ -1879,9 +1687,9 @@
     ],
     "venue": "2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2024,
-    "doi": "10.1109/cvpr52733.2024.02566",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52733.2024.02566",
+    "url": "",
     "volume": "",
     "pages": "27166-27175",
     "publisher": "IEEE",
@@ -1890,7 +1698,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "CVPR",
     "_query_year": 2024,
-    "citation_id": "R2-0081"
+    "citation_id": "R2-0074"
   },
   {
     "title": "end-to-end attention/transformer model for solar flare prediction from multivariate time series data",
@@ -1902,9 +1710,9 @@
     ],
     "venue": "ICMLA",
     "year": 2023,
-    "doi": "10.1109/icmla58977.2023.00083",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icmla/AlshammariSHB23",
+    "url": "",
     "volume": "",
     "pages": "558-565",
     "publisher": "",
@@ -1913,7 +1721,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0082"
+    "citation_id": "R2-0075"
   },
   {
     "title": "e2e-vlp: end-to-end vision-language pre-training enhanced by visual learning",
@@ -1928,9 +1736,9 @@
     ],
     "venue": "Proc. 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)",
     "year": 2021,
-    "doi": "10.18653/v1/2021.acl-long.42",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2021.acl-long.42/",
+    "url": "",
     "volume": "",
     "pages": "503-513",
     "publisher": "Association for Computational Linguistics",
@@ -1939,33 +1747,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "ACL",
     "_query_year": 2021,
-    "citation_id": "R2-0083"
-  },
-  {
-    "title": "thinking about gpt-3 in-context learning for biomedical ie? think again",
-    "authors": [
-      "B. Jimenez Gutierrez",
-      "N. McNeal",
-      "C. Washington",
-      "Y. Chen",
-      "L. Li",
-      "H. Sun",
-      "Y. Su"
-    ],
-    "venue": "EMNLP",
-    "year": 2022,
-    "doi": "10.18653/v1/2022.findings-emnlp.329",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/emnlp/GutierrezMWCLS022",
-    "volume": "",
-    "pages": "4497-4512",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "in-context learning",
-    "_query_venue": "EMNLP",
-    "_query_year": 2022,
-    "citation_id": "R2-0084"
+    "citation_id": "R2-0076"
   },
   {
     "title": "multiple degradation and reconstruction network for single image denoising via knowledge distillation",
@@ -1991,7 +1773,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "CVPR",
     "_query_year": 2022,
-    "citation_id": "R2-0085"
+    "citation_id": "R2-0078"
   },
   {
     "title": "secalign: defending against prompt injection with preference optimization",
@@ -2016,7 +1798,7 @@
     "_query_topic": "prompt injection",
     "_query_venue": "NeurIPS",
     "_query_year": 2024,
-    "citation_id": "R2-0086"
+    "citation_id": "R2-0079"
   },
   {
     "title": "temporal supervised contrastive learning for modeling patient risk progression",
@@ -2038,7 +1820,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2023,
-    "citation_id": "R2-0087"
+    "citation_id": "R2-0080"
   },
   {
     "title": "client-customized adaptation for parameter-efficient federated learning",
@@ -2062,7 +1844,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "ACL",
     "_query_year": 2023,
-    "citation_id": "R2-0088"
+    "citation_id": "R2-0081"
   },
   {
     "title": "uctransnet: rethinking the skip connections in u-net from a channel-wise perspective with transformer",
@@ -2074,9 +1856,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2022,
-    "doi": "10.1609/aaai.v36i3.20144",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://openalex.org/W3197957534",
+    "url": "",
     "volume": "36",
     "pages": "2441-2449",
     "publisher": "Association for the Advancement of Artificial Intelligence",
@@ -2085,54 +1867,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0089"
-  },
-  {
-    "title": "synchronous interactive decoding for multilingual neural machine translation",
-    "authors": [
-      "H. He",
-      "Q. Wang",
-      "Z. Yu",
-      "Y. Zhao",
-      "J. Zhang",
-      "C. Zong"
-    ],
-    "venue": "AAAI",
-    "year": 2021,
-    "doi": "10.1609/aaai.v35i14.17535",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/aaai/HeWYZZZ21",
-    "volume": "",
-    "pages": "12981-12988",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "neural machine translation",
-    "_query_venue": "AAAI",
-    "_query_year": 2021,
-    "citation_id": "R2-0090"
-  },
-  {
-    "title": "cocos: enhancing semi-supervised learning on graphs with unlabeled data via contrastive context sharing",
-    "authors": [
-      "S. Xie",
-      "D. Sun Handason Tam",
-      "W. Cheong Lau"
-    ],
-    "venue": "Proc. AAAI Conference on Artificial Intelligence",
-    "year": 2022,
-    "doi": "10.1609/aaai.v36i4.20347",
-    "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v36i4.20347",
-    "volume": "36",
-    "pages": "4272-4280",
-    "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
-    "location": "",
-    "_source": "crossref",
-    "_query_topic": "in-context learning",
-    "_query_venue": "AAAI",
-    "_query_year": 2022,
-    "citation_id": "R2-0091"
+    "citation_id": "R2-0082"
   },
   {
     "title": "end-to-end speech recognition and disfluency removal",
@@ -2153,7 +1888,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "EMNLP",
     "_query_year": 2020,
-    "citation_id": "R2-0092"
+    "citation_id": "R2-0083"
   },
   {
     "title": "effects of number of filters of convolutional layers on speech recognition model accuracy",
@@ -2174,7 +1909,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "ICML",
     "_query_year": 2020,
-    "citation_id": "R2-0093"
+    "citation_id": "R2-0084"
   },
   {
     "title": "revisiting the role of language priors in vision-language models",
@@ -2198,7 +1933,7 @@
     "_query_topic": "vision language models",
     "_query_venue": "ICML",
     "_query_year": 2024,
-    "citation_id": "R2-0094"
+    "citation_id": "R2-0085"
   },
   {
     "title": "transformer feed-forward layers build predictions by promoting concepts in the vocabulary space",
@@ -2210,9 +1945,9 @@
     ],
     "venue": "Proc. 2022 Conference on Empirical Methods in Natural Language Processing",
     "year": 2022,
-    "doi": "10.18653/v1/2022.emnlp-main.3",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2022.emnlp-main.3/",
+    "url": "",
     "volume": "",
     "pages": "30-45",
     "publisher": "Association for Computational Linguistics",
@@ -2221,7 +1956,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "EMNLP",
     "_query_year": 2022,
-    "citation_id": "R2-0095"
+    "citation_id": "R2-0086"
   },
   {
     "title": "anomalygpt: detecting industrial anomalies using large vision-language models",
@@ -2246,7 +1981,7 @@
     "_query_topic": "vision language models",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0096"
+    "citation_id": "R2-0087"
   },
   {
     "title": "continual reinforcement learning in 3d non-stationary environments",
@@ -2269,7 +2004,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "CVPR",
     "_query_year": 2020,
-    "citation_id": "R2-0097"
+    "citation_id": "R2-0088"
   },
   {
     "title": "turning strengths into weaknesses: a certified robustness inspired attack framework against graph neural networks",
@@ -2280,9 +2015,9 @@
     ],
     "venue": "2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2023,
-    "doi": "10.1109/cvpr52729.2023.01573",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52729.2023.01573",
+    "url": "",
     "volume": "",
     "pages": "16394-16403",
     "publisher": "IEEE",
@@ -2291,7 +2026,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "CVPR",
     "_query_year": 2023,
-    "citation_id": "R2-0098"
+    "citation_id": "R2-0089"
   },
   {
     "title": "federated learning of generalized linear causal networks",
@@ -2302,9 +2037,9 @@
     ],
     "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "year": 2024,
-    "doi": "10.1109/tpami.2024.3381860",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/tpami.2024.3381860",
+    "url": "",
     "volume": "46",
     "pages": "6623-6636",
     "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
@@ -2313,7 +2048,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2024,
-    "citation_id": "R2-0099"
+    "citation_id": "R2-0090"
   },
   {
     "title": "model-based diagnosis of multi-agent systems: a survey",
@@ -2334,7 +2069,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0100"
+    "citation_id": "R2-0091"
   },
   {
     "title": "a game-theoretic framework for managing risk in multi-agent systems",
@@ -2350,7 +2085,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/SlumbersMBM0023",
+    "url": "",
     "volume": "",
     "pages": "32059-32087",
     "publisher": "",
@@ -2359,30 +2094,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0101"
-  },
-  {
-    "title": "ggnn@causal news corpus 2022:gated graph neural networks for causal event classification from social-political news articles",
-    "authors": [
-      "P. Trust",
-      "R. Minghim",
-      "E. Milos",
-      "P. Kadusabe"
-    ],
-    "venue": "CASE@EMNLP",
-    "year": 2022,
-    "doi": "10.18653/v1/2022.case-1.12",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/case-ws/TrustMMK22",
-    "volume": "",
-    "pages": "85-90",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "graph neural networks",
-    "_query_venue": "EMNLP",
-    "_query_year": 2022,
-    "citation_id": "R2-0102"
+    "citation_id": "R2-0092"
   },
   {
     "title": "towards enhancing time series contrastive learning: a dynamic bad pair mining approach",
@@ -2405,7 +2117,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "ICLR",
     "_query_year": 2024,
-    "citation_id": "R2-0103"
+    "citation_id": "R2-0093"
   },
   {
     "title": "progressive translation: improving domain robustness of neural machine translation with intermediate sequences",
@@ -2427,7 +2139,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "ACL",
     "_query_year": 2023,
-    "citation_id": "R2-0104"
+    "citation_id": "R2-0094"
   },
   {
     "title": "diverse retrieval-augmented in-context learning for dialogue state tracking",
@@ -2437,9 +2149,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics: ACL 2023",
     "year": 2023,
-    "doi": "10.18653/v1/2023.findings-acl.344",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2023.findings-acl.344",
+    "url": "",
     "volume": "",
     "pages": "5570-5585",
     "publisher": "Association for Computational Linguistics",
@@ -2448,7 +2160,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "ACL",
     "_query_year": 2023,
-    "citation_id": "R2-0105"
+    "citation_id": "R2-0095"
   },
   {
     "title": "attention-based contrastive learning for winograd schemas",
@@ -2458,9 +2170,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics: EMNLP 2021",
     "year": 2021,
-    "doi": "10.18653/v1/2021.findings-emnlp.208",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2021.findings-emnlp.208",
+    "url": "",
     "volume": "",
     "pages": "2428-2434",
     "publisher": "Association for Computational Linguistics",
@@ -2469,7 +2181,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "EMNLP",
     "_query_year": 2021,
-    "citation_id": "R2-0106"
+    "citation_id": "R2-0096"
   },
   {
     "title": "theory of mind for multi-agent collaboration via large language models",
@@ -2495,31 +2207,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "EMNLP",
     "_query_year": 2023,
-    "citation_id": "R2-0107"
-  },
-  {
-    "title": "inverse reinforcement learning without reinforcement learning",
-    "authors": [
-      "G. Swamy",
-      "D. Wu",
-      "S. Choudhury",
-      "D. Bagnell",
-      "Z. Steven Wu"
-    ],
-    "venue": "ICML",
-    "year": 2023,
-    "doi": "",
-    "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/SwamyWCBW23",
-    "volume": "",
-    "pages": "33299-33318",
-    "publisher": "",
-    "location": "",
-    "_source": "dblp",
-    "_query_topic": "reinforcement learning",
-    "_query_venue": "ICML",
-    "_query_year": 2023,
-    "citation_id": "R2-0108"
+    "citation_id": "R2-0097"
   },
   {
     "title": "masked-attention mask transformer for universal image segmentation",
@@ -2532,9 +2220,9 @@
     ],
     "venue": "CVPR",
     "year": 2022,
-    "doi": "10.1109/cvpr52688.2022.00135",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/cvpr/ChengMSKG22",
+    "url": "",
     "volume": "",
     "pages": "1280-1289",
     "publisher": "",
@@ -2543,7 +2231,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "CVPR",
     "_query_year": 2022,
-    "citation_id": "R2-0109"
+    "citation_id": "R2-0099"
   },
   {
     "title": "learning pattern-based extractors from natural language and knowledge graphs: applying large language models to wikipedia and linked open data",
@@ -2552,9 +2240,9 @@
     ],
     "venue": "AAAI",
     "year": 2024,
-    "doi": "10.1609/aaai.v38i21.30406",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/aaai/Ringwald24",
+    "url": "",
     "volume": "",
     "pages": "23411-23412",
     "publisher": "",
@@ -2563,29 +2251,7 @@
     "_query_topic": "large language models",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0110"
-  },
-  {
-    "title": "learning active subspaces and discovering important features with gaussian radial basis functions neural networks",
-    "authors": [
-      "D. D'Agostino",
-      "I. Ilievski",
-      "C. Annette Shoemaker"
-    ],
-    "venue": "arXiv",
-    "year": 2023,
-    "doi": "",
-    "arxiv_id": "2307.05639v2",
-    "url": "http://arxiv.org/abs/2307.05639v2",
-    "volume": "",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "arxiv",
-    "_query_topic": "graph neural networks",
-    "_query_venue": "NeurIPS",
-    "_query_year": 2023,
-    "citation_id": "R2-0111"
+    "citation_id": "R2-0100"
   },
   {
     "title": "probing toxic content in large pre-trained language models",
@@ -2609,7 +2275,7 @@
     "_query_topic": "large language models",
     "_query_venue": "ACL",
     "_query_year": 2021,
-    "citation_id": "R2-0112"
+    "citation_id": "R2-0102"
   },
   {
     "title": "ovl: one-view learning for human retrieval",
@@ -2630,7 +2296,7 @@
     "_query_topic": "retrieval augmented generation",
     "_query_venue": "AAAI",
     "_query_year": 2020,
-    "citation_id": "R2-0113"
+    "citation_id": "R2-0103"
   },
   {
     "title": "tagnet: learning configurable context pathways for semantic segmentation",
@@ -2656,7 +2322,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2023,
-    "citation_id": "R2-0114"
+    "citation_id": "R2-0104"
   },
   {
     "title": "covariance attention for semantic segmentation",
@@ -2679,7 +2345,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2020,
-    "citation_id": "R2-0115"
+    "citation_id": "R2-0105"
   },
   {
     "title": "stochastically robust personalized ranking for lsh recommendation retrieval",
@@ -2689,9 +2355,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2020,
-    "doi": "10.1609/aaai.v34i04.5889",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v34i04.5889",
+    "url": "",
     "volume": "34",
     "pages": "4594-4601",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -2700,7 +2366,7 @@
     "_query_topic": "retrieval augmented generation",
     "_query_venue": "AAAI",
     "_query_year": 2020,
-    "citation_id": "R2-0116"
+    "citation_id": "R2-0106"
   },
   {
     "title": "transformer interpretability beyond attention visualization",
@@ -2711,9 +2377,9 @@
     ],
     "venue": "2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2021,
-    "doi": "10.1109/cvpr46437.2021.00084",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr46437.2021.00084",
+    "url": "",
     "volume": "",
     "pages": "782-791",
     "publisher": "IEEE",
@@ -2722,7 +2388,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "CVPR",
     "_query_year": 2021,
-    "citation_id": "R2-0117"
+    "citation_id": "R2-0107"
   },
   {
     "title": "blip-2: bootstrapping language-image pre-training with frozen image encoders and large language models",
@@ -2736,7 +2402,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/0008LSH23",
+    "url": "",
     "volume": "",
     "pages": "19730-19742",
     "publisher": "",
@@ -2745,7 +2411,7 @@
     "_query_topic": "large language models",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0118"
+    "citation_id": "R2-0108"
   },
   {
     "title": "beyond text: frozen large language models in visual signal comprehension",
@@ -2767,7 +2433,7 @@
     "_query_topic": "large language models",
     "_query_venue": "CVPR",
     "_query_year": 2024,
-    "citation_id": "R2-0119"
+    "citation_id": "R2-0109"
   },
   {
     "title": "modscan: measuring stereotypical bias in large vision-language models from vision and language modalities",
@@ -2792,7 +2458,7 @@
     "_query_topic": "vision language models",
     "_query_venue": "EMNLP",
     "_query_year": 2024,
-    "citation_id": "R2-0120"
+    "citation_id": "R2-0110"
   },
   {
     "title": "fast and constrained absent keyphrase generation by prompt-based learning",
@@ -2805,9 +2471,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2022,
-    "doi": "10.1609/aaai.v36i10.21402",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v36i10.21402",
+    "url": "",
     "volume": "36",
     "pages": "11495-11503",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -2816,7 +2482,7 @@
     "_query_topic": "prompt injection",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0121"
+    "citation_id": "R2-0111"
   },
   {
     "title": "are transformers effective for time series forecasting?",
@@ -2828,9 +2494,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2023,
-    "doi": "10.1609/aaai.v37i9.26317",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://openalex.org/W4382203079",
+    "url": "",
     "volume": "37",
     "pages": "11121-11128",
     "publisher": "Association for the Advancement of Artificial Intelligence",
@@ -2839,7 +2505,7 @@
     "_query_topic": "large language models",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0122"
+    "citation_id": "R2-0112"
   },
   {
     "title": "caff-dino: multi-spectral object detection transformers with cross-attention features fusion",
@@ -2850,9 +2516,9 @@
     ],
     "venue": "CVPR Workshops",
     "year": 2024,
-    "doi": "10.1109/cvprw63382.2024.00309",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/cvpr/HelvigAT22",
+    "url": "",
     "volume": "",
     "pages": "3037-3046",
     "publisher": "",
@@ -2861,7 +2527,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "CVPR",
     "_query_year": 2024,
-    "citation_id": "R2-0123"
+    "citation_id": "R2-0113"
   },
   {
     "title": "how2sign: a large-scale multimodal dataset for continuous american sign language",
@@ -2888,7 +2554,7 @@
     "_query_topic": "large language models",
     "_query_venue": "CVPR",
     "_query_year": 2021,
-    "citation_id": "R2-0124"
+    "citation_id": "R2-0114"
   },
   {
     "title": "mage: machine-generated text detection in the wild",
@@ -2916,7 +2582,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "ACL",
     "_query_year": 2024,
-    "citation_id": "R2-0125"
+    "citation_id": "R2-0115"
   },
   {
     "title": "large language models can learn representation in natural language",
@@ -2928,9 +2594,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics ACL 2024",
     "year": 2024,
-    "doi": "10.18653/v1/2024.findings-acl.542",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2024.findings-acl.542",
+    "url": "",
     "volume": "",
     "pages": "9145-9154",
     "publisher": "Association for Computational Linguistics",
@@ -2939,7 +2605,7 @@
     "_query_topic": "large language models",
     "_query_venue": "ACL",
     "_query_year": 2024,
-    "citation_id": "R2-0126"
+    "citation_id": "R2-0116"
   },
   {
     "title": "exploring clip for assessing the look and feel of images",
@@ -2950,9 +2616,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2023,
-    "doi": "10.1609/aaai.v37i2.25353",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://openalex.org/W4382462760",
+    "url": "",
     "volume": "37",
     "pages": "2555-2563",
     "publisher": "Association for the Advancement of Artificial Intelligence",
@@ -2961,7 +2627,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0127"
+    "citation_id": "R2-0117"
   },
   {
     "title": "efficient offline reinforcement learning with relaxed conservatism",
@@ -2983,29 +2649,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2024,
-    "citation_id": "R2-0128"
-  },
-  {
-    "title": "beyond text: frozen large language models in visual signal comprehension",
-    "authors": [
-      "L. Zhu",
-      "F. Wei",
-      "Y. Lu"
-    ],
-    "venue": "2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
-    "year": 2024,
-    "doi": "10.1109/cvpr52733.2024.02554",
-    "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52733.2024.02554",
-    "volume": "",
-    "pages": "27037-27047",
-    "publisher": "IEEE",
-    "location": "",
-    "_source": "crossref",
-    "_query_topic": "large language models",
-    "_query_venue": "CVPR",
-    "_query_year": 2024,
-    "citation_id": "R2-0129"
+    "citation_id": "R2-0118"
   },
   {
     "title": "docoie: a document-level context-aware dataset for openie",
@@ -3018,9 +2662,9 @@
     ],
     "venue": "Findings of the Association for Computational Linguistics: ACL-IJCNLP 2021",
     "year": 2021,
-    "doi": "10.18653/v1/2021.findings-acl.210",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2021.findings-acl.210",
+    "url": "",
     "volume": "",
     "pages": "2377-2389",
     "publisher": "Association for Computational Linguistics",
@@ -3029,7 +2673,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "ACL",
     "_query_year": 2021,
-    "citation_id": "R2-0130"
+    "citation_id": "R2-0119"
   },
   {
     "title": "learning to attack federated learning: a model-based reinforcement learning attack framework",
@@ -3051,7 +2695,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2022,
-    "citation_id": "R2-0131"
+    "citation_id": "R2-0120"
   },
   {
     "title": "mapping language to programs using multiple reward components with inverse reinforcement learning",
@@ -3072,7 +2716,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "EMNLP",
     "_query_year": 2021,
-    "citation_id": "R2-0132"
+    "citation_id": "R2-0121"
   },
   {
     "title": "partner selection for the emergence of cooperation in multi-agent systems using reinforcement learning",
@@ -3094,7 +2738,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "AAAI",
     "_query_year": 2020,
-    "citation_id": "R2-0133"
+    "citation_id": "R2-0122"
   },
   {
     "title": "adversarial supervised contrastive learning",
@@ -3118,7 +2762,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "Journal of Machine Learning Research",
     "_query_year": 2022,
-    "citation_id": "R2-0134"
+    "citation_id": "R2-0123"
   },
   {
     "title": "paraformer: parallel attention transformer for efficient feature matching",
@@ -3141,29 +2785,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0135"
-  },
-  {
-    "title": "cocos: enhancing semi-supervised learning on graphs with unlabeled data via contrastive context sharing",
-    "authors": [
-      "S. Xie",
-      "D. Sun Handason Tam",
-      "W. Cheong Lau"
-    ],
-    "venue": "Proc. AAAI Conference on Artificial Intelligence",
-    "year": 2022,
-    "doi": "10.1609/aaai.v36i4.20347",
-    "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v36i4.20347",
-    "volume": "36",
-    "pages": "4272-4280",
-    "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
-    "location": "",
-    "_source": "crossref",
-    "_query_topic": "in-context learning",
-    "_query_venue": "AAAI",
-    "_query_year": 2022,
-    "citation_id": "R2-0136"
+    "citation_id": "R2-0124"
   },
   {
     "title": "medsegdiff-v2: diffusion-based medical image segmentation with transformer",
@@ -3188,7 +2810,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0137"
+    "citation_id": "R2-0125"
   },
   {
     "title": "data augmentation for children's speech recognition -- the \"ethiopian\" system for the slt 2021 children speech recognition challenge",
@@ -3204,8 +2826,8 @@
     "venue": "arXiv",
     "year": 2020,
     "doi": "",
-    "arxiv_id": "2011.04547v1",
-    "url": "http://arxiv.org/abs/2011.04547v1",
+    "arxiv_id": "",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -3214,7 +2836,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "NeurIPS",
     "_query_year": 2020,
-    "citation_id": "R2-0138"
+    "citation_id": "R2-0126"
   },
   {
     "title": "revitalizing bahnaric language through neural machine translation: challenges, strategies, and promising outcomes",
@@ -3242,7 +2864,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0139"
+    "citation_id": "R2-0127"
   },
   {
     "title": "structured knowledge distillation for dense prediction",
@@ -3254,9 +2876,9 @@
     ],
     "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "year": 2023,
-    "doi": "10.1109/tpami.2020.3001940",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/tpami.2020.3001940",
+    "url": "",
     "volume": "45",
     "pages": "7035-7049",
     "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
@@ -3265,7 +2887,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2023,
-    "citation_id": "R2-0140"
+    "citation_id": "R2-0128"
   },
   {
     "title": "an information bottleneck perspective for effective noise filtering on retrieval-augmented generation",
@@ -3283,9 +2905,9 @@
     ],
     "venue": "ACL",
     "year": 2024,
-    "doi": "10.18653/v1/2024.acl-long.59",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/acl/0025FDGY0CCC024",
+    "url": "",
     "volume": "",
     "pages": "1044-1069",
     "publisher": "",
@@ -3294,7 +2916,7 @@
     "_query_topic": "retrieval augmented generation",
     "_query_venue": "ACL",
     "_query_year": 2024,
-    "citation_id": "R2-0141"
+    "citation_id": "R2-0129"
   },
   {
     "title": "retrieval augmented code generation and summarization",
@@ -3318,7 +2940,7 @@
     "_query_topic": "retrieval augmented generation",
     "_query_venue": "EMNLP",
     "_query_year": 2021,
-    "citation_id": "R2-0142"
+    "citation_id": "R2-0130"
   },
   {
     "title": "timesurl: self-supervised contrastive learning for universal time series representation learning",
@@ -3328,9 +2950,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2024,
-    "doi": "10.1609/aaai.v38i12.29299",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v38i12.29299",
+    "url": "",
     "volume": "38",
     "pages": "13918-13926",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -3339,7 +2961,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0143"
+    "citation_id": "R2-0131"
   },
   {
     "title": "stabilizing extreme q-learning by maclaurin expansion",
@@ -3362,7 +2984,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2024,
-    "citation_id": "R2-0144"
+    "citation_id": "R2-0132"
   },
   {
     "title": "watch or listen: robust audio-visual speech recognition with visual corruption modeling and reliability scoring",
@@ -3374,9 +2996,9 @@
     ],
     "venue": "2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2023,
-    "doi": "10.1109/cvpr52729.2023.01801",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52729.2023.01801",
+    "url": "",
     "volume": "",
     "pages": "18783-18794",
     "publisher": "IEEE",
@@ -3385,28 +3007,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "CVPR",
     "_query_year": 2023,
-    "citation_id": "R2-0145"
-  },
-  {
-    "title": "timesurl: self-supervised contrastive learning for universal time series representation learning",
-    "authors": [
-      "J. Liu",
-      "S. Chen"
-    ],
-    "venue": "Proc. AAAI Conference on Artificial Intelligence",
-    "year": 2024,
-    "doi": "10.1609/aaai.v38i12.29299",
-    "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v38i12.29299",
-    "volume": "38",
-    "pages": "13918-13926",
-    "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
-    "location": "",
-    "_source": "crossref",
-    "_query_topic": "contrastive learning",
-    "_query_venue": "AAAI",
-    "_query_year": 2024,
-    "citation_id": "R2-0146"
+    "citation_id": "R2-0133"
   },
   {
     "title": "revisiting label smoothing and knowledge distillation compatibility: what was missing?",
@@ -3429,56 +3030,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "ICML",
     "_query_year": 2022,
-    "citation_id": "R2-0147"
-  },
-  {
-    "title": "graph neural networks in network neuroscience",
-    "authors": [
-      "A. Bessadok",
-      "M. Mahjoub",
-      "I. Rekik"
-    ],
-    "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
-    "year": 2021,
-    "doi": "10.1109/tpami.2022.3209686",
-    "arxiv_id": "2106.03535",
-    "url": "",
-    "volume": "45",
-    "pages": "5833-5848",
-    "publisher": "",
-    "location": "",
-    "_source": "semanticscholar",
-    "_query_topic": "graph neural networks",
-    "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
-    "_query_year": 2021,
-    "citation_id": "R2-0148"
-  },
-  {
-    "title": "an effective pronunciation assessment approach leveraging hierarchical transformers and pre-training strategies",
-    "authors": [
-      "B. Yan",
-      "J. Li",
-      "Y. Wang",
-      "H. Wei Wang",
-      "T. Lo",
-      "Y. Hsu",
-      "W. Chao",
-      "B. Chen"
-    ],
-    "venue": "Proc. 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
-    "year": 2024,
-    "doi": "10.18653/v1/2024.acl-long.95",
-    "arxiv_id": "",
-    "url": "https://aclanthology.org/2024.acl-long.95/",
-    "volume": "",
-    "pages": "1737-1747",
-    "publisher": "Association for Computational Linguistics",
-    "location": "Bangkok, Thailand",
-    "_source": "acl_anthology",
-    "_query_topic": "transformer attention",
-    "_query_venue": "ACL",
-    "_query_year": 2024,
-    "citation_id": "R2-0149"
+    "citation_id": "R2-0134"
   },
   {
     "title": "consistent diffusion meets tweedie: training exact ambient diffusion models with noisy data",
@@ -3500,7 +3052,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ICML",
     "_query_year": 2024,
-    "citation_id": "R2-0150"
+    "citation_id": "R2-0136"
   },
   {
     "title": "analytic-dpm: an analytic estimate of the optimal reverse variance in diffusion probabilistic models",
@@ -3523,34 +3075,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ICLR",
     "_query_year": 2022,
-    "citation_id": "R2-0151"
-  },
-  {
-    "title": "generative explore-exploit: training-free optimization of generative recommender systems using llm optimizers",
-    "authors": [
-      "L. Kerem Senel",
-      "B. Fetahu",
-      "D. Yoshida",
-      "Z. Chen",
-      "G. Castellucci",
-      "N. Vedula",
-      "J. Ingyu Choi",
-      "S. Malmasi"
-    ],
-    "venue": "Proc. 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
-    "year": 2024,
-    "doi": "10.18653/v1/2024.acl-long.295",
-    "arxiv_id": "",
-    "url": "https://aclanthology.org/2024.acl-long.295/",
-    "volume": "",
-    "pages": "5396-5420",
-    "publisher": "Association for Computational Linguistics",
-    "location": "Bangkok, Thailand",
-    "_source": "acl_anthology",
-    "_query_topic": "multi-agent systems",
-    "_query_venue": "ACL",
-    "_query_year": 2024,
-    "citation_id": "R2-0152"
+    "citation_id": "R2-0137"
   },
   {
     "title": "improving adversarial robustness of few-shot learning with contrastive learning and hypersphere embedding",
@@ -3573,7 +3098,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0153"
+    "citation_id": "R2-0139"
   },
   {
     "title": "serving graph compression for graph neural networks",
@@ -3588,7 +3113,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/iclr/SiYRHK23",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -3597,7 +3122,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "ICLR",
     "_query_year": 2023,
-    "citation_id": "R2-0154"
+    "citation_id": "R2-0140"
   },
   {
     "title": "data-efficient contrastive self-supervised learning: most beneficial examples for supervised learning contribute the least",
@@ -3618,7 +3143,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2023,
-    "citation_id": "R2-0155"
+    "citation_id": "R2-0141"
   },
   {
     "title": "parallel and distributed graph neural networks: an in-depth concurrency analysis",
@@ -3639,7 +3164,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
     "_query_year": 2024,
-    "citation_id": "R2-0156"
+    "citation_id": "R2-0142"
   },
   {
     "title": "ts2vec: towards universal representation of time series",
@@ -3654,9 +3179,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2022,
-    "doi": "10.1609/aaai.v36i8.20881",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://openalex.org/W3199148273",
+    "url": "",
     "volume": "36",
     "pages": "8980-8987",
     "publisher": "Association for the Advancement of Artificial Intelligence",
@@ -3665,7 +3190,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0157"
+    "citation_id": "R2-0143"
   },
   {
     "title": "understanding the role of the projector in knowledge distillation",
@@ -3686,7 +3211,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0158"
+    "citation_id": "R2-0144"
   },
   {
     "title": "deep graph random process for relational-thinking-based speech recognition",
@@ -3700,7 +3225,7 @@
     "year": 2020,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/HuangXWW20",
+    "url": "",
     "volume": "",
     "pages": "4531-4541",
     "publisher": "",
@@ -3709,7 +3234,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "ICML",
     "_query_year": 2020,
-    "citation_id": "R2-0159"
+    "citation_id": "R2-0145"
   },
   {
     "title": "probing natural language inference models through semantic fragments",
@@ -3721,9 +3246,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2020,
-    "doi": "10.1609/aaai.v34i05.6397",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v34i05.6397",
+    "url": "",
     "volume": "34",
     "pages": "8713-8721",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -3732,7 +3257,7 @@
     "_query_topic": "large language models",
     "_query_venue": "AAAI",
     "_query_year": 2020,
-    "citation_id": "R2-0160"
+    "citation_id": "R2-0146"
   },
   {
     "title": "embodied, intelligent communication for multi-agent cooperation",
@@ -3741,9 +3266,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2023,
-    "doi": "10.1609/aaai.v37i13.26928",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v37i13.26928",
+    "url": "",
     "volume": "37",
     "pages": "16135-16136",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -3752,7 +3277,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0161"
+    "citation_id": "R2-0147"
   },
   {
     "title": "improving dialog systems for negotiation with personality modeling",
@@ -3763,9 +3288,9 @@
     ],
     "venue": "Proc. 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)",
     "year": 2021,
-    "doi": "10.18653/v1/2021.acl-long.56",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2021.acl-long.56/",
+    "url": "",
     "volume": "",
     "pages": "681-693",
     "publisher": "Association for Computational Linguistics",
@@ -3774,7 +3299,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "ACL",
     "_query_year": 2021,
-    "citation_id": "R2-0162"
+    "citation_id": "R2-0148"
   },
   {
     "title": "towards fault-tolerant federated and distributed machine learning",
@@ -3783,9 +3308,9 @@
     ],
     "venue": "Proc. AAAI Symposium Series",
     "year": 2024,
-    "doi": "10.1609/aaaiss.v3i1.31220",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaaiss.v3i1.31220",
+    "url": "",
     "volume": "3",
     "pages": "306-306",
     "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
@@ -3794,29 +3319,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "AAAI",
     "_query_year": 2024,
-    "citation_id": "R2-0163"
-  },
-  {
-    "title": "augmenting the action space with conventions to improve multi-agent cooperation in hanabi",
-    "authors": [
-      "F. Bredell",
-      "H. A. Engelbrecht",
-      "J. C. Schoeman"
-    ],
-    "venue": "arXiv",
-    "year": 2024,
-    "doi": "",
-    "arxiv_id": "2412.06333v3",
-    "url": "http://arxiv.org/abs/2412.06333v3",
-    "volume": "",
-    "pages": "",
-    "publisher": "",
-    "location": "",
-    "_source": "arxiv",
-    "_query_topic": "multi-agent systems",
-    "_query_venue": "NeurIPS",
-    "_query_year": 2024,
-    "citation_id": "R2-0164"
+    "citation_id": "R2-0149"
   },
   {
     "title": "a study on sample diversity in generative models: gans vs. diffusion models",
@@ -3836,7 +3339,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ICLR",
     "_query_year": 2023,
-    "citation_id": "R2-0165"
+    "citation_id": "R2-0150"
   },
   {
     "title": "robot behavior-tree-based task generation with large language models",
@@ -3848,7 +3351,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/aaaiss/0007L23",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -3857,7 +3360,7 @@
     "_query_topic": "large language models",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0166"
+    "citation_id": "R2-0151"
   },
   {
     "title": "l2xgnn: learning to explain graph neural networks",
@@ -3867,9 +3370,9 @@
     ],
     "venue": "Machine Learning",
     "year": 2024,
-    "doi": "10.1007/s10994-024-06576-1",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1007/s10994-024-06576-1",
+    "url": "",
     "volume": "113",
     "pages": "6787-6809",
     "publisher": "Springer Science and Business Media LLC",
@@ -3878,7 +3381,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "Journal of Machine Learning Research",
     "_query_year": 2024,
-    "citation_id": "R2-0167"
+    "citation_id": "R2-0152"
   },
   {
     "title": "acoustic modeling for overlapping speech recognition: jhu chime-5 challenge system",
@@ -3893,8 +3396,8 @@
     "venue": "arXiv",
     "year": 2024,
     "doi": "",
-    "arxiv_id": "2405.11078v1",
-    "url": "http://arxiv.org/abs/2405.11078v1",
+    "arxiv_id": "",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -3903,7 +3406,7 @@
     "_query_topic": "speech recognition",
     "_query_venue": "NeurIPS",
     "_query_year": 2024,
-    "citation_id": "R2-0168"
+    "citation_id": "R2-0153"
   },
   {
     "title": "what is missing for graph homophily? disentangling graph homophily for graph neural networks",
@@ -3916,7 +3419,7 @@
     "year": 2024,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/nips/ZhengL024",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -3925,7 +3428,7 @@
     "_query_topic": "graph neural networks",
     "_query_venue": "NeurIPS",
     "_query_year": 2024,
-    "citation_id": "R2-0169"
+    "citation_id": "R2-0154"
   },
   {
     "title": "application of knowledge distillation to multi-task speech representation learning",
@@ -3948,7 +3451,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "NeurIPS",
     "_query_year": 2022,
-    "citation_id": "R2-0170"
+    "citation_id": "R2-0155"
   },
   {
     "title": "continual variational autoencoder via continual generative knowledge distillation",
@@ -3969,7 +3472,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0171"
+    "citation_id": "R2-0156"
   },
   {
     "title": "knowledge of cultural moral norms in large language models",
@@ -3990,7 +3493,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ACL",
     "_query_year": 2023,
-    "citation_id": "R2-0172"
+    "citation_id": "R2-0157"
   },
   {
     "title": "social learning spontaneously emerges by searching optimal heuristics with deep reinforcement learning",
@@ -4002,7 +3505,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/HaJ23",
+    "url": "",
     "volume": "",
     "pages": "12319-12338",
     "publisher": "",
@@ -4011,7 +3514,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0173"
+    "citation_id": "R2-0158"
   },
   {
     "title": "losing heads in the lottery: pruning transformer attention in neural machine translation",
@@ -4032,34 +3535,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "EMNLP",
     "_query_year": 2020,
-    "citation_id": "R2-0174"
-  },
-  {
-    "title": "an effective pronunciation assessment approach leveraging hierarchical transformers and pre-training strategies",
-    "authors": [
-      "B. Yan",
-      "J. Li",
-      "Y. Wang",
-      "H. Wei Wang",
-      "T. Lo",
-      "Y. Hsu",
-      "W. Chao",
-      "B. Chen"
-    ],
-    "venue": "Proc. 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
-    "year": 2024,
-    "doi": "10.18653/v1/2024.acl-long.95",
-    "arxiv_id": "",
-    "url": "https://aclanthology.org/2024.acl-long.95/",
-    "volume": "",
-    "pages": "1737-1747",
-    "publisher": "Association for Computational Linguistics",
-    "location": "Bangkok, Thailand",
-    "_source": "acl_anthology",
-    "_query_topic": "transformer attention",
-    "_query_venue": "ACL",
-    "_query_year": 2024,
-    "citation_id": "R2-0175"
+    "citation_id": "R2-0159"
   },
   {
     "title": "robust bandit learning with imperfect context",
@@ -4080,7 +3556,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "AAAI",
     "_query_year": 2021,
-    "citation_id": "R2-0176"
+    "citation_id": "R2-0160"
   },
   {
     "title": "label-aware hard negative sampling strategies with momentum contrastive learning for implicit hate speech detection",
@@ -4104,7 +3580,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "ACL",
     "_query_year": 2024,
-    "citation_id": "R2-0177"
+    "citation_id": "R2-0161"
   },
   {
     "title": "diffusion-enhanced patchmatch: a framework for arbitrary style transfer with diffusion models",
@@ -4114,9 +3590,9 @@
     ],
     "venue": "CVPR Workshops",
     "year": 2023,
-    "doi": "10.1109/cvprw59228.2023.00087",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/cvpr/HamazaspyanN23",
+    "url": "",
     "volume": "",
     "pages": "797-805",
     "publisher": "",
@@ -4125,7 +3601,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "CVPR",
     "_query_year": 2023,
-    "citation_id": "R2-0178"
+    "citation_id": "R2-0162"
   },
   {
     "title": "discovering hierarchical achievements in reinforcement learning via contrastive learning",
@@ -4148,7 +3624,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "NeurIPS",
     "_query_year": 2023,
-    "citation_id": "R2-0179"
+    "citation_id": "R2-0163"
   },
   {
     "title": "long-range sequence modeling with predictable sparse attention",
@@ -4159,9 +3635,9 @@
     ],
     "venue": "Proc. 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
     "year": 2022,
-    "doi": "10.18653/v1/2022.acl-long.19",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2022.acl-long.19/",
+    "url": "",
     "volume": "",
     "pages": "234-243",
     "publisher": "Association for Computational Linguistics",
@@ -4170,28 +3646,7 @@
     "_query_topic": "transformer attention",
     "_query_venue": "ACL",
     "_query_year": 2022,
-    "citation_id": "R2-0180"
-  },
-  {
-    "title": "mapping language to programs using multiple reward components with inverse reinforcement learning",
-    "authors": [
-      "S. Ghosh",
-      "S. Srivastava"
-    ],
-    "venue": "Findings of the Association for Computational Linguistics: EMNLP 2021",
-    "year": 2021,
-    "doi": "10.18653/v1/2021.findings-emnlp.125",
-    "arxiv_id": "",
-    "url": "https://doi.org/10.18653/v1/2021.findings-emnlp.125",
-    "volume": "",
-    "pages": "1449-1462",
-    "publisher": "Association for Computational Linguistics",
-    "location": "",
-    "_source": "crossref",
-    "_query_topic": "reinforcement learning",
-    "_query_venue": "EMNLP",
-    "_query_year": 2021,
-    "citation_id": "R2-0181"
+    "citation_id": "R2-0164"
   },
   {
     "title": "learning to model opponent learning (student abstract)",
@@ -4213,7 +3668,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "AAAI",
     "_query_year": 2020,
-    "citation_id": "R2-0182"
+    "citation_id": "R2-0165"
   },
   {
     "title": "feasibility consistent representation learning for safe reinforcement learning",
@@ -4236,7 +3691,7 @@
     "_query_topic": "reinforcement learning",
     "_query_venue": "ICML",
     "_query_year": 2024,
-    "citation_id": "R2-0183"
+    "citation_id": "R2-0166"
   },
   {
     "title": "itkd: interchange transfer-based knowledge distillation for 3d object detection",
@@ -4248,9 +3703,9 @@
     ],
     "venue": "2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
     "year": 2023,
-    "doi": "10.1109/cvpr52729.2023.01301",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://doi.org/10.1109/cvpr52729.2023.01301",
+    "url": "",
     "volume": "",
     "pages": "13540-13549",
     "publisher": "IEEE",
@@ -4259,7 +3714,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "CVPR",
     "_query_year": 2023,
-    "citation_id": "R2-0184"
+    "citation_id": "R2-0167"
   },
   {
     "title": "chain-of-dictionary prompting elicits translation in large language models",
@@ -4273,9 +3728,9 @@
     ],
     "venue": "Proc. 2024 Conference on Empirical Methods in Natural Language Processing",
     "year": 2024,
-    "doi": "10.18653/v1/2024.emnlp-main.55",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://aclanthology.org/2024.emnlp-main.55/",
+    "url": "",
     "volume": "",
     "pages": "958-976",
     "publisher": "Association for Computational Linguistics",
@@ -4284,30 +3739,7 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "EMNLP",
     "_query_year": 2024,
-    "citation_id": "R2-0185"
-  },
-  {
-    "title": "unsupervised pre-training for detection transformers",
-    "authors": [
-      "Z. Dai",
-      "B. Cai",
-      "Y. Lin",
-      "J. Chen"
-    ],
-    "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
-    "year": 2020,
-    "doi": "10.1109/tpami.2022.3216514",
-    "arxiv_id": "2011.09094",
-    "url": "",
-    "volume": "45",
-    "pages": "12772-12782",
-    "publisher": "",
-    "location": "",
-    "_source": "semanticscholar",
-    "_query_topic": "large language models",
-    "_query_venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
-    "_query_year": 2020,
-    "citation_id": "R2-0186"
+    "citation_id": "R2-0168"
   },
   {
     "title": "syntax-guided contrastive learning for pre-trained language model",
@@ -4330,7 +3762,7 @@
     "_query_topic": "contrastive learning",
     "_query_venue": "ACL",
     "_query_year": 2022,
-    "citation_id": "R2-0187"
+    "citation_id": "R2-0169"
   },
   {
     "title": "on the impact of knowledge distillation for model interpretability",
@@ -4344,7 +3776,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/icml/HanKCY23",
+    "url": "",
     "volume": "",
     "pages": "12389-12410",
     "publisher": "",
@@ -4353,28 +3785,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0188"
-  },
-  {
-    "title": "continual variational autoencoder via continual generative knowledge distillation",
-    "authors": [
-      "F. Ye",
-      "A. G. Bors"
-    ],
-    "venue": "Proc. AAAI Conference on Artificial Intelligence",
-    "year": 2023,
-    "doi": "10.1609/aaai.v37i9.26294",
-    "arxiv_id": "",
-    "url": "https://doi.org/10.1609/aaai.v37i9.26294",
-    "volume": "37",
-    "pages": "10918-10926",
-    "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
-    "location": "",
-    "_source": "crossref",
-    "_query_topic": "knowledge distillation",
-    "_query_venue": "AAAI",
-    "_query_year": 2023,
-    "citation_id": "R2-0189"
+    "citation_id": "R2-0170"
   },
   {
     "title": "fedproto: federated prototype learning across heterogeneous clients",
@@ -4389,9 +3800,9 @@
     ],
     "venue": "Proc. AAAI Conference on Artificial Intelligence",
     "year": 2022,
-    "doi": "10.1609/aaai.v36i8.20819",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://openalex.org/W4283796083",
+    "url": "",
     "volume": "36",
     "pages": "8432-8440",
     "publisher": "Association for the Advancement of Artificial Intelligence",
@@ -4400,7 +3811,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "AAAI",
     "_query_year": 2022,
-    "citation_id": "R2-0190"
+    "citation_id": "R2-0171"
   },
   {
     "title": "what makes multimodal in-context learning work?",
@@ -4424,7 +3835,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "CVPR",
     "_query_year": 2024,
-    "citation_id": "R2-0191"
+    "citation_id": "R2-0172"
   },
   {
     "title": "autoregressive diffusion models",
@@ -4440,7 +3851,7 @@
     "year": 2022,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/iclr/HoogeboomGBPBS22",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -4449,7 +3860,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ICLR",
     "_query_year": 2022,
-    "citation_id": "R2-0192"
+    "citation_id": "R2-0173"
   },
   {
     "title": "machine translation hallucination detection for low and high resource languages using large language models",
@@ -4465,9 +3876,9 @@
     ],
     "venue": "EMNLP",
     "year": 2024,
-    "doi": "10.18653/v1/2024.findings-emnlp.564",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/emnlp/BenkiraneGPFDSA24",
+    "url": "",
     "volume": "",
     "pages": "9647-9665",
     "publisher": "",
@@ -4476,7 +3887,7 @@
     "_query_topic": "large language models",
     "_query_venue": "EMNLP",
     "_query_year": 2024,
-    "citation_id": "R2-0193"
+    "citation_id": "R2-0174"
   },
   {
     "title": "evaluating dialogue generation systems via response selection",
@@ -4500,7 +3911,7 @@
     "_query_topic": "multi-agent systems",
     "_query_venue": "ACL",
     "_query_year": 2020,
-    "citation_id": "R2-0194"
+    "citation_id": "R2-0175"
   },
   {
     "title": "learning second-order attentive context for efficient correspondence pruning",
@@ -4523,7 +3934,7 @@
     "_query_topic": "in-context learning",
     "_query_venue": "AAAI",
     "_query_year": 2023,
-    "citation_id": "R2-0195"
+    "citation_id": "R2-0176"
   },
   {
     "title": "ternarybert: distillation-aware ultra-low bit bert",
@@ -4549,7 +3960,7 @@
     "_query_topic": "knowledge distillation",
     "_query_venue": "EMNLP",
     "_query_year": 2020,
-    "citation_id": "R2-0196"
+    "citation_id": "R2-0177"
   },
   {
     "title": "automatic chain of thought prompting in large language models",
@@ -4563,7 +3974,7 @@
     "year": 2023,
     "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/iclr/0001Z0S23",
+    "url": "",
     "volume": "",
     "pages": "",
     "publisher": "",
@@ -4572,7 +3983,7 @@
     "_query_topic": "large language models",
     "_query_venue": "ICLR",
     "_query_year": 2023,
-    "citation_id": "R2-0197"
+    "citation_id": "R2-0178"
   },
   {
     "title": "improving federated learning for aspect-based sentiment analysis via topic memories",
@@ -4595,7 +4006,7 @@
     "_query_topic": "federated learning",
     "_query_venue": "EMNLP",
     "_query_year": 2021,
-    "citation_id": "R2-0198"
+    "citation_id": "R2-0179"
   },
   {
     "title": "blackout diffusion: generative diffusion models in discrete-state spaces",
@@ -4618,7 +4029,7 @@
     "_query_topic": "diffusion models",
     "_query_venue": "ICML",
     "_query_year": 2023,
-    "citation_id": "R2-0199"
+    "citation_id": "R2-0180"
   },
   {
     "title": "fine-tuning by curriculum learning for non-autoregressive neural machine translation",
@@ -4632,9 +4043,9 @@
     ],
     "venue": "AAAI",
     "year": 2020,
-    "doi": "10.1609/aaai.v34i05.6289",
+    "doi": "",
     "arxiv_id": "",
-    "url": "https://dblp.org/rec/conf/aaai/GuoTXQCL20",
+    "url": "",
     "volume": "",
     "pages": "7839-7846",
     "publisher": "",
@@ -4643,6 +4054,6 @@
     "_query_topic": "neural machine translation",
     "_query_venue": "AAAI",
     "_query_year": 2020,
-    "citation_id": "R2-0200"
+    "citation_id": "R2-0181"
   }
 ]

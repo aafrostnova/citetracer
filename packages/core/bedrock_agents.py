@@ -6,27 +6,57 @@ import re
 from typing import Any
 
 from .models import (
+    AuthorVariantResult,
     CandidateMatch,
     CitationRecord,
     DiscrepancyEvidence,
     DownstreamAgentResult,
     FieldComparisonResult,
     ValidAgentResult,
+    VenueEquivalenceResult,
     VerdictLabel,
 )
 
 
-def _call_bedrock(client, model_id: str, prompt: str, max_tokens: int = 1024) -> dict:
-    response = client.converse(
-        modelId=model_id,
-        messages=[{"role": "user", "content": [{"text": prompt}]}],
-        inferenceConfig={"temperature": 0, "maxTokens": max_tokens},
-    )
-    text = response["output"]["message"]["content"][0]["text"]
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if m:
-        return json.loads(m.group(0))
-    return {}
+def _call_bedrock(
+    client, model_id: str, prompt: str, max_tokens: int = 1024,
+    max_retries: int = 2,
+) -> dict:
+    """Call Bedrock and parse JSON from response. Retries on transient errors
+    (throttling, timeouts, JSON parse failures) with exponential backoff.
+    """
+    import sys as _sys
+    import time as _time
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.converse(
+                modelId=model_id,
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"temperature": 0, "maxTokens": max_tokens},
+            )
+            text = response["output"]["message"]["content"][0]["text"]
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            if m:
+                return json.loads(m.group(0))
+            # LLM returned no JSON object at all — not a retryable condition.
+            return {}
+        except Exception as exc:
+            msg = str(exc)
+            is_throttle = (
+                "Throttling" in msg or "TooManyRequests" in msg
+                or "rate" in msg.lower() or "quota" in msg.lower()
+            )
+            if is_throttle:
+                print(
+                    f"[rate-limit] bedrock 429/Throttling on model={model_id}: {msg[:200]}",
+                    file=_sys.stderr, flush=True,
+                )
+            if attempt >= max_retries:
+                raise
+            # Exponential backoff: 0.5s, 1s (then raise on the 3rd failure)
+            _time.sleep(0.5 * (2 ** attempt))
+    return {}  # unreachable
 
 
 def _field_summary(fs: dict) -> str:
@@ -49,6 +79,680 @@ def _parse_taxonomy(raw) -> list[str]:
     if isinstance(raw, str):
         return [t.strip() for t in raw.split(",") if t.strip()]
     return []
+
+
+# Map LLM-authored short issue names (e.g. "volume_missing") to the canonical
+# forms produced by packages.core.cascading_agents.compute_hint. Downstream
+# logic (P3 fallback, R4 coverage, HallucinatedAgent fallback taxonomy) relies
+# on the canonical `*_candidate_missing` suffix; LLM output tends to drop
+# `_candidate_` and say `volume_missing` instead.
+_ISSUE_NAME_ALIASES = {
+    "volume_missing":    "volume_candidate_missing",
+    "pages_missing":     "pages_candidate_missing",
+    "publisher_missing": "publisher_candidate_missing",
+    "location_missing":  "location_candidate_missing",
+    "venue_missing":     "venue_candidate_missing",
+    "year_missing":      "year_candidate_missing",
+    "doi_missing":       "doi_candidate_missing",
+    "title_missing":     "title_candidate_missing",
+    "author_missing":    "authors_candidate_missing",
+    "authors_missing":   "authors_candidate_missing",
+    "arxiv_id_missing":  "arxiv_id_candidate_missing",
+}
+
+
+def _normalize_issue_names(issues) -> list[str]:
+    """Remap LLM-authored issue names to the canonical `compute_hint` forms."""
+    out: list[str] = []
+    for item in issues or []:
+        if not isinstance(item, str):
+            continue
+        name = item.strip()
+        if not name:
+            continue
+        out.append(_ISSUE_NAME_ALIASES.get(name, name))
+    return out
+
+
+def _filter_llm_issues_by_field_status(
+    issues: list[str], field_status: dict
+) -> list[str]:
+    """Drop LLM-emitted *_candidate_missing issues that contradict field_status.
+
+    The rule-based comparator is authoritative. LLM sometimes labels
+    "reference has no volume, candidate has one" as volume_missing, which the
+    alias map converts to volume_candidate_missing — triggering a false P3
+    downgrade. Here we reject any *_candidate_missing issue when the actual
+    field status is not candidate_missing.
+    """
+    out: list[str] = []
+    suffix = "_candidate_missing"
+    for issue in issues or []:
+        if not issue.endswith(suffix):
+            out.append(issue)
+            continue
+        field = issue[: -len(suffix)]
+        actual = (field_status.get(field) or {}).get("status", "")
+        if actual == "candidate_missing":
+            out.append(issue)
+    return out
+
+
+# ===========================================================================
+# FieldClassifier — unified authors + venue + publisher classification
+# ===========================================================================
+#
+# Single LLM call per candidate. Runs BEFORE ValidAgent. Produces authoritative
+# verdicts on three fields:
+#   - authors:   exact / r2_initial / p1_variant / h2_error
+#   - venue:     exact / alias / different
+#   - publisher: exact / alias / different
+#
+# ValidAgent consumes these verdicts (without re-deriving), and R4 coverage
+# respects them (p1_variant does NOT count as match; venue/publisher "alias"
+# DOES count as match).
+
+FIELD_CLASSIFIER_PROMPT = """You are a citation field equivalence classifier. For a single (citation, candidate) pair, produce authoritative verdicts for three fields at once: authors, venue, publisher.
+
+====================================================================
+AUTHORS — 4 categories
+====================================================================
+
+### Name decomposition (apply FIRST to every author pair)
+
+Before comparing, decompose each author into (given_names, surname):
+  - Default order is "Given ... Surname" — the SURNAME is the LAST token
+    (after trimming DBLP numeric suffixes like "0001"/"0007" and honorifics).
+    Example: "Xiangyang Liu" → given="Xiangyang", surname="Liu".
+             "Xiang Liu"     → given="Xiang",     surname="Liu".
+  - "Surname, Given" form — recognize when the first token ends with a comma
+    OR the last token is an initial and first is a full word capitalized.
+    Examples: "Guedj, B"         → given="B",    surname="Guedj".
+              "Afouras T"        → given="T",    surname="Afouras"  (last-first + initial)
+              "Mittal, T."       → given="T.",   surname="Mittal".
+  - Middle names / initials belong to the given-name cluster, not the surname.
+    Example: "Daniel J. Michael" → given="Daniel J.", surname="Michael".
+
+### Hard rule — SURNAME EQUALITY
+
+After decomposition, the SURNAMES must be byte-identical (case-insensitive,
+diacritics-preserved but equal if same Unicode codepoints). If surnames
+differ → h2_error. Do NOT treat first-name-like shorter strings as surname.
+
+Examples that are SAME surname (→ continue to first-name rules):
+  "Xiang Liu" vs "Xiangyang Liu" → surnames both "Liu" ✓ (first names differ)
+  "Den Cai"   vs "Deng Cai"      → surnames both "Cai" ✓ (first names differ)
+  "Mike Chen" vs "Michael Chen"  → surnames both "Chen" ✓
+  "Afouras T" vs "Triantafyllos Afouras" → surnames both "Afouras" ✓
+
+Examples where SURNAMES DIFFER (→ h2_error):
+  "Xiang Liu"  vs "Xiang Wang"    → "Liu" ≠ "Wang"
+  "Jian Zhou"  vs "Jian Chen"     → "Zhou" ≠ "Chen"
+
+### 4 categories (evaluated on FIRST NAMES only, after surname equality is confirmed)
+
+- **exact**: Every author pair is byte-identical after case normalization.
+
+- **r2_initial**: Same people; the ONLY first-name difference is single-letter
+  initial expansion (ONE alphabetic char, optionally period-terminated).
+
+  ### HOW TO CHECK (apply to EACH differing first-name pair):
+    STEP 1: Identify the shorter side (by alphabetic-char count).
+    STEP 2: Count letters in the shorter side's first-name token(s).
+    STEP 3:
+       - If the shorter side is EXACTLY 1 alphabetic letter (with or
+         without trailing period) AND the longer side is a full word
+         starting with that same letter → this pair IS r2_initial.
+       - If the shorter side has 2 OR MORE letters → this pair is NOT
+         r2_initial (it is p1_variant — multi-letter truncation).
+    Direction does NOT matter: "A. Bulatov" vs "Aydar Bulatov" and
+    "Aydar Bulatov" vs "A. Bulatov" are BOTH r2_initial.
+
+  Valid r2_initial examples (all 1-char initial expansion):
+    "G. Hao"        ↔ "Gao Hao"               (G = 1 char)
+    "S. Bubeck"     ↔ "Sébastien Bubeck"      (S = 1 char)
+    "A. Bulatov"    ↔ "Aydar Bulatov"         (A = 1 char)
+    "J. Liu"        ↔ "Jiduan Liu"            (J = 1 char)
+    "K. Alshammari" ↔ "Khaznah Alshammari"    (K = 1 char)
+    "D. D. Johnson" ↔ "Daniel D. Johnson"     (D = 1 char, middle D. unchanged)
+    "J. E. Santos"  ↔ "Javier E. Santos"      (J = 1 char, E. unchanged)
+    "V. Manohar"    ↔ "Vimal Manohar"         (V = 1 char)
+
+  NOT r2_initial (shorter side is 2+ letters → use p1_variant):
+    "Chao Xiao"     ↔ "Chaowei Xiao"   (Chao = 4 chars → p1 multi-letter trunc)
+    "Stef Jegelka"  ↔ "Stefanie Jegelka" (Stef = 4 chars → p1)
+    "Erk Zhu"       ↔ "Erkang Zhu"     (Erk = 3 chars → p1)
+    "Mike Chen"     ↔ "Michael Chen"   (Mike = 4 chars → p1 nickname)
+
+  ### COMMON MISCLASSIFICATIONS TO AVOID:
+    - Do NOT mark "A. Bulatov" ↔ "Aydar Bulatov" as p1_variant.
+      "A." is exactly 1 character → this is r2_initial by rule.
+    - Do NOT mark "J. Liu" ↔ "Jiduan Liu" as p1_variant.
+      "J." is exactly 1 character → r2_initial.
+    - Do NOT mark "K. Alshammari" ↔ "Khaznah Alshammari" as p1_variant.
+    - When EVERY differing pair is 1-char-initial-expansion, the
+      overall verdict MUST be r2_initial, not p1_variant.
+
+- **p1_variant**: Same people (SURNAMES equal), but first-name form differs by:
+    * Nickname / diminutive: "Mike" ← "Michael", "Nando" ← "Fernando",
+      "Dima" ← "Dmitrii", "Masa" ← "Masashi"
+    * Multi-letter truncation (≥2 preserved chars): "Chao" ← "Chaowei",
+      "Stef" ← "Stefanie", "Edw." ← "Edward", "Xiang" ← "Xiangyang"
+    * Single-char typo / transliteration: "Ulle" ↔ "Ullie", "Den" ↔ "Deng",
+      "Wei" ↔ "William"
+    * Last-first format + initial: "Afouras T" ↔ "Triantafyllos Afouras"
+    * MIDDLE-NAME VARIATIONS — any of these five subtypes (all → p1_variant):
+        a. Middle initial dropped:    "Dmitry P. Vetrov"   ↔ "Dmitry Vetrov"
+        b. Middle initial added:      "Dmitry Vetrov"      ↔ "Dmitry P. Vetrov"
+        c. Middle full name dropped:  "Aditya Manish Kane" ↔ "Aditya Kane"
+        d. Middle full name added:    "Aditya Kane"        ↔ "Aditya Manish Kane"
+        e. Middle initial ↔ full:     "Dmitry P. Vetrov"   ↔ "Dmitry Petrov Vetrov"
+                                      "Richard S. Zemel"   ↔ "Richard Samuel Zemel"
+      The SURNAME (last token) must still match byte-identically. Middle-name
+      add/drop NEVER escalates to h2_error — it is always same-person P1.
+    * Dropped middle word(s) in longer name: "Sai Zhang" ↔ "Sai Qian Zhang"
+      (same as middle-full-name-dropped above).
+  DBLP disambiguation suffixes ("Ting Chen 0007") = SAME person, strip suffix
+  before decomposition.
+
+- **h2_error**: Genuinely different people OR authors reordered. Applies when
+  ANY of the following — ALL are h2_error, NOT p1_variant, NOT r2_initial:
+    * Different SURNAME (after decomposition).
+    * **COUNT MISMATCH — different number of authors, with NO truncation
+      marker (et al. / and others / Others / …) on the citation side**
+      (see dedicated section below — this is the #2 missed rule).
+    * Added author with no truncation marker to justify.
+    * Deleted author with no truncation marker to justify.
+    * **REORDERED authors — same set of people, different position order**
+      (see dedicated section below — this is the #1 missed rule).
+    * Fabricated name: surname not present in the candidate at all.
+
+### ★★★ COUNT MISMATCH = h2_error — DEDICATED RULE ★★★
+
+Apply this check FIRST, before looking at r2_initial / p1_variant.
+
+COUNT CHECK PROCEDURE:
+  1. Strip truncation markers from the citation list ("et al.", "and others",
+     "Others", "…"). If any marker is present, the citation is allowed to
+     have fewer listed authors than the candidate — skip the count check.
+  2. Otherwise, if len(citation) != len(candidate) → **h2_error, count mismatch.**
+     Return immediately; do NOT try to explain the extra/missing author as a
+     name variant or initial expansion.
+
+COUNT EXAMPLES — ALL h2_error:
+
+  Example 1 — citation has ONE EXTRA author:
+    citation : ["A. Raffin", "Ashley Hill", "A. Gleave", "Elena Voss",
+                "A. Kanervisto", "M. Ernestus", "Noah Dormann"]   (7)
+    candidate: ["Antonin Raffin", "Ashley Hill", "Adam Gleave",
+                "Anssi Kanervisto", "Maximilian Ernestus", "Noah Dormann"] (6)
+    No truncation marker; counts differ → h2_error (fabricated author
+    "Elena Voss" injected into citation).
+    Correct reason: "Citation lists 7 authors, candidate lists 6, no et al.
+    marker → fabricated author. h2_error."
+    WRONG output: "r2_initial" (ignoring the extra author is forbidden).
+
+  Example 2 — citation is MISSING an author:
+    citation : ["Jiayu Qin", "Jian Chen", "Rohan Sharma", "Jingchen Sun"]  (4)
+    candidate: ["Jiayu Qin", "Jian Chen", "Rohan Sharma", "Jingchen Sun",
+                "Changyou Chen"]                                             (5)
+    No truncation marker; counts differ → h2_error (deletion of one author
+    by the citation).
+    Correct reason: "Citation has 4 authors, candidate has 5, no et al.
+    → deleted author. h2_error."
+    WRONG output: "exact" (ignoring the missing author is forbidden).
+
+  Example 3 — count differs BUT citation has truncation marker → NOT h2_error:
+    citation : ["Canwen Xu", "Zexue He", "Zhankui He", "and others"]   (3+marker)
+    candidate: ["Canwen Xu", "Zexue He", "Zhankui He", "Julian McAuley"] (4)
+    Truncation marker present → count difference is allowed.
+    Proceed to per-pair surname/first-name analysis on the explicit authors.
+
+### ★★★ REORDER = h2_error — DEDICATED RULE (do NOT merge into p1_variant) ★★★
+
+Reorder means: the citation's author list and the candidate's author list
+contain the SAME PEOPLE (surnames identical as a multiset), but their
+POSITIONS do not align. Even though no new person was added and none was
+deleted, different order is treated as a fabrication/error by this pipeline.
+
+REORDER CHECK PROCEDURE (apply after confirming count + surname-set match):
+  For i in 0..len-1:
+    if normalized_surname(citation[i]) != normalized_surname(candidate[i]):
+        → REORDER detected → return h2_error
+  (A one-off swap at ANY position is enough; you do NOT need most or all
+  positions to be misaligned.)
+
+REORDER EXAMPLES — ALL h2_error:
+
+  Example A — plain swap:
+    citation : ["Alice Zhang", "Bob Li", "Carol Wu"]
+    candidate: ["Bob Li", "Alice Zhang", "Carol Wu"]
+    Position 0: surname "Zhang" vs "Li" → different → REORDER → h2_error.
+    Correct reason: "Authors are the same three people but positions 0 and 1
+    are swapped. Reorder → h2_error."
+    Do NOT say "same set of people → p1_variant".
+
+  Example B — reorder with DBLP suffix that must be stripped first:
+    citation : ["Zhengdao Chen", "Lei Chen", "Joan Bruna"]
+    candidate: ["Joan Bruna", "Zhengdao Chen", "Lei Chen 0062"]
+    Strip DBLP suffix: "Lei Chen 0062" → "Lei Chen".
+    Position 0: "Chen" vs "Bruna" → different → h2_error.
+
+  Example C — reorder with initial expansion that would otherwise look like r2_initial:
+    citation : ["Wotao Yin", "Lin F. Yang", "Simon S. Du"]
+    candidate: ["W. Yin", "S. Du", "Lin F. Yang"]
+    Even though each pair COULD individually be explained as initial
+    expansion, the POSITIONS are wrong (position 1 is Yang vs Du).
+    REORDER detected → h2_error. **REORDER OVERRIDES r2_initial.**
+
+  Example D — reorder with last-first format:
+    citation : ["Yuhang Zhou", "Jing Zhu"]
+    candidate: ["Zhu, Jing", "Zhou, Yuhang"]
+    Even though "Zhou, Yuhang" ≡ "Yuhang Zhou" by last-first format, the
+    positions are swapped → h2_error.
+
+COUNTER-EXAMPLE (NOT reorder, still p1_variant):
+    citation : ["Sai Zhang", "Bob Li"]
+    candidate: ["Sai Qian Zhang", "Bob Li"]
+    Position 0: "Zhang" vs "Zhang" — same surname, only middle name
+    difference → NOT reorder → p1_variant.
+
+### COMMON MISCLASSIFICATIONS TO AVOID (REORDER EDITION):
+
+  - "Same set of authors, just different order → p1_variant"
+    WRONG. Same set + different order = REORDER = h2_error.
+
+  - "All surnames present in both lists → no author added or deleted → p1_variant"
+    WRONG. Positional mismatch still triggers h2_error even if set-equal.
+
+  - "DBLP suffix + reordering → p1_variant"
+    WRONG. Strip suffix first, then check positions. Reorder → h2_error.
+
+### Authors decision order (first match wins):
+0. **Truncation marker**: if citation's LAST author is "et al.", "et al",
+   "Others", "and others", "et.al.", "etal", "...", "etc." (case-insensitive),
+   the citation is truncated. Check only the N = len(listed non-marker)
+   citation authors vs the candidate's first N authors. The candidate having
+   MORE authors is NOT an error. Apply rules 3–5 to the N listed pairs to
+   pick the strongest variant. If any listed author is missing from the
+   candidate's first N positions → h2_error. NEVER h2_error just because
+   count differs with a truncation marker present.
+1. Count differs AND no truncation marker → h2_error.
+2. **POSITIONAL SURNAME CHECK**: strip DBLP suffixes, decompose each author
+   into (given, surname). Walk positions i = 0..N-1. If at ANY position
+   i the citation's surname ≠ candidate's surname → h2_error.
+   This catches two sub-cases:
+     - Different surname sets (person X fabricated, person Y missing).
+     - Same set but reordered positions (REORDER).
+   **Rule 2 overrides rules 3/4/5.** If rule 2 fires, you MUST return
+   h2_error even if every pair would individually look like exact / r2_initial
+   / p1_variant.
+3. All pairs byte-identical after case/whitespace normalization → exact.
+4. **All first-name differences are single-letter initial only → r2_initial.**
+   (Rule 4 has PRIORITY over rule 5. If every differing pair passes the
+   3-step check above with shorter-side = 1 char, you MUST return
+   r2_initial, not p1_variant.)
+5. Otherwise (surnames all match AT SAME POSITIONS; at least ONE differing
+   pair has shorter-side ≥ 2 letters, or involves nickname / typo /
+   transliteration / dropped middle) → p1_variant.
+
+====================================================================
+VENUE — 3 categories
+====================================================================
+
+- **exact**: Byte-identical after case/punctuation normalization.
+
+- **alias**: Same venue, expressed differently. Acceptable patterns:
+    * Acronym ↔ full name: "NeurIPS" ↔ "Advances in Neural Information
+      Processing Systems"; "ICML" ↔ "International Conference on Machine
+      Learning"; "EMNLP" ↔ "Conference on Empirical Methods in NLP".
+    * Proceedings prefix: "Proceedings of the 60th Annual Meeting of the
+      Association for Computational Linguistics" ↔ "ACL".
+    * Dot-abbreviated: "J. Mach. Learn. Res." ↔ "Journal of Machine
+      Learning Research".
+    * Year-tagged form: "EMNLP 2024" ↔ "EMNLP".
+    * Preprint server synonyms: "Preprint" ↔ "arXiv" ↔ "CoRR".
+
+- **different**: Genuinely different conferences / journals. Do NOT invent
+  mappings beyond the above patterns. In particular:
+    * "ICLR" ≠ "ACL Proceedings"
+    * "EMNLP" ≠ "Findings of ACL" (different tracks — DIFFERENT)
+    * "EMNLP" ≠ "ACL" (two different conferences, same ACL-family society)
+    * "EMNLP" ≠ "Annual Meeting of ACL" / "Proceedings of ACL" (wrong conference)
+    * "ACL" ≠ "NAACL" ≠ "EACL" ≠ "AACL" (all distinct conferences)
+    * "ACL" ≠ "Findings of ACL" (main track ≠ Findings track)
+    * "KDD" ≠ "ACL Findings"
+    * "NeurIPS" ≠ "ICML"
+    * "CVPR" ≠ "ECCV"
+    * "Nature" ≠ "EMNLP"
+    * "IEEE TPAMI" ≠ "ICLR"
+    * Published venue ≠ arXiv preprint (treat "TPAMI" vs "arXiv" as different,
+      unless the citation explicitly says Preprint/arXiv/CoRR on the reference
+      side).
+
+### ★★★ VENUE ALIAS GUARD — DO NOT INVENT MAPPINGS ★★★
+A venue is alias ONLY if one side is a well-known acronym / abbreviation of
+the other side's FULL literal name. Two different ACL-family (or any-family)
+conferences that merely share a parent society are NOT aliases.
+
+ACL-family disambiguation — memorize these pairs as **different**:
+
+  A) "Proceedings of the N-th Annual Meeting of the ACL" vs "EMNLP"
+     → **different**. "Annual Meeting of ACL" expands to ACL (the main
+     conference), which is distinct from EMNLP. Do NOT say alias.
+     Example: cit="EMNLP", cand="Proceedings of the 58th Annual Meeting of
+     the Association for Computational Linguistics" → **different**.
+
+  B) "Proceedings of the N-th Annual Meeting of the ACL" vs "ACL"
+     → **alias** (this one IS valid — it literally expands ACL).
+
+  C) "Findings of the ACL: EMNLP YYYY" vs "ACL"
+     → **different**. Findings-of-ACL at EMNLP is a separate track/venue,
+     NOT the ACL main conference. Do NOT say alias.
+     Example: cit="ACL", cand="Findings of the Association for
+     Computational Linguistics: EMNLP 2024" → **different**.
+
+  D) "Findings of the ACL" vs "ACL"
+     → **different**. Findings is a separate track.
+
+  E) "Findings of the ACL: EMNLP YYYY" vs "EMNLP"
+     → **different** (Findings at EMNLP ≠ EMNLP main).
+
+  F) "Findings of the ACL: EMNLP YYYY" vs "Findings of ACL: EMNLP YYYY"
+     → **alias** (same venue, one side has extra "the").
+
+Decision rule: if one side contains "Findings" or "Annual Meeting" and the
+other side is just the bare acronym "ACL" / "EMNLP" / "NAACL", STOP and say
+**different** unless the literal expansion pair is B above.
+
+When in doubt, say **different** — a false alias masks H3 hallucinations.
+
+====================================================================
+PUBLISHER — 3 categories (same structure as venue)
+====================================================================
+
+- **exact**: Byte-identical after normalization.
+
+- **alias**: Same publisher, different form. Acceptable patterns:
+    * Acronym ↔ full name: "ACM" ↔ "Association for Computing Machinery";
+      "IEEE" ↔ "Institute of Electrical and Electronics Engineers"; "AAAI"
+      ↔ "Association for the Advancement of Artificial Intelligence"; "ACL"
+      (as publisher) ↔ "Association for Computational Linguistics".
+    * "PMLR" ↔ "Proceedings of Machine Learning Research".
+    * Minor variants: "Springer" ↔ "Springer Nature" ↔ "Springer-Verlag";
+      "Elsevier" ↔ "Elsevier B.V."; "MIT Press" ↔ "The MIT Press".
+
+- **different**: Unrelated publishers. E.g. "Elsevier" vs "Springer",
+  "Morgan Kaufmann" vs "PMLR". Critical negative examples:
+    * "ACM" ≠ "ACL" / "Association for Computational Linguistics"
+      (ACM = Association for Computing **Machinery**, a completely different
+      organization from ACL. Do NOT alias these just because both acronyms
+      start with "A-C".)
+    * "IEEE" ≠ "ACM" (two separate societies)
+    * "Springer" ≠ "Elsevier" (both big, still distinct)
+    * "Nature Publishing Group" ≠ "AAAI"
+
+### ★★★ PUBLISHER ALIAS GUARD — ACRONYM LOOK-ALIKES ARE NOT ALIASES ★★★
+Publisher alias is allowed ONLY when one side literally expands the other:
+  - "ACM" ↔ "Association for Computing Machinery" — OK
+  - "ACL" ↔ "Association for Computational Linguistics" — OK
+  - "ACM" ↔ "Association for Computational Linguistics" — **NEVER** (different
+    organizations; same-ish 3-letter acronym is coincidence, not equivalence).
+If you find yourself reasoning "ACM is an alias for X because Y publishes
+at venue Z", STOP — that is invented. Default to **different**.
+
+====================================================================
+INPUT
+====================================================================
+Citation authors:   {citation_authors}
+Candidate authors:  {candidate_authors}
+
+Citation venue:     {citation_venue!r}
+Candidate venue:    {candidate_venue!r}
+
+Citation publisher: {citation_publisher!r}
+Candidate publisher: {candidate_publisher!r}
+
+====================================================================
+OUTPUT (JSON only, no other text)
+====================================================================
+
+★★★ COMMIT RULE — ORDER: reason FIRST, then overall ★★★
+
+For each field, write the "reason" key FIRST. Reason is where you reason
+through the evidence step by step. The "overall" key comes AFTER the reason
+and MUST match the final conclusion of that reason.
+
+  NEVER output a JSON where reason ends with "Final verdict: different"
+  but overall="alias". NEVER say "ACM ≠ ACL, this should be different"
+  in reason and then write "alias". If your analysis concludes X, overall
+  is X — full stop, no self-correction tail, no flip-flop.
+
+If you catch yourself writing a self-correcting reason ("Correction: ...",
+"But actually ...", "Final verdict: ..."), re-read your own conclusion and
+set overall to THAT conclusion before closing the JSON.
+
+Required shape (note the key order: reason first, overall second):
+
+{{
+  "authors":   {{"reason": "...", "overall": "exact"|"r2_initial"|"p1_variant"|"h2_error"}},
+  "venue":     {{"reason": "...", "overall": "exact"|"alias"|"different"}},
+  "publisher": {{"reason": "...", "overall": "exact"|"alias"|"different"}}
+}}
+
+If a side is empty for venue or publisher (e.g. citation provides venue but
+candidate does not), return "different" with a reason like "candidate missing"
+— the caller will treat missing-side the same as rule-based candidate_missing."""
+
+
+class BedrockFieldClassifier:
+    """Unified LLM classifier for authors + venue + publisher in one call."""
+
+    def __init__(self, client, model_id: str) -> None:
+        self.client = client
+        self.model_id = model_id
+
+    _TRUNCATION_MARKERS = {
+        "et al.", "et al", "et.al.", "et.al", "etal",
+        "others", "and others", "... et al.", "...", "etc.",
+    }
+
+    def _is_truncation_marker(self, s: str) -> bool:
+        return str(s or "").strip().lower() in self._TRUNCATION_MARKERS
+
+    @staticmethod
+    def _canon(s: str) -> str:
+        return " ".join(str(s or "").strip().lower().split())
+
+    def _fast_authors(
+        self, citation_authors: list[str], candidate_authors: list[str],
+    ) -> AuthorVariantResult | None:
+        """Deterministic authors fast-path; None if LLM needed."""
+        if not citation_authors and not candidate_authors:
+            return AuthorVariantResult(overall="exact", reason="both lists empty")
+        ca = [self._canon(x) for x in (citation_authors or [])]
+        da = [self._canon(x) for x in (candidate_authors or [])]
+        if ca and ca == da:
+            return AuthorVariantResult(overall="exact", reason="byte-identical after normalization")
+        # Truncation marker: strip last + match prefix
+        if citation_authors and self._is_truncation_marker(citation_authors[-1]):
+            listed_canon = [self._canon(a) for a in citation_authors[:-1]]
+            if (
+                len(listed_canon) <= len(da)
+                and listed_canon == da[: len(listed_canon)]
+            ):
+                return AuthorVariantResult(
+                    overall="exact",
+                    reason=(
+                        f"Citation truncated with '{citation_authors[-1]}'; "
+                        f"{len(listed_canon)} listed authors match candidate's "
+                        f"first {len(listed_canon)} byte-identically."
+                    ),
+                )
+        return None
+
+    def _fast_venue_or_publisher(self, ref: str, cand: str) -> VenueEquivalenceResult | None:
+        """Return deterministic verdict for venue/publisher if possible;
+        None if LLM needed for alias judgment."""
+        r, c = self._canon(ref), self._canon(cand)
+        if not r and not c:
+            return VenueEquivalenceResult(overall="exact", reason="both empty")
+        if r == c and r:
+            return VenueEquivalenceResult(overall="exact", reason="byte-identical after normalization")
+        if not r or not c:
+            # One side missing — defer to caller (field_status will be
+            # candidate_missing/reference_missing); classifier not authoritative.
+            return VenueEquivalenceResult(
+                overall="different",
+                reason=("reference empty" if not r else "candidate empty"),
+            )
+        return None
+
+    def classify(
+        self,
+        citation_authors: list[str],
+        candidate_authors: list[str],
+        citation_venue: str = "",
+        candidate_venue: str = "",
+        citation_publisher: str = "",
+        candidate_publisher: str = "",
+    ) -> "FieldClassificationResult":
+        from .models import FieldClassificationResult  # local import to avoid cycles
+
+        # Per-field fast paths
+        authors_fast = self._fast_authors(citation_authors, candidate_authors)
+        venue_fast = self._fast_venue_or_publisher(citation_venue, candidate_venue)
+        publisher_fast = self._fast_venue_or_publisher(citation_publisher, candidate_publisher)
+
+        # Try deterministic venue/publisher via existing normalize.py heuristic
+        if venue_fast is None:
+            from .normalize import venues_equivalent_heuristic
+            if venues_equivalent_heuristic(citation_venue, candidate_venue):
+                venue_fast = VenueEquivalenceResult(
+                    overall="alias",
+                    reason="matched via normalize.venues_equivalent_heuristic (acronym/truncation/alias)",
+                )
+        if publisher_fast is None:
+            from .normalize import venues_equivalent_heuristic
+            if venues_equivalent_heuristic(citation_publisher, candidate_publisher):
+                publisher_fast = VenueEquivalenceResult(
+                    overall="alias",
+                    reason="matched via normalize.venues_equivalent_heuristic",
+                )
+
+        # If all three fully resolved, skip LLM entirely
+        if authors_fast is not None and venue_fast is not None and publisher_fast is not None:
+            return FieldClassificationResult(
+                authors=authors_fast,
+                venue=venue_fast,
+                publisher=publisher_fast,
+            )
+
+        # Otherwise call LLM (it decides all three in one pass — cheaper than
+        # individual calls, and provides consistent judgment across fields).
+        prompt = FIELD_CLASSIFIER_PROMPT.format(
+            citation_authors=list(citation_authors or []),
+            candidate_authors=list(candidate_authors or []),
+            citation_venue=citation_venue or "",
+            candidate_venue=candidate_venue or "",
+            citation_publisher=citation_publisher or "",
+            candidate_publisher=candidate_publisher or "",
+        )
+        try:
+            parsed = _call_bedrock(self.client, self.model_id, prompt)
+        except Exception:
+            # LLM failure → conservative fallback (preserve whatever fast
+            # paths resolved, use p1_variant / different for the unresolved).
+            return FieldClassificationResult(
+                authors=authors_fast or AuthorVariantResult(
+                    overall="p1_variant",
+                    reason="classifier LLM failed; fallback to p1_variant",
+                ),
+                venue=venue_fast or VenueEquivalenceResult(
+                    overall="different",
+                    reason="classifier LLM failed; conservative fallback",
+                ),
+                publisher=publisher_fast or VenueEquivalenceResult(
+                    overall="different",
+                    reason="classifier LLM failed; conservative fallback",
+                ),
+            )
+
+        def _parse_sub(raw: Any, allowed: set[str], fallback: str) -> tuple[str, str]:
+            if not isinstance(raw, dict):
+                return fallback, ""
+            overall = str(raw.get("overall", fallback)).strip().lower()
+            if overall not in allowed:
+                overall = fallback
+            reason = str(raw.get("reason", "") or "").strip()
+
+            # Post-parse self-consistency check: the LLM sometimes writes
+            # `overall` before thinking through `reason`, then contradicts
+            # itself ("Therefore, the correct verdict is h2_error, not exact").
+            # Scan the reason for an explicit contradicting verdict phrase and
+            # override overall when found.
+            reason_lc = reason.lower()
+            if reason_lc:
+                import re as _re
+                # Build per-label trigger patterns — only match inside an explicit
+                # verdict-commit phrase to avoid catching incidental mentions
+                # ("this is NOT h2_error" should not trigger h2_error).
+                label_alternation = "|".join(_re.escape(lbl) for lbl in allowed)
+                commit_patterns = [
+                    rf"final verdict:\s*({label_alternation})\b",
+                    rf"correct verdict is\s*({label_alternation})\b",
+                    rf"therefore,? (?:the )?(?:correct )?verdict\s*(?:is|:)\s*({label_alternation})\b",
+                    rf"→\s*({label_alternation})\b[^.]*$",  # last sentence ending with "→ X"
+                    rf"verdict:\s*({label_alternation})\b",
+                ]
+                detected: str | None = None
+                for pat in commit_patterns:
+                    # Scan for LAST match (since self-corrections come late)
+                    matches = list(_re.finditer(pat, reason_lc, flags=_re.IGNORECASE))
+                    if matches:
+                        detected = matches[-1].group(1).lower()
+                        break
+                if detected and detected in allowed and detected != overall:
+                    reason = (
+                        f"[override: LLM overall={overall!r} contradicted by "
+                        f"reason → {detected!r}] {reason}"
+                    )
+                    overall = detected
+
+            return overall, reason
+
+        authors_overall, authors_reason = _parse_sub(
+            parsed.get("authors"),
+            {"exact", "r2_initial", "p1_variant", "h2_error"},
+            "p1_variant",
+        )
+        venue_overall, venue_reason = _parse_sub(
+            parsed.get("venue"),
+            {"exact", "alias", "different"},
+            "different",
+        )
+        publisher_overall, publisher_reason = _parse_sub(
+            parsed.get("publisher"),
+            {"exact", "alias", "different"},
+            "different",
+        )
+
+        return FieldClassificationResult(
+            authors=authors_fast or AuthorVariantResult(
+                overall=authors_overall, reason=authors_reason,
+            ),
+            venue=venue_fast or VenueEquivalenceResult(
+                overall=venue_overall, reason=venue_reason,
+            ),
+            publisher=publisher_fast or VenueEquivalenceResult(
+                overall=publisher_overall, reason=publisher_reason,
+            ),
+            raw_llm_response=parsed,
+        )
+
+
+# Backward-compat alias so existing call sites/tests don't break.
+BedrockAuthorVariantClassifier = BedrockFieldClassifier
 
 
 # ===========================================================================
@@ -142,19 +846,73 @@ NOTE on authors=reordered_match:
   * Nickname: "Mike" vs "Michael", "Bob" vs "Robert", "Kate" vs "Katherine" → P1
   * Multi-letter truncation: "Edw." vs "Edward", "Séb." vs "Sébastien" → P1 (more than 1 letter)
   * Transliteration: "Wei Zhang" vs "William Zhang" → P1
+  * Spelling variant / typo in a name: "Ulle" vs "Ullie", "Liam" vs "Liang" → P1
+  * Last-first format with initials: "Afouras T" vs "Triantafyllos Afouras" → P1
 - hint="likely_hallucinated": Discrepancies are real errors:
   * Title word changed, wrong author count, wrong year by >1, fabricated DOI, venue mismatch.
 
-KEY DISTINCTION for author names:
+★★★ CRITICAL AUTHOR ROUTING RULES ★★★
+
+Route by author discrepancy TYPE:
+
+[A] SURNAMES ALIGN ONE-TO-ONE (same count, same order, same last names),
+    only FIRST-NAME forms differ (nickname / truncation / typo / initial):
+    → hint="likely_potential", issues=["author_name_variant"]  (P1)
+    NEVER likely_hallucinated, NEVER H2.
+
+[B] SURNAME SET CHANGES (author count differs, new surname appears/disappears,
+    fabricated-looking full name not present on either side, "et al." not in
+    citation but citation has fewer authors than candidate):
+    → hint="likely_hallucinated", issues=["author_addition"/"author_deletion"/
+      "author_fabrication"/"author_count_mismatch"]  (H2)
+    This holds EVEN IF some individual first-name forms are legitimate R2/P1
+    variants. The presence of a fabricated/missing author dominates.
+
+[C] AUTHORS REORDERED (same set, different order, count matches):
+    → hint="likely_hallucinated", issues=["author_reordered"]  (H2)
+
+Do NOT let plausible first-name variants (DBLP "0003" suffix, "L. Zhao" vs
+"Long Zhao", "Afouras T" vs "Triantafyllos Afouras") distract you from a
+count/set mismatch. If you see Citation.surnames ≠ Candidate.surnames as a
+set, or len(Citation.authors) ≠ len(Candidate.authors) without "et al.",
+return likely_hallucinated regardless of other minor name variations.
+
+Patterns that are ALWAYS likely_potential (P1), never likely_hallucinated:
+  1. Nickname:                "Mike"   ← "Michael"
+                              "Bob"    ← "Robert"
+                              "Andy"   ← "Andrew"
+                              "Nando"  ← "Fernando"  (Portuguese/Spanish diminutive)
+                              "Tim"    ← "Timon"
+                              "Dima"   ← "Dmitrii"   (Russian diminutive)
+                              "Masa"   ← "Masashi"   (Japanese short form)
+                              "Gi"     ← "Gihun"     (Korean short form)
+  2. Multi-letter truncation: "Edw."   ← "Edward"    (N chars, dot-terminated)
+                              "Shu"    ← "Shuang"    (no-dot truncation)
+                              "Chu"    ← "Chujun"
+                              "Sai"    ← "Sai Qian"  (dropped middle token)
+                              "Zhong"  ← "Zhongtao"
+                              "Vini"   ← "Vinayak"
+  3. Single character typo:    "Ulle"   ↔ "Ullie"    (one-character off)
+                              "Liam"   ↔ "Liang"
+                              "Ily"    ↔ "Ilya"      (one-character off)
+  4. Last-first format w/ initial: "Afouras T" ↔ "Triantafyllos Afouras"
+                              "Manoj S."  ↔ "S. Manoj"   (initial + surname reorder)
+  5. Full vs initial + middle: "Masa Egi"  ↔ "M. Egi"    (still → R2 if Masa → M single-letter)
+                               but "Masa Egi" ↔ "Masashi Egi" → P1 (Masa is truncation of Masashi)
+  6. Transliteration:          "Wei"  ↔ "William"
+
+KEY DISTINCTION for taxonomy (when valid=true):
   R2 = ONLY single-letter initial (exactly 1 character):
-    "G. Hao" vs "Gao Hao" → R2 ✓ (G is one letter)
-    "S. Bubeck" vs "Sébastien Bubeck" → R2 ✓ (S is one letter)
-    "D. D. Johnson" vs "Daniel D. Johnson" → R2 ✓ (D is one letter)
-  P1 = EVERYTHING ELSE (multi-letter truncation, nickname, transliteration):
-    "Edw. Hu" vs "Edward Hu" → P1 ✗ (Edw is 3 letters, not single-letter initial)
-    "Mike Chen" vs "Michael Chen" → P1 ✗ (nickname, not abbreviation)
-    "Bob Smith" vs "Robert Smith" → P1 ✗ (nickname)
-    "Aar. Gokaslan" vs "Aaron Gokaslan" → P1 ✗ (3-letter truncation)
+    "G. Hao" vs "Gao Hao" → R2 ✓ (G is one letter, rule-derivable)
+    "S. Bubeck" vs "Sébastien Bubeck" → R2 ✓
+    "D. D. Johnson" vs "Daniel D. Johnson" → R2 ✓
+  P1 (valid=false, likely_potential) = EVERYTHING ELSE:
+    ANY multi-letter or world-knowledge-requiring variant → NOT R2 → P1 via PotentialAgent
+
+STEP 1 — count characters: Before claiming R2, count the characters
+of the shorter (abbreviated) first-name form.
+  - 1 character (with or without '.') → proceed with R2
+  - 2 or more characters → NOT R2, return P1 via likely_potential
 
 ## Examples
 
@@ -194,6 +952,30 @@ Candidate: Title="Large Language Models" Authors=["Michael Chen","Robert Smith"]
 Field: title=match, authors=partial_overlap, year=match
 → {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "Mike≠initial of Michael (M≠Mi), Bob≠initial of Robert (B≠Bo). These are nicknames requiring world knowledge → P1."}}
 
+Example 5b — likely_potential (multi-letter truncation, NOT hallucination):
+Citation: Title="Paper Y" Authors=["Shu Yang","Xilin Chen"] Year=2024
+Candidate: Title="Paper Y" Authors=["Shuang Yang","Xilin Chen"] Year=2024
+Field: title=match, authors=mismatch, year=match
+→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "'Shu' is a multi-letter truncation of 'Shuang' (Chinese short form, not single-letter initial). This is a name-variant P1, NOT a genuine author error."}}
+
+Example 5c — likely_potential (foreign-language nickname):
+Citation: Authors=["Nando Gama","Alejandro Ribeiro"] Year=2020
+Candidate: Authors=["Fernando Gama","Alejandro Ribeiro"] Year=2020
+Field: title=match, authors=mismatch, year=match
+→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "'Nando' is a well-known Portuguese/Spanish diminutive of 'Fernando'. Requires world knowledge → P1, not H2."}}
+
+Example 5d — likely_potential (spelling variant / one-char typo):
+Citation: Authors=["Ullie Endriss"] Year=2021
+Candidate: Authors=["Ulle Endriss"] Year=2021
+Field: title=match, authors=mismatch, year=match
+→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "'Ullie' vs 'Ulle' differ by one character — spelling variant of the same person's name. P1, not H2."}}
+
+Example 5e — likely_potential (last-first format w/ initial):
+Citation: Authors=["Triantafyllos Afouras","Oriol Vinyals"] Year=2020
+Candidate: Authors=["Afouras T","Vinyals O"] Year=2020
+Field: title=match, authors=mismatch, year=match
+→ {{"valid": false, "taxonomy": [], "hint": "likely_potential", "issues": ["author_name_variant"], "reason": "Candidate uses 'LastName Initial' format (Afouras T = Triantafyllos Afouras). This is name-format variant → P1, NOT a fabricated author."}}
+
 Example 6 — likely_hallucinated (title word substitution):
 Citation: Title="Training novel language models to reason" Authors=["Charlie Chen"] Year=2024
 Candidate: Title="Training large language models to reason" Authors=["Charlie Chen"] Year=2024
@@ -226,19 +1008,42 @@ Field: title=match, authors=match (et al), venue=mismatch, year=match
 
 ## Now evaluate this citation:
 
-Citation: Title='{citation_title}' Authors={citation_authors} Venue='{citation_venue}' Year={citation_year} Volume='{citation_volume}' Pages='{citation_pages}' Publisher='{citation_publisher}'
-Candidate (from {connector}): Title='{candidate_title}' Authors={candidate_authors} Venue='{candidate_venue}' Year={candidate_year} Volume='{candidate_volume}' Pages='{candidate_pages}' Publisher='{candidate_publisher}'
+Citation: Title='{citation_title}' Authors={citation_authors} Venue='{citation_venue}' Year={citation_year} Volume='{citation_volume}' Pages='{citation_pages}' Publisher='{citation_publisher}' Location='{citation_location}'
+Candidate (from {connector}): Title='{candidate_title}' Authors={candidate_authors} Venue='{candidate_venue}' Year={candidate_year} Volume='{candidate_volume}' Pages='{candidate_pages}' Publisher='{candidate_publisher}' Location='{candidate_location}'
 
 Field comparison:
 {field_summary}
 {web_evidence}
-NOTE on volume/pages/publisher:
-  - If both sides have a value and they DIFFER → issues should include "volume_mismatch" / "pages_mismatch" / "publisher_mismatch" and valid=false (H7).
-  - If the REFERENCE has a value but the CANDIDATE does not (candidate_missing) → valid=false. The candidate must verify all fields the reference provides.
-  - If the REFERENCE is missing a value (reference_missing or both_missing) → OK, no verification needed for that field.
-  - Page ranges with different separators ("1877-1901" vs "1877--1901" vs "pp. 1877–1901") are the SAME, treat as match.
+Author analysis (AUTHORITATIVE — use this verdict for the authors field, do not re-derive):
+{author_analysis}
+  - If overall == "exact": authors are byte-identical → R1.
+  - If overall == "r2_initial": authors differ by single-letter initial only → R2 if other fields also align.
+  - If overall == "p1_variant": same people but multi-letter / nickname / typo variant.
+    The authors are still "match" for taxonomy/identity purposes (same paper),
+    BUT this is NOT R2 — it is P1. If everything else matches, hint=likely_potential, issues=["author_name_variant"].
+  - If overall == "h2_error": authors are genuinely wrong → likely_hallucinated, issues=["author_addition"|"author_deletion"|"author_count_mismatch"].
+NOTE on volume/pages/publisher/location:
+  - If both sides have a value and they DIFFER → issues should include the corresponding
+    "_mismatch" and valid=false (e.g. volume_mismatch / pages_mismatch / publisher_mismatch
+    / location_mismatch).
+  - If the REFERENCE has a value but the CANDIDATE does not (candidate_missing) → valid=false.
+    The candidate must verify all fields the reference provides.
+  - If the REFERENCE is missing a value (reference_missing or both_missing) → OK, no
+    verification needed for that field.
+  - Page ranges with different separators ("1877-1901" vs "1877--1901" vs "pp. 1877–1901")
+    are the SAME, treat as match.
+  - Location (conference city) counts as a full field: if the reference provides it and
+    the candidate's value differs, that IS a real discrepancy — do NOT dismiss as "optional".
+TRUST THE FIELD_STATUS:
+  The `field_status` above was produced by deterministic rule comparison plus
+  the dedicated FieldClassifier (authors/venue/publisher). It is AUTHORITATIVE.
+  Do not re-derive per-field verdicts — use field_status as given.
+  Your job is to integrate field_status + author_analysis into a final verdict
+  (valid/invalid, taxonomy, hint, issues, reason).
+
 Return JSON only:
-{{"valid": true/false, "taxonomy": [...], "hint": "likely_potential"/"likely_hallucinated"/"", "issues": [...], "reason": "..."}}"""
+{{"valid": true/false, "taxonomy": [...], "hint": "likely_potential"/"likely_hallucinated"/"",
+  "issues": [...], "reason": "..."}}"""
 
 
 class BedrockValidAgent:
@@ -251,6 +1056,7 @@ class BedrockValidAgent:
         citation: CitationRecord,
         candidate: CandidateMatch,
         comparison: FieldComparisonResult,
+        author_analysis: AuthorVariantResult | None = None,
     ) -> ValidAgentResult:
         fs = comparison.field_status if isinstance(comparison, FieldComparisonResult) else {}
         raw = candidate.raw_record if isinstance(candidate.raw_record, dict) else {}
@@ -260,6 +1066,14 @@ class BedrockValidAgent:
         if snippet and candidate.connector in ("google_search", "web_search"):
             web_evidence = f"\nWeb search evidence:\n{snippet[:1500]}\n"
 
+        if author_analysis:
+            author_analysis_str = (
+                f"  overall = {author_analysis.overall}\n"
+                f"  reason  = {author_analysis.reason or '(none)'}"
+            )
+        else:
+            author_analysis_str = "  (not provided — derive from citation/candidate authors yourself)"
+
         prompt = VALID_AGENT_PROMPT.format(
             citation_title=citation.title,
             citation_authors=citation.authors,
@@ -268,6 +1082,7 @@ class BedrockValidAgent:
             citation_volume=citation.volume or "",
             citation_pages=citation.pages or "",
             citation_publisher=citation.publisher or "",
+            citation_location=citation.location or "",
             connector=candidate.connector,
             candidate_title=candidate.title,
             candidate_authors=candidate.authors,
@@ -276,8 +1091,11 @@ class BedrockValidAgent:
             candidate_volume=getattr(candidate, "volume", "") or "",
             candidate_pages=getattr(candidate, "pages", "") or "",
             candidate_publisher=getattr(candidate, "publisher", "") or "",
+            candidate_location=str((candidate.raw_record or {}).get("location", "") or "")
+                if isinstance(candidate.raw_record, dict) else "",
             field_summary=_field_summary(fs),
             web_evidence=web_evidence,
+            author_analysis=author_analysis_str,
         )
 
         try:
@@ -295,6 +1113,8 @@ class BedrockValidAgent:
         issues = parsed.get("issues", []) or []
         if isinstance(issues, str):
             issues = [issues]
+        issues = _normalize_issue_names(issues)
+        issues = _filter_llm_issues_by_field_status(issues, fs)
         reason = str(parsed.get("reason", "") or "").strip()
 
         return ValidAgentResult(
@@ -318,11 +1138,46 @@ POTENTIAL_AGENT_PROMPT = """You are a citation discrepancy analyst. The citation
 ## Taxonomy
 
 ### POTENTIAL (discrepancies are explainable)
-- P1. Author name variant: Name is a plausible nickname/transliteration. E.g., "Katherine" vs "Kate", "Mike" vs "Michael", "Wei Zhang" vs "William Zhang".
-- P2. Non-academic source unverifiable: Citation references a non-academic source (blog, tweet, GitHub, personal website) whose existence cannot be fully verified through structured databases. The source may have been deleted/moved, or may still exist but is not indexed by academic databases. Indirect evidence (reposts, caches, web search snippets) may or may not confirm it.
+- P1. Author name variant: Name is a plausible nickname/transliteration/spelling variant
+  of the SAME PERSON. The surname sets must still align one-to-one (same count,
+  same people, same order). Only the first-name form differs.
+  Valid P1 examples: "Katherine" vs "Kate", "Mike" vs "Michael", "Wei Zhang" vs
+  "William Zhang", "Nando" vs "Fernando", "Shu Yang" vs "Shuang Yang",
+  "Afouras T" vs "Triantafyllos Afouras", "L. Zhao" vs "Long Zhao".
+- P2. Non-academic source unverifiable: Citation references a non-academic source
+  whose existence cannot be fully verified through structured databases.
+- P3. Insufficient field evidence: Citation provides optional peripheral fields
+  (volume, pages, publisher, location — ONLY these four) that cannot be
+  confirmed or denied because no candidate source supplies them. The CORE
+  identity fields (title + authors + year + venue) all match the candidate,
+  so the paper is verifiably real — but one or more of volume/pages/
+  publisher/location carry no external evidence either way.
+  Signals: one or more of `{{volume,pages,publisher,location}}_candidate_missing`
+  in the issues list while core fields match.
+  Valid P3 examples:
+    - Citation has volume="35" for a NeurIPS paper; DBLP/CrossRef/arXiv do
+      not supply volume for NeurIPS → cannot verify. Other fields match → P3.
+    - Citation lists publisher="PMLR" and location="Vancouver, Canada" for
+      an ICML paper; no connector confirms these specific values → P3.
+  Do NOT use P3 when:
+    - Any core field (title / authors / year / venue) has a real mismatch.
+    - A secondary field has an explicit contradicting value from a candidate
+      (that is H6, not P3).
+    - `doi_candidate_missing` or `arxiv_id_candidate_missing` is the only
+      issue — DOI/arxiv_id fall under H5, not P3.
 
 ### HALLUCINATED (unexplained errors → escalate)
-- If ANY discrepancy cannot be explained by P1/P2, return HALLUCINATED.
+★★★ AUTHOR COUNT / SET MISMATCH IS ALWAYS HALLUCINATED (do NOT explain as P1) ★★★
+These patterns ALWAYS escalate to HALLUCINATED, never P1:
+  - Citation has MORE authors than candidate (added author) → H2
+  - Citation has FEWER authors than candidate AND ref has no "et al." → H2
+  - A surname in citation is absent from candidate (or vice versa) → H2
+  - Authors reordered (same set, different order) → H2
+DBLP disambiguation suffixes ("Ting Chen 0007") are NOT a reason to explain
+away a missing author. The suffix applies to the existing author; a separate
+added/removed author is still a real discrepancy → escalate.
+
+If ANY discrepancy cannot be explained by P1/P2/P3, return HALLUCINATED.
 
 ## Examples
 
@@ -331,15 +1186,34 @@ Issues: ["author_name_variant"]
 Evidence: authors: [EXPLAINED] 'Edw.' is a prefix of 'Edward' — plausible abbreviation.
 → {{"label": "POTENTIAL", "taxonomy": ["P1"], "reason": "Author 'Edw.' is a plausible abbreviation of 'Edward'."}}
 
-Example 2 — Escalate to HALLUCINATED:
+Example 2 — Escalate to HALLUCINATED (venue mismatch):
 Issues: ["author_name_variant", "venue_mismatch"]
 Evidence: authors: [EXPLAINED] prefix match. venue: [UNEXPLAINED] 'Personal Blog' vs 'NeurIPS'.
 → {{"label": "HALLUCINATED", "taxonomy": ["H3"], "reason": "Venue 'Personal Blog' cannot be explained as a variant of 'NeurIPS'."}}
 
+Example 3 — Escalate to HALLUCINATED (author count mismatch = added author):
+Issues: ["author_addition"]
+Citation authors: ["Ting Chen", "Simon Kornblith", "Mohammad Norouzi", "Geoffrey Hinton", "Aria Lin"]
+Candidate authors: ["Ting Chen 0007", "Simon Kornblith", "Mohammad Norouzi 0002", "Geoffrey E. Hinton"]
+→ {{"label": "HALLUCINATED", "taxonomy": ["H2"], "reason": "Citation added a fabricated author 'Aria Lin' not in the candidate. DBLP suffixes '0007'/'0002' do not explain the extra author."}}
+
+Example 4 — Escalate to HALLUCINATED (author deletion):
+Issues: ["author_deletion"]
+Citation authors: ["Tanmay Chavan"]
+Candidate authors: ["Tanmay Chavan", "Aditya Kane"]
+→ {{"label": "HALLUCINATED", "taxonomy": ["H2"], "reason": "Citation omits real author 'Aditya Kane'. No 'et al.' marker → this is a real deletion, not a citation abbreviation."}}
+
+Example 5 — P3 (insufficient field evidence):
+Issues: ["volume_candidate_missing", "publisher_candidate_missing", "location_candidate_missing"]
+Citation: volume="35", publisher="PMLR", location="Vancouver, Canada" for an ICML paper
+Candidate: title/authors/venue/year all match; volume/publisher/location all empty
+Evidence: these fields cannot be verified — DBLP/CrossRef do not supply them for ICML.
+→ {{"label": "POTENTIAL", "taxonomy": ["P3"], "reason": "Core fields (title/authors/venue/year) match. Secondary fields (volume/publisher/location) are absent from all candidates — cannot be confirmed or denied. Insufficient evidence to flag as hallucination."}}
+
 ## Now evaluate:
 
-Citation: Title='{citation_title}' Authors={citation_authors} Venue='{citation_venue}' Year={citation_year}
-Candidate: Title='{candidate_title}' Authors={candidate_authors} Venue='{candidate_venue}' Year={candidate_year}
+Citation: Title='{citation_title}' Authors={citation_authors} Venue='{citation_venue}' Year={citation_year} Location='{citation_location}'
+Candidate: Title='{candidate_title}' Authors={candidate_authors} Venue='{candidate_venue}' Year={candidate_year} Location='{candidate_location}'
 
 Issues from ValidAgent: {issues}
 ValidAgent reason: {valid_reason}
@@ -348,7 +1222,7 @@ Secondary evidence:
 {evidence_lines}
 
 Return JSON only:
-{{"label": "POTENTIAL"/"HALLUCINATED", "taxonomy": ["P1"], "reason": "..."}}"""
+{{"label": "POTENTIAL"/"HALLUCINATED", "taxonomy": ["P1"/"P2"/"P3"/"H1".."H6"], "reason": "..."}}"""
 
 
 class BedrockPotentialAgent:
@@ -374,10 +1248,13 @@ class BedrockPotentialAgent:
             citation_authors=citation.authors,
             citation_venue=citation.venue or "",
             citation_year=citation.year,
+            citation_location=citation.location or "",
             candidate_title=candidate.title,
             candidate_authors=candidate.authors,
             candidate_venue=candidate.venue or "",
             candidate_year=candidate.year,
+            candidate_location=str((candidate.raw_record or {}).get("location", "") or "")
+                if isinstance(candidate.raw_record, dict) else "",
             issues=valid_hint.issues,
             valid_reason=valid_hint.reason,
             evidence_lines="\n".join(evidence_lines) or "  (none gathered)",
@@ -426,10 +1303,38 @@ field_status says "mismatch" or "candidate_missing".
   (e.g. "Tree of thoughts" vs "Tree of Thoughts") are NOT title errors — they are
   already handled by normalization. Trust the field_status.
 - H2: Author error — wrong authors: addition, deletion, or fabrication.
+  H2 ONLY when the authors are DIFFERENT PEOPLE (new surname, missing surname,
+  added/deleted person, or a clearly fabricated name unrelated to the candidate).
   NOTE: these are NOT errors (do NOT flag as H2):
-    * "LastName, F" vs "FirstName LastName" (e.g. "Guedj, B" vs "Benjamin Guedj") — format variant, not an error
-    * Single-letter initial expansion (e.g. "J. Langford" vs "John Langford") — R2, not an error
-    * Name order "First Last" vs "Last, First" — just a citation style difference
+    * Citation uses a TRUNCATION MARKER as the last author — any of
+      "et al.", "et al", "Others", "and others", "et.al.", "etal", "...",
+      "etc." — this is R3 (et al. abbreviation). The candidate having MORE
+      authors than the citation is EXPECTED. Verify only that the listed
+      (non-marker) authors appear in the candidate at matching positions.
+      If they do → authors match, NOT H2. Count mismatch caused purely by
+      the truncation marker is NEVER H2.
+    * "LastName, F" vs "FirstName LastName" (e.g. "Guedj, B" vs "Benjamin Guedj") — format variant
+    * Single-letter initial expansion (e.g. "J. Langford" vs "John Langford") — R2
+    * Name order "First Last" vs "Last, First" — citation style difference
+    * Nickname / diminutive: "Mike" ← "Michael", "Nando" ← "Fernando", "Andy" ← "Andrew",
+      "Dima" ← "Dmitrii", "Masa" ← "Masashi", "Bob" ← "Robert" — same person, P1
+    * Multi-letter truncation of first name: "Shu" ← "Shuang", "Edw." ← "Edward",
+      "Nando" ← "Fernando", "Vini" ← "Vinayak", "Zhong" ← "Zhongtao" — same person, P1
+    * Single-character spelling variant: "Ulle" ↔ "Ullie", "Liam" ↔ "Liang",
+      "Ily" ↔ "Ilya" — most likely same person, P1
+    * Transliteration / anglicized form: "Wei" ↔ "William" — same person, P1
+    * Dropped middle name: "Sai Zhang" ↔ "Sai Qian Zhang" — same person, P1
+    * Middle-name / middle-initial variations — ALL are same person, P1 (never H2):
+        - Middle initial dropped:    "Dmitry P. Vetrov"   ↔ "Dmitry Vetrov"
+        - Middle initial added:      "Dmitry Vetrov"      ↔ "Dmitry P. Vetrov"
+        - Middle full name dropped:  "Aditya Manish Kane" ↔ "Aditya Kane"
+        - Middle full name added:    "Aditya Kane"        ↔ "Aditya Manish Kane"
+        - Middle initial ↔ full:     "Richard S. Zemel"   ↔ "Richard Samuel Zemel"
+    * Surname-first + initial: "Afouras T" ↔ "Triantafyllos Afouras" — format variant + initial
+  KEY PRINCIPLE: If the SURNAMES still align one-to-one (same people, same order,
+  same count) and only the FIRST-NAME forms vary, this is P1 (name variant), not H2.
+  H2 is reserved for changes to the SET of people (add/delete/fabricate/swap to
+  a new surname).
 - H3: Venue error — paper exists but at a GENUINELY different venue.
   NOTE: these are NOT errors (do NOT flag as H3):
     * Acronym ≡ full name: "ICML" ≡ "International Conference on Machine Learning"
@@ -485,8 +1390,8 @@ Field: title=match, authors=match, year=match, volume=candidate_missing, pages=c
 
 ## Now classify:
 
-Citation: Title='{citation_title}' Authors={citation_authors} Venue='{citation_venue}' Year={citation_year} DOI='{citation_doi}' Pages='{citation_pages}'
-Candidate: Title='{candidate_title}' Authors={candidate_authors} Venue='{candidate_venue}' Year={candidate_year}
+Citation: Title='{citation_title}' Authors={citation_authors} Venue='{citation_venue}' Year={citation_year} DOI='{citation_doi}' Pages='{citation_pages}' Location='{citation_location}'
+Candidate: Title='{candidate_title}' Authors={candidate_authors} Venue='{candidate_venue}' Year={candidate_year} Location='{candidate_location}'
 
 Field comparison:
 {field_summary}
@@ -519,10 +1424,13 @@ class BedrockHallucinatedAgent:
             citation_year=citation.year,
             citation_doi=citation.doi or "",
             citation_pages=citation.pages or "",
+            citation_location=citation.location or "",
             candidate_title=candidate.title,
             candidate_authors=candidate.authors,
             candidate_venue=candidate.venue or "",
             candidate_year=candidate.year,
+            candidate_location=str((candidate.raw_record or {}).get("location", "") or "")
+                if isinstance(candidate.raw_record, dict) else "",
             field_summary=_field_summary(fs),
             issues=valid_hint.issues,
             valid_reason=valid_hint.reason,

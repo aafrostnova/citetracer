@@ -1,0 +1,4462 @@
+{
+  "P3-0001": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:26930-26940",
+        "crossref:26930-26940"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0002": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:488-504",
+        "crossref:488-504",
+        "acl_anthology:488-504"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0003": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:6048-6058",
+        "crossref:6048-6058"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0004": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2381-2387",
+        "crossref:2381-2387",
+        "acl_anthology:2381-2387"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0005": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2809-2821",
+        "crossref:1-1",
+        "europepmc:2809-2821",
+        "pubmed:2809-2821"
+      ],
+      "volume": [
+        "dblp_online:43",
+        "europepmc:43",
+        "pubmed:43"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0006": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:126-173",
+        "crossref:126-173",
+        "acl_anthology:126-173"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0007": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:25444-25470",
+        "semantic_scholar:25444-25470"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0008": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:16773-16801",
+        "semantic_scholar:16773-16801"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0009": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:320-335",
+        "crossref:320-335",
+        "acl_anthology:320-335"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0010": {
+    "n_qualifying": 8,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:26671-26685",
+        "openalex:26671-26685"
+      ],
+      "publisher": [
+        "crossref:Neural Information Processing Systems Fo",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0011": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:11985-12003",
+        "semantic_scholar:11985-12003"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0012": {
+    "n_qualifying": 8,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:75067-75096",
+        "openalex:75067-75096"
+      ],
+      "publisher": [
+        "crossref:Neural Information Processing Systems Fo",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0013": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:6102-6117",
+        "crossref:6102-6117",
+        "acl_anthology:6102-6117"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0014": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:285-293",
+        "crossref:285-293",
+        "acl_anthology:285-293"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, UAE"
+      ]
+    }
+  },
+  "P3-0015": {
+    "n_qualifying": 7,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:3-22"
+      ],
+      "publisher": [
+        "crossref:Cambridge University Press",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0016": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:11237-11245",
+        "crossref:11237-11245"
+      ],
+      "volume": [
+        "crossref:34"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0017": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:3315-3333",
+        "crossref:3315-3333",
+        "acl_anthology:3315-3333"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0018": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1769-1774",
+        "crossref:1769-1774"
+      ],
+      "volume": [
+        "crossref:20"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0019": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:293-305",
+        "crossref:293-305",
+        "acl_anthology:293-305"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0020": {
+    "n_qualifying": 13,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:113502",
+        "dblp_online:12878-12889",
+        "crossref:113502",
+        "europepmc:12878-12889",
+        "pubmed:12878-12889"
+      ],
+      "volume": [
+        "dblp_online:317",
+        "crossref:317",
+        "europepmc:139",
+        "pubmed:139",
+        "openalex:139"
+      ],
+      "publisher": [
+        "crossref:Elsevier BV",
+        "openalex:National Institutes of Health",
+        "openalex:Elsevier BV"
+      ]
+    }
+  },
+  "P3-0021": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:843-851",
+        "acl_anthology:843-851"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0022": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:14673-14682",
+        "crossref:14673-14682",
+        "acl_anthology:14673-14682"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0023": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:334-350",
+        "crossref:334-350",
+        "acl_anthology:334-350"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0024": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:8941-8953",
+        "crossref:8941-8953",
+        "acl_anthology:8941-8953"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0025": {
+    "n_qualifying": 8,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:60099-60116",
+        "openalex:60099-60116"
+      ],
+      "publisher": [
+        "crossref:Neural Information Processing Systems Fo",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0026": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1363-1380",
+        "crossref:1363-1380",
+        "acl_anthology:1363-1380"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0027": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1-14",
+        "crossref:1-14",
+        "acl_anthology:1-14"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0028": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:14544-14556",
+        "crossref:14544-14556",
+        "acl_anthology:14544-14556"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0029": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:25399-25408",
+        "crossref:25399-25408"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0030": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:869-893",
+        "crossref:869-893",
+        "acl_anthology:869-893"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0031": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:16768-16776",
+        "crossref:16768-16776"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0032": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1255-1263",
+        "crossref:1255-1263"
+      ],
+      "volume": [
+        "crossref:35"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0033": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0034": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "acl_anthology:1832-1838"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online and Punta Cana, Dominican Republi"
+      ]
+    }
+  },
+  "P3-0035": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0036": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:57-69",
+        "acl_anthology:57-69"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0037": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "acl_anthology:3995-4007"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online and Punta Cana, Dominican Republi"
+      ]
+    }
+  },
+  "P3-0038": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:4582-4597",
+        "acl_anthology:4582-4597"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0039": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:5133-5141"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0040": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:11645-11652"
+      ],
+      "volume": [
+        "crossref:34"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0041": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:13544-13549"
+      ],
+      "volume": [
+        "crossref:34"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0042": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:6764-6776",
+        "acl_anthology:6764-6776"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0043": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:9583-9594",
+        "europepmc:9583-9594",
+        "pubmed:9583-9594"
+      ],
+      "volume": [
+        "crossref:45",
+        "europepmc:45",
+        "pubmed:45"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0044": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:2848-2853",
+        "openalex:2848-2853",
+        "semantic_scholar:2848-2853"
+      ],
+      "publisher": [
+        "crossref:IEEE",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0045": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:6805-6820",
+        "acl_anthology:6805-6820"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0046": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:6144-6153",
+        "acl_anthology:6144-6153"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0047": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:3076-3085"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0048": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:114-121"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0049": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:3153-3173",
+        "acl_anthology:3153-3173"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0050": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:2731-2739"
+      ],
+      "volume": [
+        "crossref:36"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0051": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:1639-1657",
+        "acl_anthology:1639-1657"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0052": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:8070-8080"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0053": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:11059-11072",
+        "europepmc:11059-11072",
+        "pubmed:11059-11072"
+      ],
+      "volume": [
+        "crossref:46",
+        "europepmc:46",
+        "pubmed:46"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0054": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:1-11",
+        "acl_anthology:1-11"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0055": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "openalex:3755-3765",
+        "semantic_scholar:3755-3765"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0056": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "acl_anthology:97-103"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0057": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0058": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "openalex:19467-19477"
+      ],
+      "volume": [
+        "openalex:33"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0059": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0060": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "acl_anthology:43-57"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0061": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:4488-4496"
+      ],
+      "volume": [
+        "crossref:37"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0062": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:10913-10928",
+        "europepmc:10913-10928",
+        "pubmed:10913-10928"
+      ],
+      "volume": [
+        "crossref:45",
+        "europepmc:45",
+        "pubmed:45"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0063": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:11293-11301"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0064": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:9996-10011",
+        "europepmc:9996-10011",
+        "pubmed:9996-10011"
+      ],
+      "volume": [
+        "crossref:45",
+        "europepmc:45",
+        "pubmed:45"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0065": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:522-556",
+        "acl_anthology:522-556"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0066": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:3608-3624",
+        "europepmc:3608-3624",
+        "pubmed:3608-3624"
+      ],
+      "volume": [
+        "crossref:46",
+        "europepmc:46",
+        "pubmed:46"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0067": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "publisher",
+      "location"
+    ],
+    "verifiable": [],
+    "returners": {}
+  },
+  "P3-0068": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:71-79",
+        "acl_anthology:71-79"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0069": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:7795-7804"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0070": {
+    "n_qualifying": 7,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:43918-43930",
+        "openalex:43918-43930"
+      ],
+      "publisher": [
+        "crossref:openRxiv",
+        "crossref:Neural Information Processing Systems Fo",
+        "openalex:Cold Spring Harbor Laboratory",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0071": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:14665-14675",
+        "acl_anthology:14665-14675"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0072": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:863-877",
+        "acl_anthology:863-877"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0073": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:109-136",
+        "crossref:522-522"
+      ],
+      "publisher": [
+        "crossref:The MIT Press",
+        "crossref:Springer US",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0074": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:5717-5722",
+        "acl_anthology:5717-5722"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, United Arab Emirates"
+      ]
+    }
+  },
+  "P3-0075": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "semantic_scholar:1508-1536"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0076": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "volume",
+      "publisher",
+      "location"
+    ],
+    "verifiable": [
+      "pages"
+    ],
+    "returners": {
+      "pages": [
+        "semantic_scholar:343-355"
+      ]
+    }
+  },
+  "P3-0077": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:19542-19550"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0078": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:4272-4280"
+      ],
+      "volume": [
+        "crossref:36"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0079": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:1-12",
+        "europepmc:5549-5560",
+        "pubmed:5549-5560"
+      ],
+      "volume": [
+        "europepmc:45",
+        "pubmed:45"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0080": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:15554-15567",
+        "acl_anthology:15554-15567"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0081": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:12981-12988"
+      ],
+      "volume": [
+        "crossref:35"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0082": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:11320-11328"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0083": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:2847-2855"
+      ],
+      "volume": [
+        "crossref:37"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0084": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:5450-5459"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0085": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0086": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:14974-14983",
+        "crossref:14974-14983"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0087": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:9046-9054",
+        "crossref:9046-9054"
+      ],
+      "volume": [
+        "crossref:35"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0088": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:224-384",
+        "crossref:267-297",
+        "crossref:224-384",
+        "openalex:224-384",
+        "semantic_scholar:224-384"
+      ],
+      "volume": [
+        "dblp_online:18",
+        "crossref:18",
+        "openalex:18",
+        "semantic_scholar:18"
+      ],
+      "publisher": [
+        "crossref:Elsevier",
+        "crossref:Emerald",
+        "openalex:Cornell University",
+        "openalex:Now Publishers"
+      ]
+    }
+  },
+  "P3-0089": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1148-1157",
+        "crossref:1148-1157",
+        "acl_anthology:1148-1157"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0090": {
+    "n_qualifying": 1,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "publisher",
+      "location"
+    ],
+    "verifiable": [],
+    "returners": {}
+  },
+  "P3-0091": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:4497-4512",
+        "crossref:4497-4512",
+        "acl_anthology:4497-4512"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, United Arab Emirates"
+      ]
+    }
+  },
+  "P3-0092": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:403-427",
+        "europepmc:403-427",
+        "pubmed:403-427",
+        "openalex:403-427",
+        "semantic_scholar:403-427"
+      ],
+      "volume": [
+        "europepmc:225",
+        "pubmed:225",
+        "openalex:225",
+        "semantic_scholar:225"
+      ],
+      "publisher": [
+        "openalex:National Institutes of Health"
+      ]
+    }
+  },
+  "P3-0093": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2441-2449",
+        "crossref:2441-2449"
+      ],
+      "volume": [
+        "crossref:36"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0094": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:30-45",
+        "crossref:30-45",
+        "acl_anthology:30-45"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, United Arab Emirates"
+      ]
+    }
+  },
+  "P3-0095": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:5570-5585",
+        "crossref:5570-5585",
+        "acl_anthology:5570-5585"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0096": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:23411-23412",
+        "crossref:23411-23412"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0097": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:4262-4274",
+        "crossref:4262-4274",
+        "acl_anthology:4262-4274"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0098": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2475-2491",
+        "crossref:2475-2491",
+        "europepmc:2475-2491",
+        "pubmed:2475-2491"
+      ],
+      "volume": [
+        "dblp_online:45",
+        "crossref:45",
+        "europepmc:45",
+        "pubmed:45"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0099": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:85-90",
+        "acl_anthology:85-90"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, United Arab Emirates (Hybrid)"
+      ]
+    }
+  },
+  "P3-0100": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:19730-19742",
+        "semantic_scholar:19730-19742"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0101": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:12814-12845",
+        "crossref:12814-12845",
+        "acl_anthology:12814-12845"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0102": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:11495-11503",
+        "crossref:11495-11503"
+      ],
+      "volume": [
+        "crossref:36"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0103": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:3037-3046",
+        "crossref:3037-3046"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0104": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:33299-33318"
+      ],
+      "publisher": [
+        "crossref:Springer-Verlag",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0105": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2555-2563",
+        "crossref:2555-2563"
+      ],
+      "volume": [
+        "crossref:37"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0106": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:9145-9154",
+        "crossref:9145-9154",
+        "acl_anthology:9145-9154"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0107": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:35007-35020",
+        "openalex:35007-35020"
+      ],
+      "publisher": [
+        "crossref:Neural Information Processing Systems Fo"
+      ]
+    }
+  },
+  "P3-0108": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1449-1462",
+        "crossref:1449-1462",
+        "acl_anthology:1449-1462"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Punta Cana, Dominican Republic"
+      ]
+    }
+  },
+  "P3-0109": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:23360-23368",
+        "crossref:23360-23368"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0110": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1044-1069",
+        "crossref:1044-1069",
+        "acl_anthology:1044-1069"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0111": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:13918-13926",
+        "crossref:13918-13926"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0112": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:18783-18794",
+        "crossref:18783-18794"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0113": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0114": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:10091-10108",
+        "semantic_scholar:10091-10108"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0115": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:5396-5420",
+        "crossref:5396-5420",
+        "acl_anthology:5396-5420"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0116": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:241-248",
+        "crossref:241-248"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0117": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2584-2606",
+        "crossref:2584-2606",
+        "europepmc:2584-2606",
+        "pubmed:2584-2606"
+      ],
+      "volume": [
+        "dblp_online:46",
+        "crossref:46",
+        "europepmc:46",
+        "pubmed:46"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0118": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "publisher",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1427-1440"
+      ],
+      "volume": [
+        "dblp_online:3"
+      ]
+    }
+  },
+  "P3-0119": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:681-693",
+        "crossref:681-693",
+        "acl_anthology:681-693"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0120": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:306",
+        "crossref:306-306"
+      ],
+      "volume": [
+        "crossref:3"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0121": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:428-446",
+        "crossref:428-446",
+        "acl_anthology:428-446"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0122": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:12319-12338",
+        "crossref:365-402"
+      ],
+      "publisher": [
+        "crossref:Springer Nature Singapore",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0123": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:797-805",
+        "crossref:797-805"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0124": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:16177-16188",
+        "crossref:16177-16188",
+        "acl_anthology:16177-16188"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0125": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2430-2440",
+        "crossref:2430-2440",
+        "acl_anthology:2430-2440"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0126": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:593-599",
+        "acl_anthology:593-599"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0127": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:509-521",
+        "crossref:509-521",
+        "acl_anthology:509-521"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0128": {
+    "n_qualifying": 7,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "openalex:1102-1108",
+        "semantic_scholar:1-17",
+        "semantic_scholar:103766"
+      ],
+      "volume": [
+        "semantic_scholar:63",
+        "semantic_scholar:36",
+        "semantic_scholar:127"
+      ],
+      "publisher": [
+        "crossref:Wiley"
+      ]
+    }
+  },
+  "P3-0129": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:18833-18841",
+        "crossref:18833-18841"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0130": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0131": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:3430-3437",
+        "crossref:3430-3437"
+      ],
+      "volume": [
+        "crossref:34"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0132": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1146-1161",
+        "crossref:1146-1161",
+        "acl_anthology:1146-1161"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0133": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:12339-12349",
+        "crossref:12339-12349"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0134": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:16825-16839",
+        "crossref:16825-16839",
+        "acl_anthology:16825-16839"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0135": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:169-179",
+        "crossref:169-179",
+        "acl_anthology:169-179"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0136": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:819-862",
+        "crossref:819-862",
+        "acl_anthology:819-862"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0137": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:15051-15064",
+        "crossref:15051-15064",
+        "europepmc:15051-15064",
+        "pubmed:15051-15064"
+      ],
+      "volume": [
+        "dblp_online:45",
+        "crossref:45",
+        "europepmc:45",
+        "pubmed:45"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0138": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:337-371",
+        "semantic_scholar:337-371"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0139": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:12511-12518",
+        "crossref:12511-12518"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0140": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:4934-4942",
+        "crossref:4934-4942"
+      ],
+      "volume": [
+        "crossref:38"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0141": {
+    "n_qualifying": 8,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:599-608"
+      ],
+      "publisher": [
+        "openalex:Cornell University",
+        "openalex:Centre National de la Recherche Scientif"
+      ]
+    }
+  },
+  "P3-0142": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:87-107",
+        "crossref:87-107",
+        "acl_anthology:87-107"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0143": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1752-1771",
+        "crossref:1752-1771",
+        "acl_anthology:1752-1771"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0144": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0145": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:142-157",
+        "acl_anthology:142-157"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0146": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:14421-14430",
+        "crossref:14421-14430"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0147": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:10501-10512",
+        "crossref:10501-10512",
+        "acl_anthology:10501-10512"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0148": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:8217-8227",
+        "crossref:8217-8227"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0149": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:95-100",
+        "crossref:95-100"
+      ],
+      "publisher": [
+        "crossref:ACM"
+      ]
+    }
+  },
+  "P3-0150": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:4573-4581",
+        "crossref:4573-4581"
+      ],
+      "volume": [
+        "crossref:35"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0151": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2427-2436",
+        "crossref:2427-2436"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0152": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:8143-8152",
+        "crossref:8143-8152"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0153": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:3169-3182",
+        "crossref:3169-3182",
+        "europepmc:3169-3182",
+        "pubmed:3169-3182"
+      ],
+      "volume": [
+        "dblp_online:46",
+        "crossref:46",
+        "europepmc:46",
+        "pubmed:46"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0154": {
+    "n_qualifying": 2,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:15720-15730"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0155": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:9248-9274",
+        "crossref:9248-9274",
+        "acl_anthology:9248-9274"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0156": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0157": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0158": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:654-670",
+        "crossref:654-670",
+        "acl_anthology:654-670"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Singapore"
+      ]
+    }
+  },
+  "P3-0159": {
+    "n_qualifying": 7,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:205-212",
+        "dblp_online:3283-3290",
+        "crossref:3283-3290",
+        "openalex:1078-1078"
+      ],
+      "volume": [
+        "crossref:34",
+        "openalex:14"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif",
+        "openalex:Multidisciplinary Digital Publishing Ins"
+      ]
+    }
+  },
+  "P3-0160": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:8482-8491",
+        "crossref:1-1",
+        "europepmc:8482-8491",
+        "pubmed:8482-8491"
+      ],
+      "volume": [
+        "dblp_online:44",
+        "europepmc:44",
+        "pubmed:44"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0161": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1557-1566",
+        "crossref:1557-1566",
+        "acl_anthology:1557-1566"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0162": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:6830-6839",
+        "crossref:6830-6839"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0163": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2528-2540",
+        "crossref:2528-2540",
+        "acl_anthology:2528-2540"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0164": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2589-2605",
+        "crossref:2589-2605",
+        "acl_anthology:2589-2605"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0165": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:9465-9480",
+        "crossref:9465-9480",
+        "acl_anthology:9465-9480"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, United Arab Emirates"
+      ]
+    }
+  },
+  "P3-0166": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:619-624",
+        "crossref:619-624",
+        "acl_anthology:619-624"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0167": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:745-758",
+        "acl_anthology:745-758"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0168": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:13256-13277"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0169": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:12052-12066",
+        "crossref:12052-12066",
+        "acl_anthology:12052-12066"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Abu Dhabi, United Arab Emirates"
+      ]
+    }
+  },
+  "P3-0170": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:6740-6757",
+        "crossref:6740-6757",
+        "acl_anthology:6740-6757"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0171": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "publisher"
+    ],
+    "returners": {
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0172": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2542-2551",
+        "crossref:2542-2551",
+        "acl_anthology:2542-2551"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0173": {
+    "n_qualifying": 7,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1597-1607",
+        "openalex:1597-1607"
+      ],
+      "volume": [
+        "openalex:1"
+      ],
+      "publisher": [
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0174": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:15804-15819",
+        "crossref:15804-15819",
+        "acl_anthology:15804-15819"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0175": {
+    "n_qualifying": 8,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:24706-24719",
+        "openalex:24706-24719"
+      ],
+      "publisher": [
+        "crossref:Neural Information Processing Systems Fo",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0176": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:10410-10423",
+        "crossref:10410-10423",
+        "acl_anthology:10410-10423"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Bangkok, Thailand"
+      ]
+    }
+  },
+  "P3-0177": {
+    "n_qualifying": 7,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:6543-6552",
+        "semantic_scholar:6543-6552"
+      ],
+      "publisher": [
+        "openalex:Cornell University",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0178": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:3353-3361",
+        "crossref:3353-3361"
+      ],
+      "volume": [
+        "crossref:36"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0179": {
+    "n_qualifying": 8,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "crossref:59375-59387",
+        "openalex:59375-59387"
+      ],
+      "publisher": [
+        "crossref:Neural Information Processing Systems Fo",
+        "openalex:Cornell University"
+      ]
+    }
+  },
+  "P3-0180": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:9091-9099",
+        "crossref:9091-9099"
+      ],
+      "volume": [
+        "crossref:36"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0181": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:4513-4522",
+        "crossref:4513-4522"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0182": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2712-2724",
+        "crossref:1-1",
+        "europepmc:2712-2724",
+        "pubmed:2712-2724"
+      ],
+      "volume": [
+        "dblp_online:44",
+        "europepmc:44",
+        "pubmed:44"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0183": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1172-1183",
+        "crossref:1172-1183",
+        "europepmc:1172-1183",
+        "pubmed:1172-1183"
+      ],
+      "volume": [
+        "dblp_online:43",
+        "crossref:43",
+        "europepmc:43",
+        "pubmed:43"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0184": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:107-116",
+        "crossref:107-116",
+        "acl_anthology:107-116"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online and Punta Cana, Dominican Republi"
+      ]
+    }
+  },
+  "P3-0185": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2657-2668",
+        "crossref:2657-2668"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0186": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1818-1826",
+        "crossref:1818-1826"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0187": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:7156-7168",
+        "crossref:7156-7168",
+        "acl_anthology:7156-7168"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Miami, Florida, USA"
+      ]
+    }
+  },
+  "P3-0188": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "volume",
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:543-549",
+        "crossref:543-549"
+      ],
+      "publisher": [
+        "crossref:IEEE"
+      ]
+    }
+  },
+  "P3-0189": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:1343-1353",
+        "acl_anthology:1343-1353"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Punta Cana, Dominican Republic"
+      ]
+    }
+  },
+  "P3-0190": {
+    "n_qualifying": 6,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:6592-6607",
+        "crossref:6592-6607",
+        "acl_anthology:6592-6607"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Toronto, Canada"
+      ]
+    }
+  },
+  "P3-0191": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2579-2590",
+        "crossref:2579-2590",
+        "acl_anthology:2579-2590"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  },
+  "P3-0192": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "publisher",
+      "location"
+    ],
+    "verifiable": [],
+    "returners": {}
+  },
+  "P3-0193": {
+    "n_qualifying": 5,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:786-797",
+        "crossref:786-797",
+        "europepmc:786-797",
+        "pubmed:786-797"
+      ],
+      "volume": [
+        "dblp_online:43",
+        "crossref:43",
+        "europepmc:43",
+        "pubmed:43"
+      ],
+      "publisher": [
+        "crossref:Institute of Electrical and Electronics "
+      ]
+    }
+  },
+  "P3-0194": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:2532-2542",
+        "crossref:2532-2542",
+        "acl_anthology:2532-2542"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Online"
+      ]
+    }
+  },
+  "P3-0195": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "location"
+    ],
+    "verifiable": [
+      "pages",
+      "volume",
+      "publisher"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:13693-13696",
+        "crossref:13693-13696"
+      ],
+      "volume": [
+        "crossref:34"
+      ],
+      "publisher": [
+        "crossref:Association for the Advancement of Artif"
+      ]
+    }
+  },
+  "P3-0196": {
+    "n_qualifying": 3,
+    "unverifiable": [
+      "pages",
+      "volume",
+      "publisher",
+      "location"
+    ],
+    "verifiable": [],
+    "returners": {}
+  },
+  "P3-0197": {
+    "n_qualifying": 4,
+    "unverifiable": [
+      "volume"
+    ],
+    "verifiable": [
+      "pages",
+      "publisher",
+      "location"
+    ],
+    "returners": {
+      "pages": [
+        "dblp_online:346-354",
+        "crossref:346-354",
+        "acl_anthology:346-354"
+      ],
+      "publisher": [
+        "crossref:Association for Computational Linguistic",
+        "acl_anthology:Association for Computational Linguistic"
+      ],
+      "location": [
+        "acl_anthology:Dublin, Ireland"
+      ]
+    }
+  }
+}

@@ -21,6 +21,8 @@ class ConnectorRuntimeConfig:
     searxng_base_url: str | None
     ncbi_api_key: str | None
     ncbi_email: str | None
+    openalex_mailto: str | None
+    openalex_api_key: str | None
     web_search_provider: str
     google_api_key: str | None
     google_cse_id: str | None
@@ -339,6 +341,17 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _optional_str(env, "CITATION_CHECKER_NCBI_EMAIL")
         or _optional_payload_str(payload, ["connectors", "ncbi_email"])
     )
+    openalex_mailto = (
+        _optional_str(env, "OPENALEX_MAILTO")
+        or _optional_str(env, "CITATION_CHECKER_OPENALEX_MAILTO")
+        or _optional_payload_str(payload, ["connectors", "openalex_mailto"])
+        or ncbi_email  # reuse NCBI email for OpenAlex polite pool by default
+    )
+    openalex_api_key = (
+        _optional_str(env, "OPENALEX_API_KEY")
+        or _optional_str(env, "CITATION_CHECKER_OPENALEX_API_KEY")
+        or _optional_payload_str(payload, ["connectors", "openalex_api_key"])
+    )
     tavily_api_key = (
         _optional_str(env, "TAVILY_API_KEY")
         or _optional_str(env, "CITATION_CHECKER_TAVILY_API_KEY")
@@ -574,6 +587,8 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
             searxng_base_url=searxng_base_url,
             ncbi_api_key=ncbi_api_key,
             ncbi_email=ncbi_email,
+            openalex_mailto=openalex_mailto,
+            openalex_api_key=openalex_api_key,
             web_search_provider=web_search_provider,
             google_api_key=google_api_key,
             google_cse_id=google_cse_id,

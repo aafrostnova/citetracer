@@ -312,11 +312,13 @@ def _build_verifier(cfg, args: argparse.Namespace, verbose: bool) -> CitationVer
         url_direct_connector=url_direct_conn,
     )
 
-    # Cascading 3-agent + extractor agent (Bedrock)
+    # Cascading 3-agent + extractor agent + author classifier (Bedrock)
     valid_agent = potential_agent = hallucinated_agent = extractor_agent = None
+    author_classifier = None
     if cfg.verification_llm.enabled and cfg.verification_llm.provider == "bedrock":
         from citation_verification_demo import _build_bedrock_client
         from packages.core.bedrock_agents import (
+            BedrockFieldClassifier,
             BedrockHallucinatedAgent,
             BedrockPotentialAgent,
             BedrockValidAgent,
@@ -332,7 +334,8 @@ def _build_verifier(cfg, args: argparse.Namespace, verbose: bool) -> CitationVer
         potential_agent = BedrockPotentialAgent(bedrock_client, model_id)
         hallucinated_agent = BedrockHallucinatedAgent(bedrock_client, model_id)
         extractor_agent = BedrockExtractorAgent(bedrock_client, model_id)
-        _log(verbose, f"      cascading 3-agent + extractor enabled (model={model_id})")
+        author_classifier = BedrockFieldClassifier(bedrock_client, model_id)
+        _log(verbose, f"      cascading 3-agent + field classifier (authors/venue/publisher) + extractor enabled (model={model_id})")
     else:
         _log(verbose, "      cascading agents disabled (no verification LLM)")
 
@@ -349,6 +352,7 @@ def _build_verifier(cfg, args: argparse.Namespace, verbose: bool) -> CitationVer
         potential_agent=potential_agent,
         hallucinated_agent=hallucinated_agent,
         extractor_agent=extractor_agent,
+        author_classifier=author_classifier,
         verified_ref_cache=verified_ref_cache,
     )
 

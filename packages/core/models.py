@@ -106,6 +106,60 @@ class DownstreamAgentResult:
 
 
 @dataclass
+class AuthorVariantResult:
+    """Output of the AuthorVariantClassifier. Authoritative classification of
+    the relationship between citation and candidate author lists, used by
+    ValidAgent and R4 coverage logic.
+
+    overall:
+      - "exact"       — byte-identical after case normalization
+      - "r2_initial"  — single-letter initial expansion only (e.g. "G. Hao" ≡ "Gao Hao")
+      - "p1_variant"  — same people, but name form differs by nickname / multi-letter
+                        truncation / transliteration / typo / last-first reorder.
+                        P1 means same identity, BUT the names are not rule-derivably equal.
+      - "h2_error"    — genuinely different people (added/deleted/reordered/fabricated).
+    """
+    overall: str = "exact"
+    reason: str = ""
+    per_pair: list[dict[str, Any]] = field(default_factory=list)
+    raw_llm_response: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class VenueEquivalenceResult:
+    """Output of the VenueEquivalenceClassifier. Authoritative classification
+    of whether two organization names (venue or publisher) refer to the same
+    entity. Used by ValidAgent (venue/publisher judgment) and by downstream
+    consumers via field_status["<field>"]["variant_type"].
+
+    overall:
+      - "exact"     — byte-identical after case/punctuation normalization
+      - "alias"     — same organization, expressed differently (acronym ↔ full
+                      name, proceedings prefix, dot-abbreviation, alternate
+                      spelling, etc.). Treat as match.
+      - "different" — genuinely different venues/publishers.
+    """
+    overall: str = "exact"
+    reason: str = ""
+    raw_llm_response: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class FieldClassificationResult:
+    """Unified output of the FieldClassifier — produces verdicts for authors,
+    venue, and publisher in a single LLM call.
+
+    Individual field results carry the full context (overall + reason) so
+    downstream consumers (ValidAgent prompt, R4 coverage, field_status
+    stamping) can use each verdict independently.
+    """
+    authors: AuthorVariantResult = field(default_factory=AuthorVariantResult)
+    venue: VenueEquivalenceResult = field(default_factory=VenueEquivalenceResult)
+    publisher: VenueEquivalenceResult = field(default_factory=VenueEquivalenceResult)
+    raw_llm_response: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class DiscrepancyEvidence:
     """Evidence gathered to explain a single field discrepancy during secondary verification."""
     field: str

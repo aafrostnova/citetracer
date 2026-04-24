@@ -11,13 +11,36 @@ class OpenAlexConnector(BaseConnector):
     name = "openalex"
     ttl_s = 60 * 60 * 24
 
+    def __init__(
+        self, mailto: str | None = None, api_key: str | None = None,
+    ) -> None:
+        # Polite-pool opt-in: add mailto=<email> to every request. OpenAlex
+        # promises a separate, faster queue and a higher daily quota to polite
+        # clients. See https://docs.openalex.org/how-to-use-the-api/rate-limits.
+        self.mailto = (mailto or "").strip() or None
+        # Premium/authenticated api_key: passed as api_key=<key> URL param.
+        # Upgrades from polite pool to authenticated rate limits (much higher
+        # daily quota).
+        self.api_key = (api_key or "").strip() or None
+
+    def _auth_params(self) -> dict[str, Any]:
+        """Return the mailto / api_key URL params to include on every call."""
+        extra: dict[str, Any] = {}
+        if self.mailto:
+            extra["mailto"] = self.mailto
+        if self.api_key:
+            extra["api_key"] = self.api_key
+        return extra
+
     def search(self, citation: CitationRecord, policy: RequestPolicy) -> list[dict[str, Any]]:
         query = citation.doi or citation.title
         if not query:
             return []
+        params: dict[str, Any] = {"search": query, "per-page": 5}
+        params.update(self._auth_params())
         payload = self._request_json(
             "https://api.openalex.org/works",
-            {"search": query, "per-page": 5},
+            params,
             policy,
         )
         records = []
@@ -63,9 +86,11 @@ class OpenAlexConnector(BaseConnector):
         if not author_name or not author_name.strip():
             return {}
         try:
+            params: dict[str, Any] = {"search": author_name.strip(), "per-page": 3}
+            params.update(self._auth_params())
             payload = self._request_json(
                 "https://api.openalex.org/authors",
-                {"search": author_name.strip(), "per-page": 3},
+                params,
                 policy,
             )
         except Exception:

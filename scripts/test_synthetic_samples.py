@@ -44,12 +44,19 @@ _LABEL_TO_VERDICT = {
 }
 
 
-def _build_verifier(cfg) -> CitationVerifier:
+def _build_verifier(
+    cfg,
+    rule_based_valid_agent: bool = False,
+    rule_based_hallucinated_agent: bool = False,
+) -> CitationVerifier:
     """Build a verifier identical to apps/pdf_checker/run.py::_build_verifier.
 
     Mirrors the production pipeline: orchestrator (full connector list with all
     API keys and web search provider), LLM resolver, SecondaryVerifier,
     cascading 3-agent + ExtractorAgent, and VerifiedReferenceCache.
+
+    When `rule_based_valid_agent=True`, swaps BedrockValidAgent for the
+    deterministic RuleBasedValidAgent (no LLM call for validity adjudication).
     """
     from pathlib import Path as _Path
     conn_cfg = cfg.connectors
@@ -73,6 +80,8 @@ def _build_verifier(cfg) -> CitationVerifier:
         searxng_base_url=getattr(conn_cfg, "searxng_base_url", "") or None,
         ncbi_api_key=getattr(conn_cfg, "ncbi_api_key", "") or None,
         ncbi_email=getattr(conn_cfg, "ncbi_email", "") or None,
+        openalex_mailto=getattr(conn_cfg, "openalex_mailto", "") or None,
+        openalex_api_key=getattr(conn_cfg, "openalex_api_key", "") or None,
         web_search_provider=getattr(conn_cfg, "web_search_provider", "") or None,
         google_api_key=getattr(conn_cfg, "google_api_key", "") or None,
         google_cse_id=getattr(conn_cfg, "google_cse_id", "") or None,
@@ -121,12 +130,14 @@ def _build_verifier(cfg) -> CitationVerifier:
         url_direct_connector=url_direct_conn,
     )
 
-    # Cascading 3-agent + ExtractorAgent (Bedrock) — same as pipeline
+    # Cascading 3-agent + AuthorVariantClassifier + ExtractorAgent (Bedrock)
     valid_agent = potential_agent = hallucinated_agent = extractor_agent = None
+    author_classifier = None
     if cfg.verification_llm.enabled and cfg.verification_llm.provider == "bedrock":
         try:
             from citation_verification_demo import _build_bedrock_client
             from packages.core.bedrock_agents import (
+                BedrockFieldClassifier,
                 BedrockHallucinatedAgent,
                 BedrockPotentialAgent,
                 BedrockValidAgent,
@@ -138,11 +149,22 @@ def _build_verifier(cfg) -> CitationVerifier:
                 bearer_token=bcfg.bearer_token,
             )
             model_id = str(bcfg.model_id)
-            valid_agent = BedrockValidAgent(bedrock_client, model_id)
+            if rule_based_valid_agent:
+                from packages.core.rule_based_agents import RuleBasedValidAgent
+                valid_agent = RuleBasedValidAgent()
+                print(f"  ValidAgent: RuleBasedValidAgent (deterministic, no LLM)", flush=True)
+            else:
+                valid_agent = BedrockValidAgent(bedrock_client, model_id)
             potential_agent = BedrockPotentialAgent(bedrock_client, model_id)
-            hallucinated_agent = BedrockHallucinatedAgent(bedrock_client, model_id)
+            if rule_based_hallucinated_agent:
+                from packages.core.rule_based_agents import RuleBasedHallucinatedAgent
+                hallucinated_agent = RuleBasedHallucinatedAgent()
+                print(f"  HallucinatedAgent: RuleBasedHallucinatedAgent (deterministic, no LLM)", flush=True)
+            else:
+                hallucinated_agent = BedrockHallucinatedAgent(bedrock_client, model_id)
             extractor_agent = BedrockExtractorAgent(bedrock_client, model_id)
-            print(f"  Cascading 3-agent + extractor enabled (model={model_id})", flush=True)
+            author_classifier = BedrockFieldClassifier(bedrock_client, model_id)
+            print(f"  Cascading 3-agent + field classifier + extractor enabled (model={model_id})", flush=True)
         except Exception as exc:
             print(f"  WARNING: cascading agents failed to init: {exc}", flush=True)
     else:
@@ -162,6 +184,7 @@ def _build_verifier(cfg) -> CitationVerifier:
         potential_agent=potential_agent,
         hallucinated_agent=hallucinated_agent,
         extractor_agent=extractor_agent,
+        author_classifier=author_classifier,
         verified_ref_cache=verified_ref_cache,
     )
 
@@ -191,14 +214,30 @@ def main() -> None:
     parser.add_argument("--expected-verdict", default=None,
                         choices=["VALID", "POTENTIAL_REFERENCE", "FAKE_REFERENCE"],
                         help="Expected verdict for all samples (alternative to --meta)")
-    parser.add_argument("--max", type=int, default=None, help="Test only first N samples")
+    parser.add_argument("--max", type=int, default=None, help="Test only N samples (after --offset)")
+    parser.add_argument("--offset", type=int, default=0, help="Skip first N samples before testing")
+    parser.add_argument("--ids", default="",
+                        help="Comma-separated citation_ids to test (overrides --offset/--max)")
     parser.add_argument("--workers", type=int, default=1, help="Parallel verification workers")
     parser.add_argument("--out", default=None, help="Save detailed results JSON")
+    parser.add_argument("--rule-based-valid-agent", action="store_true",
+                        help="Use RuleBasedValidAgent (no LLM) instead of BedrockValidAgent")
+    parser.add_argument("--rule-based-hallucinated-agent", action="store_true",
+                        help="Use RuleBasedHallucinatedAgent (no LLM) instead of BedrockHallucinatedAgent")
     args = parser.parse_args()
 
     samples = json.loads(Path(args.samples).read_text())
-    if args.max:
-        samples = samples[:args.max]
+    if args.ids:
+        wanted = {s.strip() for s in args.ids.split(",") if s.strip()}
+        samples = [s for s in samples if s.get("citation_id") in wanted]
+        missing = wanted - {s.get("citation_id") for s in samples}
+        if missing:
+            print(f"WARNING: --ids not found in samples: {sorted(missing)}", flush=True)
+    else:
+        if args.offset:
+            samples = samples[args.offset:]
+        if args.max:
+            samples = samples[:args.max]
 
     meta = {}
     if args.meta:
@@ -207,7 +246,11 @@ def main() -> None:
     print(f"Testing {len(samples)} samples from {args.samples}", flush=True)
 
     cfg = load_pdf_checker_config()
-    verifier = _build_verifier(cfg)
+    verifier = _build_verifier(
+        cfg,
+        rule_based_valid_agent=args.rule_based_valid_agent,
+        rule_based_hallucinated_agent=args.rule_based_hallucinated_agent,
+    )
     print("Verifier ready.\n", flush=True)
 
     results = []
@@ -241,6 +284,31 @@ def main() -> None:
         _ALL_FIELDS = ("title", "authors", "venue", "year", "doi", "arxiv_id",
                        "pages", "volume", "publisher", "location")
 
+        # Per-field status flatten that preserves classifier-stamped variant
+        # metadata (author_variant_type / venue_variant_type / publisher_variant_type)
+        # when present — needed to diagnose why a verdict was chosen.
+        _VARIANT_KEYS = (
+            "author_variant_type", "author_variant_reason",
+            "venue_variant_type", "venue_variant_reason",
+            "publisher_variant_type", "publisher_variant_reason",
+            "_classifier_corrected", "_rule_status",
+        )
+
+        def _flatten_fs(fs: dict) -> dict:
+            out = {}
+            for f in _ALL_FIELDS:
+                entry = fs.get(f)
+                if isinstance(entry, dict):
+                    status = entry.get("status", "n/a")
+                    extras = {k: entry[k] for k in _VARIANT_KEYS if k in entry}
+                    if extras:
+                        out[f] = {"status": status, **extras}
+                    else:
+                        out[f] = status
+                else:
+                    out[f] = entry if entry else "n/a"
+            return out
+
         # Build per-candidate evaluations with full detail
         candidate_evaluations = []
         for ev in vdict.get("candidate_evaluations", []):
@@ -264,11 +332,8 @@ def main() -> None:
                     "publisher": (ev.get("candidate", {}) or {}).get("publisher", ""),
                     "location": (ev.get("candidate", {}) or {}).get("location", ""),
                 } if ev.get("candidate") else None,
-                "field_status": {
-                    f: ev_field_status.get(f, {}).get("status", "n/a")
-                    if isinstance(ev_field_status.get(f), dict) else ev_field_status.get(f, "n/a")
-                    for f in _ALL_FIELDS
-                } if ev_field_status else {},
+                "field_status": _flatten_fs(ev_field_status) if ev_field_status else {},
+                "field_classification": ev_comparison.get("_field_classification"),
             })
 
         return {
@@ -281,11 +346,8 @@ def main() -> None:
             "evidence_sources": vdict.get("evidence_sources", []),
             "conflicts": vdict.get("conflicts", []),
             "needs_human_review": vdict.get("needs_human_review", False),
-            "field_status": {
-                f: field_status.get(f, {}).get("status", "n/a")
-                if isinstance(field_status.get(f), dict) else field_status.get(f, "n/a")
-                for f in _ALL_FIELDS
-            },
+            "field_status": _flatten_fs(field_status),
+            "field_classification": comparison.get("_field_classification"),
             "reference_snapshot": ref_snapshot,
             "matched_candidate": {
                 "connector": matched_candidate.get("connector", ""),
@@ -317,14 +379,52 @@ def main() -> None:
             },
         }, match
 
+    # Incremental flush: after each citation completes, write the full
+    # partial report to --out (atomic via tmp file + rename). Keeps the
+    # run safe against crashes / Ctrl-C and gives real-time visibility.
+    import threading as _threading
+    _flush_lock = _threading.Lock()
+
+    def _flush():
+        if not args.out:
+            return
+        from collections import Counter as _C
+        pred_dist = _C(r["predicted"] for r in results)
+        tax_dist = _C()
+        for r in results:
+            for t in r.get("taxonomy", []):
+                tax_dist[t] += 1
+        field_issues = _C()
+        for r in results:
+            if not r["match"]:
+                for f, status in r.get("field_status", {}).items():
+                    if status not in ("match", "both_missing", "reference_missing", "n/a"):
+                        field_issues[f"{f}:{status}"] += 1
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "accuracy": correct / total if total else 0,
+            "total": total,
+            "correct": correct,
+            "predicted_distribution": dict(pred_dist),
+            "taxonomy_distribution": dict(tax_dist),
+            "field_issues_in_mismatches": dict(field_issues),
+            "results": results,
+        }
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        tmp_path.replace(out_path)
+
     if args.workers <= 1:
         for sample in samples:
             _, cid, verdict = _verify_one(sample)
             result, match = _build_result(sample, cid, verdict)
-            results.append(result)
-            if match:
-                correct += 1
-            total += 1
+            with _flush_lock:
+                results.append(result)
+                if match:
+                    correct += 1
+                total += 1
+                _flush()
             if pbar:
                 pbar.update(1)
                 pbar.set_postfix({"acc": f"{correct}/{total}"})
@@ -337,10 +437,12 @@ def main() -> None:
             for fut in as_completed(futures):
                 sample, cid, verdict = fut.result()
                 result, match = _build_result(sample, cid, verdict)
-                results.append(result)
-                if match:
-                    correct += 1
-                total += 1
+                with _flush_lock:
+                    results.append(result)
+                    if match:
+                        correct += 1
+                    total += 1
+                    _flush()
                 if pbar:
                     pbar.update(1)
                     pbar.set_postfix({"acc": f"{correct}/{total}"})

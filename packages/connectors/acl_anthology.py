@@ -358,6 +358,7 @@ class ACLAnthologyConnector(BaseConnector):
                     "volume": "",
                     "pages": str(getattr(paper, "pages", "") or "").strip(),
                     "publisher": str(getattr(paper, "publisher", "") or "").strip() or "Association for Computational Linguistics",
+                    "location": str(getattr(paper, "address", "") or "").strip(),
                 }
             )
         return records
@@ -392,6 +393,7 @@ class ACLAnthologyConnector(BaseConnector):
                     "doi": "",
                     "arxiv_id": "",
                     "url": f"https://aclanthology.org{href}",
+                    "location": "",  # HTML scraping path lacks location metadata
                 }
             )
             if len(records) >= 5:

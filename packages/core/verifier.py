@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
+from typing import Any
 
-from packages.connectors.base import ConnectorOrchestrator, ConnectorResult
+from packages.connectors.base import ConnectorOrchestrator, ConnectorResult, RequestPolicy
 
 from .adjudicate import AdjudicationPolicy, LLMResolver, SecondaryVerifierProtocol, adjudicate, canonical_verdict_label
 from .agents import ExistenceJudge, StructuredJudge, multi_agent_adjudicate
 from .cascading_agents import (
     ValidAgentProtocol, PotentialAgentProtocol, HallucinatedAgentProtocol,
     cascading_adjudicate,
+    cascading_phase2_only,
+    verify_single_candidate,
     phase0_url_check,
     phase0_decide_verdict,
     downgrade_non_academic_fake,
@@ -18,6 +22,10 @@ from .matching import CandidateMatch, build_candidate_match, collect_candidates
 from .models import CheckReport, CitationRecord, CitationVerdict, EvidenceTrace, ExtractionQuality, VerdictLabel
 from .normalize import extract_identifier, normalize_title, similarity
 from .report import build_summary, compute_risk_score
+
+# Connectors treated as "web search" (non-structured, need ExtractorAgent).
+# These are deferred to Phase 1b after structured connectors exhaust.
+_WEB_CONNECTOR_NAMES = {"web_search", "google_search"}
 
 
 @dataclass
@@ -41,6 +49,7 @@ class CitationVerifier:
         potential_agent: PotentialAgentProtocol | None = None,
         hallucinated_agent: HallucinatedAgentProtocol | None = None,
         extractor_agent: Any = None,
+        author_classifier: Any = None,
         verified_ref_cache: Any = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -54,6 +63,7 @@ class CitationVerifier:
         self.potential_agent = potential_agent
         self.hallucinated_agent = hallucinated_agent
         self.extractor_agent = extractor_agent
+        self.author_classifier = author_classifier
         self.verified_ref_cache = verified_ref_cache
 
     _CACHEABLE_TAXONOMY = {"R1", "R3"}
@@ -226,27 +236,305 @@ class CitationVerifier:
         return None
 
 
+    def _resolve_tavily_key(self) -> str:
+        import os as _os
+        key = _os.getenv("TAVILY_API_KEY", "")
+        if key:
+            return key
+        try:
+            from apps.pdf_checker.config import load_pdf_checker_config as _load_cfg
+            return (_load_cfg().connectors.tavily_api_key or "").strip()
+        except Exception:
+            return ""
+
+    def _run_connector_unit(
+        self,
+        citation: CitationRecord,
+        connector: Any,
+        records_override: list[dict] | None,
+        url_match_status: str,
+        url_issues: list[str],
+        url_type_triggered: str,
+        tavily_api_key: str,
+    ) -> dict[str, Any]:
+        """Query one connector then verify its candidates (unit of parallelism).
+
+        If ``records_override`` is provided, skip the connector.search() call and
+        treat those records as already-fetched (used for Phase 0 url_direct).
+
+        Returns a dict with keys:
+            kind: "VALID" | "NOT_VALID" | "ERROR"
+            verdict: CitationVerdict if kind == VALID, else None
+            candidates: list[CandidateMatch]
+            evaluations: list[dict]
+            valid_results: list[ValidAgentResult]  (for NOT_VALID Phase 2 selection)
+            trace: EvidenceTrace
+        """
+        import time as _time
+
+        conn_name = connector.name if connector is not None else "url_direct"
+        started = _time.perf_counter()
+        error: str | None = None
+
+        if records_override is not None:
+            records = list(records_override)
+        else:
+            try:
+                records = connector.search(citation, self.orchestrator.policy)
+            except Exception as exc:
+                records = []
+                error = str(exc)
+
+        latency_ms = (_time.perf_counter() - started) * 1000
+        trace = EvidenceTrace(
+            connector=conn_name,
+            query={
+                "title": citation.title, "year": citation.year, "doi": citation.doi,
+                "arxiv_id": citation.arxiv_id, "url": citation.url,
+            },
+            latency_ms=latency_ms,
+            cache_hit=False,
+            source_health=1.0,
+            candidates_count=len(records),
+            error=error,
+        )
+
+        if error or not records:
+            return {
+                "kind": "ERROR" if error else "NOT_VALID",
+                "verdict": None,
+                "candidates": [],
+                "evaluations": [],
+                "valid_results": [],
+                "trace": trace,
+            }
+
+        cands = collect_candidates(citation, {conn_name: records})
+        evals: list[dict[str, Any]] = []
+        vresults = []
+
+        for cand in cands:
+            verdict_or_none, eval_dict, vresult = verify_single_candidate(
+                citation=citation,
+                candidate=cand,
+                sibling_candidates=cands,
+                prior_evaluations=evals,
+                valid_agent=self.valid_agent,
+                extractor_agent=self.extractor_agent,
+                tavily_api_key=tavily_api_key,
+                evidence_sources=[conn_name],  # patched by caller on VALID
+                url_match_status=url_match_status,
+                url_issues=url_issues,
+                url_type_triggered=url_type_triggered,
+                author_classifier=getattr(self, "author_classifier", None),
+            )
+            evals.append(eval_dict)
+            if verdict_or_none is not None:
+                return {
+                    "kind": "VALID",
+                    "verdict": verdict_or_none,
+                    "candidates": cands,
+                    "evaluations": evals,
+                    "valid_results": vresults,
+                    "trace": trace,
+                }
+            if vresult is not None:
+                vresults.append(vresult)
+
+        return {
+            "kind": "NOT_VALID",
+            "verdict": None,
+            "candidates": cands,
+            "evaluations": evals,
+            "valid_results": vresults,
+            "trace": trace,
+        }
+
+    def _verify_streaming(
+        self,
+        citation: CitationRecord,
+        phase0_records: list[dict],
+        url_match_status: str,
+        url_issues: list[str],
+        url_type_triggered: str,
+        extraction_quality: ExtractionQuality,
+        source_paper_title: str,
+    ) -> CitationVerdict:
+        """Parallel per-connector verify with early VALID short-circuit.
+
+        Flow:
+          1a. Phase 0 url_direct records (reuse) + all structured connectors run as
+              independent (query+verify) units in parallel. First unit returning
+              VALID wins; remaining futures are cancelled.
+          1b. If all structured units NOT_VALID → run web_search unit(s). First
+              VALID wins.
+          2.  Otherwise → cascading_phase2_only on accumulated candidates.
+        """
+        tavily_key = self._resolve_tavily_key()
+
+        all_candidates: list[CandidateMatch] = []
+        all_evaluations: list[dict[str, Any]] = []
+        all_valid_results: list = []
+        all_evidence: list[EvidenceTrace] = []
+
+        def _patch_and_return_valid(verdict: CitationVerdict) -> CitationVerdict:
+            """Patch verdict.evidence_sources with all connectors that completed so far."""
+            completed = sorted({t.connector for t in all_evidence if t.error is None})
+            if verdict.evidence_sources and verdict.evidence_sources[0] not in completed:
+                completed = sorted(set(completed) | set(verdict.evidence_sources))
+            verdict.evidence_sources = completed
+            return verdict
+
+        # --- Phase 1a.0: synthetic unit for Phase 0 url_direct records ---
+        if phase0_records:
+            unit = self._run_connector_unit(
+                citation=citation,
+                connector=None,
+                records_override=phase0_records,
+                url_match_status=url_match_status,
+                url_issues=url_issues,
+                url_type_triggered=url_type_triggered,
+                tavily_api_key=tavily_key,
+            )
+            all_evidence.append(unit["trace"])
+            if unit["kind"] == "VALID":
+                return _patch_and_return_valid(unit["verdict"])
+            all_candidates.extend(unit["candidates"])
+            all_evaluations.extend(unit["evaluations"])
+            all_valid_results.extend(unit["valid_results"])
+
+        # --- Phase 1a: parallel structured connectors ---
+        structured = [
+            c for c in self.orchestrator.connectors
+            if c.name not in _WEB_CONNECTOR_NAMES
+        ]
+        web = [c for c in self.orchestrator.connectors if c.name in _WEB_CONNECTOR_NAMES]
+
+        if structured:
+            max_workers = min(self.orchestrator.max_workers, len(structured)) or 1
+            pool = ThreadPoolExecutor(max_workers=max_workers)
+            futures = {
+                pool.submit(
+                    self._run_connector_unit,
+                    citation, c, None,
+                    url_match_status, url_issues, url_type_triggered,
+                    tavily_key,
+                ): c
+                for c in structured
+            }
+            early_verdict: CitationVerdict | None = None
+            try:
+                for fut in as_completed(futures):
+                    try:
+                        unit = fut.result()
+                    except Exception:
+                        continue
+                    all_evidence.append(unit["trace"])
+                    if unit["kind"] == "VALID":
+                        early_verdict = unit["verdict"]
+                        break
+                    all_candidates.extend(unit["candidates"])
+                    all_evaluations.extend(unit["evaluations"])
+                    all_valid_results.extend(unit["valid_results"])
+            finally:
+                # Do NOT wait for running futures — they may be stuck in slow
+                # connector retries (e.g. 429 backoff on openalex). cancel_futures
+                # stops not-yet-started ones; running ones are orphaned.
+                pool.shutdown(wait=False, cancel_futures=True)
+            if early_verdict is not None:
+                return _patch_and_return_valid(early_verdict)
+
+        # --- Phase 1b: web_search fallback (sequential) ---
+        for web_conn in web:
+            unit = self._run_connector_unit(
+                citation=citation,
+                connector=web_conn,
+                records_override=None,
+                url_match_status=url_match_status,
+                url_issues=url_issues,
+                url_type_triggered=url_type_triggered,
+                tavily_api_key=tavily_key,
+            )
+            all_evidence.append(unit["trace"])
+            if unit["kind"] == "VALID":
+                return _patch_and_return_valid(unit["verdict"])
+            all_candidates.extend(unit["candidates"])
+            all_evaluations.extend(unit["evaluations"])
+            all_valid_results.extend(unit["valid_results"])
+
+        # --- Phase 2: cascading on accumulated non-VALID candidates ---
+        evidence_sources = sorted({
+            t.connector for t in all_evidence if t.error is None
+        })
+
+        # No candidates from any source → H1/INSUFFICIENT handling
+        if not all_candidates:
+            source_errors = [t for t in all_evidence if t.error]
+            if source_errors and len(source_errors) == len(all_evidence):
+                return CitationVerdict(
+                    citation_id=citation.citation_id,
+                    verdict=VerdictLabel.INSUFFICIENT_EVIDENCE,
+                    evidence_sources=evidence_sources,
+                    conflicts=["no_candidate"],
+                    adjudication_reason="All sources failed.",
+                    taxonomy_subtype=[],
+                    needs_human_review=True,
+                )
+
+        return cascading_phase2_only(
+            citation=citation,
+            candidates=all_candidates,
+            all_valid_results=all_valid_results,
+            all_evaluations=all_evaluations,
+            evidence_sources=evidence_sources,
+            secondary_verifier=self.secondary_verifier,
+            potential_agent=self.potential_agent,
+            hallucinated_agent=self.hallucinated_agent,
+            url_match_status=url_match_status,
+            url_issues=url_issues,
+            url_type_triggered=url_type_triggered,
+        )
+
     def verify_citation(
         self,
         citation: CitationRecord,
         extraction_quality: ExtractionQuality | None = None,
         source_paper_title: str = "",
     ):
-        # Check verified reference cache — re-validate cached candidate against current citation
+        # Two-tier verified reference cache lookup:
+        # Tier 1 (exact): full-field key. If an identically-formatted citation
+        #   was verified before, return its verdict as-is — the taxonomy
+        #   (R1/R2/R3) is already correct for this exact form.
+        # Tier 2 (loose): title+year key. Some form of this paper was verified
+        #   before — use its matched_candidate as a synthetic connector result
+        #   and re-run verify_single_candidate so taxonomy is recomputed for
+        #   the current citation's formatting.
         if self.verified_ref_cache is not None:
-            cached = self.verified_ref_cache.get(citation)
-            if cached is not None and cached.get("matched_candidate"):
-                from .adjudicate import _build_comparison, _is_direct_valid, _has_soft_discrepancies
-                from .agents import compare_fields
+            exact = self.verified_ref_cache.get_exact(citation)
+            if exact is not None:
                 from .models import citation_verdict_from_dict
+                return citation_verdict_from_dict(exact, citation.citation_id)
 
-                candidate = build_candidate_match(citation, "cache", cached["matched_candidate"])
-                field_result = compare_fields(
-                    citation, candidate,
-                    _build_comparison, _is_direct_valid, _has_soft_discrepancies,
+            loose = self.verified_ref_cache.get_loose(citation)
+            if loose is not None and loose.get("matched_candidate"):
+                candidate = build_candidate_match(citation, "cache", loose["matched_candidate"])
+                verdict_or_none, _eval, _vr = verify_single_candidate(
+                    citation=citation,
+                    candidate=candidate,
+                    sibling_candidates=[candidate],
+                    prior_evaluations=[],
+                    valid_agent=self.valid_agent,
+                    extractor_agent=self.extractor_agent,
+                    tavily_api_key=self._resolve_tavily_key(),
+                    evidence_sources=["cache"],
+                    url_match_status="",
+                    url_issues=[],
+                    url_type_triggered="",
+                    author_classifier=getattr(self, "author_classifier", None),
                 )
-                if field_result.signal == "direct_valid":
-                    return citation_verdict_from_dict(cached, citation.citation_id)
+                if verdict_or_none is not None:
+                    return verdict_or_none
+                # Re-validation failed → fall through to the full pipeline
 
         citation = self._enrich_citation_from_url(citation)
         extraction_quality = extraction_quality or self.config.default_extraction_quality
@@ -258,7 +546,7 @@ class CitationVerifier:
 
         # Phase 0 early-exit:
         # - Scholar URL (arxiv/doi) mismatch or not_found → FAKE_REFERENCE
-        # - Other URL mismatch or not_found → POTENTIAL_REFERENCE / P3
+        # - Other URL mismatch or not_found → POTENTIAL_REFERENCE / P2
         phase0_verdict = phase0_decide_verdict(
             citation, url_match_status, url_issues, url_type_triggered,
             fetched_records=phase0_records,
@@ -267,7 +555,7 @@ class CitationVerifier:
             return downgrade_non_academic_fake(citation, phase0_verdict)
 
         # If identifiers resolve to a clearly different paper → immediate FAKE
-        # (but downgrade to P3 if the citation is non-academic)
+        # (but downgrade to P2 if the citation is non-academic)
         id_mismatch = self._check_identifier_mismatch(citation, phase0_records)
         if id_mismatch:
             return downgrade_non_academic_fake(citation, id_mismatch)
@@ -287,12 +575,27 @@ class CitationVerifier:
                 ),
             }
 
-        # Query all other connectors (url_direct is NOT in the orchestrator anymore)
+        # Use cascading 3-agent flow if configured (preferred): streaming
+        # parallel per-connector verify units with Phase 2 fallback.
+        if self.valid_agent:
+            verdict = self._verify_streaming(
+                citation=citation,
+                phase0_records=phase0_records,
+                url_match_status=url_match_status,
+                url_issues=url_issues,
+                url_type_triggered=url_type_triggered,
+                extraction_quality=extraction_quality,
+                source_paper_title=source_paper_title,
+            )
+            verdict = downgrade_non_academic_fake(citation, verdict)
+            if _phase0_eval:
+                verdict.candidate_evaluations.insert(0, _phase0_eval)
+            self._cache_if_valid(citation, verdict)
+            return verdict
+
+        # --- Legacy path: collect all connector results then run adjudicate ---
         connector_results = self.orchestrator.query(citation, max_connectors=None)
         records = {result.connector: result.records for result in connector_results}
-
-        # Add Phase 0 url_direct records as a synthetic source so they participate
-        # in candidate matching alongside the structured connectors.
         if phase0_records:
             existing = records.get("url_direct", [])
             existing_urls = {str(r.get("url", "")) for r in existing}
@@ -302,48 +605,7 @@ class CitationVerifier:
             records["url_direct"] = existing
 
         candidates = collect_candidates(citation, records)
-
-        # Note: web_search candidate enrichment via url_direct is removed.
-        # Phase 0 already handled the citation URL. Empty web_search candidates
-        # are handled by ExtractorAgent inside cascading_adjudicate.
-
         evidence = [self._result_to_trace(citation, result) for result in connector_results]
-
-        # Use cascading 3-agent flow if configured (preferred)
-        if self.valid_agent:
-            # Resolve tavily key for web_search URL enrichment
-            import os as _os
-            _tavily_key = _os.getenv("TAVILY_API_KEY", "")
-            if not _tavily_key:
-                try:
-                    from apps.pdf_checker.config import load_pdf_checker_config as _load_cfg
-                    _tavily_key = (_load_cfg().connectors.tavily_api_key or "").strip()
-                except Exception:
-                    pass
-
-            verdict = cascading_adjudicate(
-                citation=citation,
-                candidates=candidates,
-                evidence_traces=evidence,
-                extraction_quality=extraction_quality,
-                valid_agent=self.valid_agent,
-                potential_agent=self.potential_agent,
-                hallucinated_agent=self.hallucinated_agent,
-                secondary_verifier=self.secondary_verifier,
-                extractor_agent=self.extractor_agent,
-                source_paper_title=source_paper_title,
-                url_match_status=url_match_status,
-                url_issues=url_issues,
-                url_type_triggered=url_type_triggered,
-                tavily_api_key=_tavily_key,
-            )
-            # Final downgrade: non-academic FAKE → P3 (R packages, GitHub, blogs)
-            verdict = downgrade_non_academic_fake(citation, verdict)
-            # Prepend Phase 0 evaluation to candidate_evaluations for the report
-            if _phase0_eval:
-                verdict.candidate_evaluations.insert(0, _phase0_eval)
-            self._cache_if_valid(citation, verdict)
-            return verdict
 
         # Use parallel multi-agent flow if judges are configured
         if self.structured_judge or self.existence_judge:

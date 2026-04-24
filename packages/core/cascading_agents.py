@@ -19,14 +19,17 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from .models import (
+    AuthorVariantResult,
     CandidateMatch,
     CitationRecord,
     CitationVerdict,
     DiscrepancyEvidence,
     DownstreamAgentResult,
     ExtractionQuality,
+    FieldClassificationResult,
     FieldComparisonResult,
     ValidAgentResult,
+    VenueEquivalenceResult,
     VerdictLabel,
     candidate_match_to_dict,
 )
@@ -42,7 +45,24 @@ class ValidAgentProtocol(Protocol):
         citation: CitationRecord,
         candidate: CandidateMatch,
         comparison: FieldComparisonResult,
+        author_analysis: AuthorVariantResult | None = None,
     ) -> ValidAgentResult: ...
+
+
+class FieldClassifierProtocol(Protocol):
+    def classify(
+        self,
+        citation_authors: list[str],
+        candidate_authors: list[str],
+        citation_venue: str = "",
+        candidate_venue: str = "",
+        citation_publisher: str = "",
+        candidate_publisher: str = "",
+    ) -> FieldClassificationResult: ...
+
+
+# Backward-compat alias
+AuthorVariantClassifierProtocol = FieldClassifierProtocol
 
 
 class PotentialAgentProtocol(Protocol):
@@ -202,26 +222,27 @@ def compute_hint(field_result: FieldComparisonResult) -> tuple[str, list[str]]:
     elif author_s == "mismatch":
         issues.append("author_mismatch")
 
-    # Year
+    # Year — must match exactly. Any mismatch is a hard error.
     if year_s == "mismatch":
-        ref_year = fs.get("year", {}).get("reference")
-        cand_year = fs.get("year", {}).get("candidate")
-        try:
-            diff = abs(int(ref_year) - int(cand_year)) if ref_year and cand_year else 99
-        except (TypeError, ValueError):
-            diff = 99
-        if diff <= 1:
-            issues.append("year_off_by_one")
-        else:
-            issues.append("year_mismatch")
+        issues.append("year_mismatch")
+    elif year_s == "candidate_missing":
+        issues.append("year_candidate_missing")
 
-    # Venue — arXiv is NOT a valid variant of any conference/journal
+    # Venue — arXiv is NOT a valid variant of any conference/journal.
+    # candidate_missing counts as a hallucination signal: by taxonomy, only
+    # H6-class fields (pages/volume/publisher/location) are allowed to be
+    # missing and still go to POTENTIAL. Core fields cannot be silently
+    # absent; HallucinatedAgent decides whether it's H3 vs acceptable.
     if venue_s == "mismatch":
         issues.append("venue_mismatch")
+    elif venue_s == "candidate_missing":
+        issues.append("venue_candidate_missing")
 
     # DOI
     if doi_s == "mismatch":
         issues.append("doi_mismatch")
+    elif doi_s == "candidate_missing":
+        issues.append("doi_candidate_missing")
 
     # Pages
     if pages_s == "mismatch":
@@ -246,13 +267,18 @@ def compute_hint(field_result: FieldComparisonResult) -> tuple[str, list[str]]:
 
     # Determine hint from issues
     potential_signals = {
-        "author_name_variant", "year_off_by_one",
+        "author_name_variant",
     }
     hallucinated_signals = {
         "title_mismatch", "author_count_mismatch", "author_mismatch", "author_reordered",
         "year_mismatch", "venue_mismatch", "doi_mismatch", "pages_mismatch",
         "volume_mismatch", "publisher_mismatch", "location_mismatch",
-        # candidate_missing where reference provides a value → skip ValidAgent, go to HallucinatedAgent
+        # candidate_missing where reference provides a value → skip ValidAgent, go to HallucinatedAgent.
+        # H6-class fields (pages/volume/publisher/location) route here but may
+        # be downgraded to P3 later by the `_only_candidate_missing_issues`
+        # fallback. Core fields (venue/year/doi) must not be silently absent
+        # per taxonomy — HallucinatedAgent decides H3/H4/H5.
+        "venue_candidate_missing", "year_candidate_missing", "doi_candidate_missing",
         "pages_candidate_missing", "volume_candidate_missing", "publisher_candidate_missing",
         "location_candidate_missing",
     }
@@ -273,6 +299,45 @@ def compute_hint(field_result: FieldComparisonResult) -> tuple[str, list[str]]:
 # ---------------------------------------------------------------------------
 # ValidAgent (rule-based part)
 # ---------------------------------------------------------------------------
+
+def _has_format_variant(field_status: dict[str, Any]) -> bool:
+    """Detect R2 (format variant) after _is_direct_valid already passes.
+
+    Distinguishes R1 (exact or case-only difference) from R2 (structural
+    difference):
+    - authors: initial expansion ("J. Smith" vs "John Smith"), dropped middle name
+    - venue: acronym vs full name ("NeurIPS" vs "Advances in Neural ...")
+    - title: word-level differences (punctuation, spacing, added/removed words)
+    - pages: "3770-3776" vs "pp. 3770-3776", "3770--3776", etc.
+
+    Case-only differences are treated as R1 (trivial formatting from different
+    data sources, not an intentional user-side variant).
+
+    Returns True if any match-status field has a structural (non-case-only)
+    difference between raw reference and raw candidate.
+    """
+    def _case_insensitive_eq(a: str, b: str) -> bool:
+        return a.strip().lower() == b.strip().lower()
+
+    for fname in ("title", "authors", "venue", "pages"):
+        meta = field_status.get(fname) or {}
+        if meta.get("status") != "match":
+            continue
+        ref_val = meta.get("reference")
+        cand_val = meta.get("candidate")
+        if isinstance(ref_val, list) or isinstance(cand_val, list):
+            ref_list = [str(x or "") for x in (ref_val or [])]
+            cand_list = [str(x or "") for x in (cand_val or [])]
+            if len(ref_list) != len(cand_list):
+                return True
+            for r, c in zip(ref_list, cand_list):
+                if not _case_insensitive_eq(r, c):
+                    return True
+        else:
+            if not _case_insensitive_eq(str(ref_val or ""), str(cand_val or "")):
+                return True
+    return False
+
 
 def rule_based_valid_check(
     citation: CitationRecord,
@@ -300,100 +365,39 @@ def rule_based_valid_check(
 
     # Fast path: direct valid
     if is_direct_valid_func(fs, conflicts):
-        ref_authors = fs.get("authors", {}).get("reference", [])
-        cand_authors = fs.get("authors", {}).get("candidate", [])
-        author_status = fs.get("authors", {}).get("status", "")
+        ref_authors = fs.get("authors", {}).get("reference", []) or []
+        cand_authors = fs.get("authors", {}).get("candidate", []) or []
 
-        # reordered_match: don't hard-reject here — _compare_authors token matching
-        # can produce false reordered_match (e.g. "Wang, S" matching wrong "Wang").
-        # Let LLM ValidAgent decide whether the order truly differs.
-        if author_status == "reordered_match":
-            hint, issues = compute_hint(field_result)
+        # Strict author gate: the rule engine only accepts author lists that
+        # are byte-identical (after whitespace collapse + case-insensitive
+        # compare). Anything else — reordered, initial expansion, nickname,
+        # truncation, dropped middle name — is deferred to LLM ValidAgent
+        # which can distinguish R2 (format variant) from P1 (name variant)
+        # from H2 (author error).
+        def _author_canon(a):
+            return " ".join(str(a or "").strip().lower().split())
+        ref_canon = [_author_canon(a) for a in ref_authors]
+        cand_canon = [_author_canon(a) for a in cand_authors]
+        if ref_canon != cand_canon:
             field_result.signal = "soft_discrepancy"
             return ValidAgentResult(
                 is_valid=False,
                 taxonomy=[],
                 hint="likely_potential",
-                issues=["author_reordered"],
-                reason="Author order may differ — needs LLM verification.",
+                issues=["author_name_variant"],
+                reason=(
+                    "Author list not byte-identical — rule engine defers to "
+                    "LLM ValidAgent to classify as R2 / P1 / H2."
+                ),
                 field_result=field_result,
                 candidate=candidate,
             )
 
-        # Check 2: Detect P2 (multi-letter author name variants)
-        # Uses UNORDERED token matching to handle name-order differences:
-        #   "Billingsley, P" vs "Patrick Billingsley"  → R2 (initial expansion)
-        #   "H. W. Kuhn" vs "Kuhn, H. W."              → R1/R2 (same tokens)
-        #   "C. D. Aliprantis" vs "C. Aliprantis"      → R2 (first matches, middle dropped)
-        # Only flags P2 when there's a real multi-letter truncation that
-        # cannot be explained by reorder or dropped middle name.
-        if ref_authors and cand_authors and len(ref_authors) == len(cand_authors):
-            from .normalize import normalize_text
-            import re as _re
-            p2_detected = False
-            for r, c in zip(ref_authors, cand_authors):
-                r_parts = normalize_text(str(r)).split()
-                c_parts = normalize_text(str(c)).split()
-                # Strip DBLP suffixes and dots
-                r_parts = [p.replace(".", "").strip() for p in r_parts]
-                c_parts = [_re.sub(r"\s*\d{4,}$", "", p).replace(".", "").strip() for p in c_parts]
-                r_parts = [p for p in r_parts if p]
-                c_parts = [p for p in c_parts if p]
-
-                # Try to match each ref token to a cand token (unordered).
-                # Allow exact match or single-letter initial compatibility.
-                remaining = list(c_parts)
-                unmatched_refs: list[str] = []
-                for rp in r_parts:
-                    # 1) Exact match
-                    if rp in remaining:
-                        remaining.remove(rp)
-                        continue
-                    # 2) Single-letter initial compatibility
-                    matched = False
-                    for cp in list(remaining):
-                        if (len(rp) == 1 and cp.startswith(rp)) or (len(cp) == 1 and rp.startswith(cp)):
-                            remaining.remove(cp)
-                            matched = True
-                            break
-                    if matched:
-                        continue
-                    unmatched_refs.append(rp)
-
-                # If any ref token is a multi-letter prefix of a remaining cand token
-                # (or vice versa), that's a true P2 multi-letter truncation.
-                for rp in unmatched_refs:
-                    for cp in remaining:
-                        if rp == cp:
-                            continue
-                        # Multi-letter prefix truncation → P2
-                        if len(rp) > 1 and len(cp) > 1 and (cp.startswith(rp) or rp.startswith(cp)):
-                            p2_detected = True
-                            break
-                        # Both multi-letter but neither is prefix → genuinely different name → P2
-                        if len(rp) > 1 and len(cp) > 1:
-                            p2_detected = True
-                            break
-                    if p2_detected:
-                        break
-                if p2_detected:
-                    break
-
-            if p2_detected:
-                field_result.signal = "soft_discrepancy"
-                return ValidAgentResult(
-                    is_valid=False,
-                    taxonomy=[],
-                    hint="likely_potential",
-                    issues=["author_name_variant"],
-                    reason="Author name differs by more than single-letter initial (P2 candidate).",
-                    field_result=field_result,
-                    candidate=candidate,
-                )
-
         is_web = candidate.connector in _WEB_CONNECTORS
         if has_et_al:
             taxonomy = ["R3"]
+        elif _has_format_variant(fs):
+            taxonomy = ["R2"]
         else:
             taxonomy = ["R1"]
 
@@ -798,6 +802,28 @@ def _post_validate_valid_result(
                 VerdictLabel.POTENTIAL_REFERENCE,
             )
 
+    # Guard 6: Reference provides H6-class fields (volume/pages/publisher/location)
+    # that the winning candidate can't verify → override LLM's VALID to P3
+    # (insufficient field evidence). Enforces the ValidAgent prompt rule
+    # "candidate_missing → valid=false" that LLM sometimes ignores when the
+    # rest of the record matches.
+    _h6_fields = ("volume", "pages", "publisher", "location")
+    _p3_missing = []
+    for f in _h6_fields:
+        ref_val = getattr(citation, f, None)
+        if not (ref_val and str(ref_val).strip()):
+            continue  # reference didn't provide the field, nothing to verify
+        if fs.get(f, {}).get("status") == "candidate_missing":
+            _p3_missing.append(f)
+    if _p3_missing:
+        return (
+            True,
+            f"Guard 6 (P3): winning candidate cannot verify reference-provided "
+            f"field(s) {_p3_missing}. Downgraded from LLM-VALID to P3.",
+            ["P3"],
+            VerdictLabel.POTENTIAL_REFERENCE,
+        )
+
     return (False, "", [], VerdictLabel.VALID)
 
 
@@ -835,7 +861,7 @@ def _apply_url_cap(
 
     url_type: "doi" | "arxiv" | "other"
     - DOI/arXiv 404 → H6/FAKE (academic identifiers must resolve)
-    - Other URL 404 → P3/POTENTIAL (URLs can go stale)
+    - Other URL 404 → P2/POTENTIAL (URLs can go stale)
     """
     if url_status not in ("mismatch", "not_found") or verdict.verdict != VerdictLabel.VALID:
         return verdict
@@ -857,7 +883,7 @@ def _apply_url_cap(
             secondary_evidence=verdict.secondary_evidence,
         )
 
-    # Other cases (mismatch, or non-academic URL not found) → P3
+    # Other cases (mismatch, or non-academic URL not found) → P2
     return CitationVerdict(
         citation_id=verdict.citation_id,
         verdict=VerdictLabel.POTENTIAL_REFERENCE,
@@ -1268,8 +1294,8 @@ def phase0_decide_verdict(
     - match → return None (continue normal pipeline with fetched records as candidates)
     - mismatch → return None (continue normal pipeline — let agents decide)
     - not_found → LLM classifies URL:
-        - academic URL → FAKE_REFERENCE H8 (URL/identifier error)
-        - non-academic URL → POTENTIAL_REFERENCE P3
+        - academic URL → FAKE_REFERENCE H5 (URL/identifier error)
+        - non-academic URL → POTENTIAL_REFERENCE P2
     - blocked / "" → return None (continue normal flow)
     """
     # blocked / "" → continue normal pipeline
@@ -1458,11 +1484,11 @@ def is_non_academic_citation(citation: CitationRecord) -> bool:
 def downgrade_non_academic_fake(
     citation: CitationRecord, verdict: CitationVerdict,
 ) -> CitationVerdict:
-    """If verdict is FAKE_REFERENCE but the citation is non-academic, downgrade to P3.
+    """If verdict is FAKE_REFERENCE but the citation is non-academic, downgrade to P2.
 
     Non-academic citations (R packages, GitHub repos, blog posts, tweets) often
     have inconsistent / sparse metadata, so a strict FAKE judgment is too harsh.
-    Treat them as POTENTIAL/P3 (unverifiable) instead.
+    Treat them as POTENTIAL/P2 (unverifiable) instead.
     """
     if verdict.verdict != VerdictLabel.FAKE_REFERENCE:
         return verdict
@@ -1487,47 +1513,266 @@ def downgrade_non_academic_fake(
     )
 
 
-def cascading_adjudicate(
+def verify_single_candidate(
     citation: CitationRecord,
-    candidates: list[CandidateMatch],
-    evidence_traces: list[Any],
-    extraction_quality: ExtractionQuality = ExtractionQuality.UNKNOWN,
-    valid_agent: ValidAgentProtocol | None = None,
-    potential_agent: PotentialAgentProtocol | None = None,
-    hallucinated_agent: HallucinatedAgentProtocol | None = None,
-    secondary_verifier: Any = None,
-    extractor_agent: Any = None,
-    source_paper_title: str = "",
+    candidate: CandidateMatch,
+    sibling_candidates: list[CandidateMatch],
+    prior_evaluations: list[dict[str, Any]],
+    valid_agent: ValidAgentProtocol | None,
+    extractor_agent: Any,
+    tavily_api_key: str,
+    evidence_sources: list[str],
+    url_match_status: str,
+    url_issues: list[str],
+    url_type_triggered: str,
     build_comparison_func=None,
     is_direct_valid_func=None,
-    url_match_status: str = "",
-    url_issues: list[str] | None = None,
-    url_type_triggered: str = "",
-    tavily_api_key: str = "",
-) -> CitationVerdict:
-    """Cascading 3-agent verification."""
-    from .adjudicate import _build_comparison, _is_direct_valid, _reference_snapshot
+    author_classifier: AuthorVariantClassifierProtocol | None = None,
+) -> tuple[CitationVerdict | None, dict[str, Any], ValidAgentResult | None]:
+    """Run rule-based + LLM ValidAgent verification on a single candidate.
+
+    This encapsulates the per-candidate logic from cascading_adjudicate's
+    Phase 1 loop so callers can invoke it per-connector in parallel.
+
+    Returns (verdict, eval_dict, valid_result):
+        - verdict: clean VALID CitationVerdict if this candidate passes; else None
+        - eval_dict: always populated — the entry to append to all_evaluations
+        - valid_result: the ValidAgentResult if NOT_VALID (for Phase 2 best-candidate
+          selection); None when the candidate produced a VALID or was overridden by guard
+    """
+    from .adjudicate import _build_comparison, _is_direct_valid
 
     build_comp = build_comparison_func or _build_comparison
     is_valid_func = is_direct_valid_func or _is_direct_valid
 
-    evidence_sources = sorted({
-        t.connector for t in evidence_traces if hasattr(t, 'connector') and t.error is None
-    })
+    # Web candidate enrichment (Extractor LLM on snippet/raw_content, then URL fetch)
+    if candidate.connector in _WEB_CONNECTORS and not candidate.title and extractor_agent:
+        try:
+            candidate = extractor_agent.extract(candidate)
+        except Exception:
+            pass
+    if candidate.connector in _WEB_CONNECTORS and candidate.url and extractor_agent:
+        candidate = _enrich_web_candidate_via_url(
+            candidate, tavily_api_key=tavily_api_key, extractor_agent=extractor_agent,
+        )
 
-    # --- No candidates → H1 immediately ---
-    if not candidates:
-        source_errors = [t for t in evidence_traces if hasattr(t, 'error') and t.error]
-        if source_errors and len(source_errors) == len(evidence_traces):
-            return CitationVerdict(
-                citation_id=citation.citation_id,
-                verdict=VerdictLabel.INSUFFICIENT_EVIDENCE,
-                evidence_sources=evidence_sources,
-                conflicts=["no_candidate"],
-                adjudication_reason="All sources failed.",
-                taxonomy_subtype=[],
-                needs_human_review=True,
+    # Rule-based check
+    result = rule_based_valid_check(citation, candidate, build_comp, is_valid_func)
+
+    # Rule-based VALID → guard
+    if result.is_valid:
+        override, override_reason, override_tax, override_verdict = _post_validate_valid_result(
+            citation, candidate, sibling_candidates, result.taxonomy,
+            result.field_result, build_comp, prior_evaluations=prior_evaluations,
+        )
+        if override:
+            eval_dict = {
+                "connector": candidate.connector,
+                "candidate": candidate_match_to_dict(candidate),
+                "verdict": override_verdict.value,
+                "taxonomy": override_tax,
+                "reason": override_reason,
+                "comparison": result.field_result.comparison if result.field_result else {},
+            }
+            return None, eval_dict, None
+        # Clean VALID
+        eval_dict = {
+            "connector": candidate.connector,
+            "candidate": candidate_match_to_dict(candidate),
+            "verdict": "VALID",
+            "taxonomy": result.taxonomy,
+            "reason": result.reason,
+            "comparison": result.field_result.comparison if result.field_result else {},
+        }
+        verdict = _apply_url_cap(CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.VALID,
+            evidence_sources=evidence_sources,
+            conflicts=[],
+            adjudication_reason=result.reason,
+            matched_candidate=candidate_match_to_dict(candidate),
+            reference_snapshot=result.field_result.comparison.get("reference", {}),
+            comparison=result.field_result.comparison,
+            candidate_evaluations=prior_evaluations + [eval_dict],
+            taxonomy_subtype=result.taxonomy,
+            needs_human_review=False,
+        ), url_match_status, url_issues, url_type_triggered)
+        return verdict, eval_dict, None
+
+    # Unified field pre-classification: one LLM call produces authoritative
+    # verdicts for authors (exact/r2_initial/p1_variant/h2_error), venue
+    # (exact/alias/different), and publisher (exact/alias/different).
+    # ValidAgent consumes these instead of re-deriving them, and R4 coverage
+    # + field_status routing use them (p1_variant NOT a match for R4; venue
+    # alias IS a match for downstream). When the classifier's venue verdict
+    # is "alias" and rule-level status was "mismatch", we upgrade status to
+    # "match" (because aliases ARE semantically equivalent).
+    author_analysis: AuthorVariantResult | None = None
+    field_classification: FieldClassificationResult | None = None
+    if author_classifier and result.field_result is not None:
+        try:
+            field_classification = author_classifier.classify(
+                citation.authors or [], candidate.authors or [],
+                citation_venue=citation.venue or "",
+                candidate_venue=candidate.venue or "",
+                citation_publisher=citation.publisher or "",
+                candidate_publisher=getattr(candidate, "publisher", "") or "",
             )
+            author_analysis = field_classification.authors
+            fs = (result.field_result.field_status or {})
+
+            # Stamp authors verdict
+            authors_entry = fs.setdefault("authors", {})
+            if isinstance(authors_entry, dict):
+                authors_entry["author_variant_type"] = field_classification.authors.overall
+                authors_entry["author_variant_reason"] = field_classification.authors.reason
+
+            # Stamp venue verdict; upgrade status to match when classifier says alias/exact
+            venue_entry = fs.setdefault("venue", {})
+            if isinstance(venue_entry, dict):
+                venue_entry["venue_variant_type"] = field_classification.venue.overall
+                venue_entry["venue_variant_reason"] = field_classification.venue.reason
+                if (field_classification.venue.overall in ("exact", "alias")
+                        and venue_entry.get("status") == "mismatch"):
+                    venue_entry["_rule_status"] = venue_entry.get("status")
+                    venue_entry["status"] = "match"
+                    venue_entry["_classifier_corrected"] = True
+
+            # Stamp publisher verdict; upgrade status similarly
+            pub_entry = fs.setdefault("publisher", {})
+            if isinstance(pub_entry, dict):
+                pub_entry["publisher_variant_type"] = field_classification.publisher.overall
+                pub_entry["publisher_variant_reason"] = field_classification.publisher.reason
+                if (field_classification.publisher.overall in ("exact", "alias")
+                        and pub_entry.get("status") == "mismatch"):
+                    pub_entry["_rule_status"] = pub_entry.get("status")
+                    pub_entry["status"] = "match"
+                    pub_entry["_classifier_corrected"] = True
+
+            # Recompute hint/issues since venue/publisher status may have changed
+            new_hint, new_issues = compute_hint(result.field_result)
+            result.hint = new_hint
+            result.issues = new_issues
+
+            # Stash classifier summary + raw response on the comparison dict so
+            # it travels into eval_dict / final JSON report for diagnostics.
+            if result.field_result.comparison is not None:
+                result.field_result.comparison["_field_classification"] = {
+                    "authors": {
+                        "overall": field_classification.authors.overall,
+                        "reason": field_classification.authors.reason,
+                    },
+                    "venue": {
+                        "overall": field_classification.venue.overall,
+                        "reason": field_classification.venue.reason,
+                    },
+                    "publisher": {
+                        "overall": field_classification.publisher.overall,
+                        "reason": field_classification.publisher.reason,
+                    },
+                    "raw_llm_response": field_classification.raw_llm_response,
+                }
+        except Exception as exc:
+            author_analysis = None
+            field_classification = None
+            if result.field_result is not None and result.field_result.comparison is not None:
+                result.field_result.comparison["_field_classification"] = {
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+    # Rule-based NOT_VALID → call LLM ValidAgent to integrate field_status +
+    # author_analysis into a final verdict. Per-field classification is
+    # already authoritative from the rule comparator + FieldClassifier;
+    # ValidAgent just picks taxonomy/hint/issues from that state.
+    if valid_agent and not result.is_valid:
+        try:
+            llm_result = valid_agent.evaluate(
+                citation, candidate, result.field_result,
+                author_analysis=author_analysis,
+            )
+            if llm_result.is_valid:
+                override, override_reason, override_tax, override_verdict = _post_validate_valid_result(
+                    citation, candidate, sibling_candidates, llm_result.taxonomy,
+                    result.field_result, build_comp, prior_evaluations=prior_evaluations,
+                )
+                if override:
+                    eval_dict = {
+                        "connector": candidate.connector,
+                        "candidate": candidate_match_to_dict(candidate),
+                        "verdict": override_verdict.value,
+                        "taxonomy": override_tax,
+                        "reason": f"LLM said VALID but overridden: {override_reason}",
+                        "comparison": result.field_result.comparison if result.field_result else {},
+                    }
+                    return None, eval_dict, None
+                # Clean LLM VALID
+                eval_dict = {
+                    "connector": candidate.connector,
+                    "candidate": candidate_match_to_dict(candidate),
+                    "verdict": "VALID",
+                    "taxonomy": llm_result.taxonomy,
+                    "reason": llm_result.reason,
+                    "comparison": result.field_result.comparison if result.field_result else {},
+                }
+                verdict = _apply_url_cap(CitationVerdict(
+                    citation_id=citation.citation_id,
+                    verdict=VerdictLabel.VALID,
+                    evidence_sources=evidence_sources,
+                    conflicts=[],
+                    adjudication_reason=f"ValidAgent LLM: {llm_result.reason}",
+                    matched_candidate=candidate_match_to_dict(candidate),
+                    reference_snapshot=result.field_result.comparison.get("reference", {}),
+                    comparison=result.field_result.comparison,
+                    candidate_evaluations=prior_evaluations + [eval_dict],
+                    taxonomy_subtype=llm_result.taxonomy,
+                    needs_human_review=False,
+                ), url_match_status, url_issues, url_type_triggered)
+                return verdict, eval_dict, None
+            # LLM NOT_VALID → use its hint/issues/taxonomy/reason directly.
+            result = llm_result
+        except Exception:
+            pass
+
+    eval_dict = {
+        "connector": candidate.connector,
+        "candidate": candidate_match_to_dict(candidate),
+        "verdict": "NOT_VALID",
+        "hint": result.hint,
+        "issues": result.issues,
+        "reason": result.reason,
+        "comparison": result.field_result.comparison if result.field_result else {},
+    }
+    return None, eval_dict, result
+
+
+def cascading_phase2_only(
+    citation: CitationRecord,
+    candidates: list[CandidateMatch],
+    all_valid_results: list[ValidAgentResult],
+    all_evaluations: list[dict[str, Any]],
+    evidence_sources: list[str],
+    secondary_verifier: Any = None,
+    potential_agent: PotentialAgentProtocol | None = None,
+    hallucinated_agent: HallucinatedAgentProtocol | None = None,
+    url_match_status: str = "",
+    url_issues: list[str] | None = None,
+    url_type_triggered: str = "",
+) -> CitationVerdict:
+    """Run Phase 2 adjudication on pre-computed Phase 1 results.
+
+    Assumes the caller has already iterated over candidates using
+    verify_single_candidate and collected all_valid_results + all_evaluations.
+    This function handles: R4 cross-candidate coverage check, best-candidate
+    selection, Phase 2a (PotentialAgent), Phase 2b (HallucinatedAgent), plus
+    R4/P3 fallbacks.
+    """
+    from .adjudicate import _reference_snapshot
+
+    if url_issues is None:
+        url_issues = []
+
+    # No candidates at all → H1 / INSUFFICIENT
+    if not candidates:
         return CitationVerdict(
             citation_id=citation.citation_id,
             verdict=VerdictLabel.FAKE_REFERENCE,
@@ -1536,180 +1781,118 @@ def cascading_adjudicate(
             adjudication_reason="No matching paper found.",
             reference_snapshot=_reference_snapshot(citation),
             taxonomy_subtype=["H1"],
+            candidate_evaluations=all_evaluations,
             needs_human_review=True,
         )
 
-    # Phase 0 is now invoked from verifier.py BEFORE orchestrator.query.
-    # Its results are passed in via url_match_status / url_issues / url_type_triggered.
-    if url_issues is None:
-        url_issues = []
-
-    # --- Phase 1: Run ValidAgent on each candidate ---
-    all_valid_results: list[ValidAgentResult] = []
-    all_evaluations: list[dict[str, Any]] = []
-
-    for candidate in candidates:
-        # Extractor Agent: for web_search candidates, extract structured fields first
-        if candidate.connector in _WEB_CONNECTORS and not candidate.title and extractor_agent:
-            try:
-                candidate = extractor_agent.extract(candidate)
-            except Exception:
-                pass
-        # URL-direct enrichment: fetch URL page and use LLM to extract structured fields
-        if candidate.connector in _WEB_CONNECTORS and candidate.url and extractor_agent:
-            candidate = _enrich_web_candidate_via_url(candidate, tavily_api_key=tavily_api_key, extractor_agent=extractor_agent)
-
-        # Rule-based check first
-        result = rule_based_valid_check(citation, candidate, build_comp, is_valid_func)
-
-        # If rule-based says VALID → run post-validation guard
-        if result.is_valid:
-            override, override_reason, override_tax, override_verdict = _post_validate_valid_result(
-                citation, candidate, candidates, result.taxonomy,
-                result.field_result, build_comp, prior_evaluations=all_evaluations,
-            )
-            if override:
-                # Guard overrode — record but continue evaluating remaining candidates
-                all_evaluations.append({
-                    "connector": candidate.connector,
-                    "candidate": candidate_match_to_dict(candidate),
-                    "verdict": override_verdict.value,
-                    "taxonomy": override_tax,
-                    "reason": override_reason,
-                    "comparison": result.field_result.comparison if result.field_result else {},
-                })
-                # Don't return — continue to give other candidates a chance
-                continue
-            # Clean VALID + guard passed → early return
-            all_evaluations.append({
-                "connector": candidate.connector,
-                "candidate": candidate_match_to_dict(candidate),
-                "verdict": "VALID",
-                "taxonomy": result.taxonomy,
-                "reason": result.reason,
-                "comparison": result.field_result.comparison if result.field_result else {},
-            })
-            return _apply_url_cap(CitationVerdict(
-                citation_id=citation.citation_id,
-                verdict=VerdictLabel.VALID,
-                evidence_sources=evidence_sources,
-                conflicts=[],
-                adjudication_reason=result.reason,
-                matched_candidate=candidate_match_to_dict(candidate),
-                reference_snapshot=result.field_result.comparison.get("reference", {}),
-                comparison=result.field_result.comparison,
-                candidate_evaluations=all_evaluations,
-                taxonomy_subtype=result.taxonomy,
-                needs_human_review=False,
-            ), url_match_status, url_issues, url_type_triggered)
-
-        # Rule-based not valid → try LLM ValidAgent
-        # Skip ValidAgent only when there are candidate_missing fields (reference has
-        # value but candidate doesn't) — go directly to HallucinatedAgent via Phase 2.
-        # All other cases (venue mismatch, author variant, etc.) still go to ValidAgent.
-        _has_candidate_missing = any(
-            "candidate_missing" in issue for issue in result.issues
-        )
-        if valid_agent and not result.is_valid and not _has_candidate_missing:
-            try:
-                llm_result = valid_agent.evaluate(citation, candidate, result.field_result)
-                if llm_result.is_valid:
-                    override, override_reason, override_tax, override_verdict = _post_validate_valid_result(
-                        citation, candidate, candidates, llm_result.taxonomy,
-                        result.field_result, build_comp, prior_evaluations=all_evaluations,
-                    )
-                    if override:
-                        # LLM said VALID but guard overrode — continue to next candidate
-                        all_evaluations.append({
-                            "connector": candidate.connector,
-                            "candidate": candidate_match_to_dict(candidate),
-                            "verdict": override_verdict.value,
-                            "taxonomy": override_tax,
-                            "reason": f"LLM said VALID but overridden: {override_reason}",
-                            "comparison": result.field_result.comparison if result.field_result else {},
-                        })
-                        continue
-                    # LLM VALID + guard passed → early return
-                    all_evaluations.append({
-                        "connector": candidate.connector,
-                        "candidate": candidate_match_to_dict(candidate),
-                        "verdict": "VALID",
-                        "taxonomy": llm_result.taxonomy,
-                        "reason": llm_result.reason,
-                        "comparison": result.field_result.comparison if result.field_result else {},
-                    })
-                    return _apply_url_cap(CitationVerdict(
-                        citation_id=citation.citation_id,
-                        verdict=VerdictLabel.VALID,
-                        evidence_sources=evidence_sources,
-                        conflicts=[],
-                        adjudication_reason=f"ValidAgent LLM: {llm_result.reason}",
-                        matched_candidate=candidate_match_to_dict(candidate),
-                        reference_snapshot=result.field_result.comparison.get("reference", {}),
-                        comparison=result.field_result.comparison,
-                        candidate_evaluations=all_evaluations,
-                        taxonomy_subtype=llm_result.taxonomy,
-                        needs_human_review=False,
-                    ), url_match_status, url_issues, url_type_triggered)
-                # LLM says not valid → use its hint/issues
-                result = llm_result
-            except Exception:
-                pass  # Fall back to rule-based hint
-
-        all_valid_results.append(result)
-        all_evaluations.append({
-            "connector": candidate.connector,
-            "candidate": candidate_match_to_dict(candidate),
-            "verdict": "NOT_VALID",
-            "hint": result.hint,
-            "issues": result.issues,
-            "reason": result.reason,
-            "comparison": result.field_result.comparison if result.field_result else {},
-        })
-
-    # --- P4 fallback: check if every reference field was matched by SOME candidate ---
-    # Track which reference fields have been matched at least once across all evaluations.
-    # If every field the reference provides has a "match" status in at least one candidate,
-    # but no single candidate got everything right, route to P4 (needs human review).
-    _trackable_fields = ("title", "authors", "venue", "year", "volume", "pages", "publisher", "doi", "arxiv_id")
+    # R4 cross-candidate coverage tracking.
+    # Only candidates that are "essentially the same paper" (title + authors +
+    # year all match the reference) contribute to coverage. This filters out
+    # noise candidates (e.g. connectors returning semantically unrelated records)
+    # that would otherwise artificially inflate coverage.
+    _trackable_fields = (
+        "title", "authors", "venue", "year", "volume", "pages", "publisher",
+        "location", "doi", "arxiv_id",
+    )
     ref_fields_with_value: set[str] = set()
     for fname in _trackable_fields:
         val = getattr(citation, fname, None)
         if val and str(val).strip():
             ref_fields_with_value.add(fname)
 
+    def _authors_authoritative_match(fs: dict) -> bool:
+        """For R4 purposes, authors are authoritatively 'match' only when the
+        AuthorVariantClassifier said exact or r2_initial. P1 variants
+        (nickname / multi-letter truncation / typo) MUST NOT count as match
+        for cross-candidate coverage — otherwise P1 mutations get upgraded
+        to VALID R4 incorrectly.
+
+        Falls back to plain status==match when classifier verdict absent
+        (preserves legacy behavior when the classifier is not configured).
+        """
+        info = fs.get("authors", {})
+        if not isinstance(info, dict):
+            return False
+        if info.get("status") != "match":
+            return False
+        variant = info.get("author_variant_type")
+        if variant is None:
+            return True  # no classifier verdict → trust status
+        return variant in ("exact", "r2_initial")
+
+    def _qualifies_for_p3(ev: dict[str, Any]) -> bool:
+        """A candidate qualifies for R4 coverage if title + authors match
+        (or LLM judged the candidate VALID). Year is intentionally NOT
+        required here — preprint/published versions of the same paper can
+        report different years yet be the same work. The per-field coverage
+        check still tracks year separately: if any qualifying candidate
+        reports year=mismatch, year ends up in `contradicted_fields` and
+        R4 does not fire (so H4 mutations are still caught).
+
+        For authors specifically, "match" means classifier said exact or
+        r2_initial — p1_variant does NOT qualify (variant requires
+        interpretation, not authoritative identity proof).
+        """
+        if ev.get("verdict") == "VALID":
+            return True
+        fs = ev.get("comparison", {}).get("field_status", {})
+        title_ok = fs.get("title", {}).get("status") == "match"
+        authors_ok = _authors_authoritative_match(fs)
+        return bool(title_ok and authors_ok)
+
+    # A field is "covered" only if at least one qualifying candidate reports
+    # match AND no qualifying candidate reports mismatch. This prevents a
+    # single noisy candidate (e.g. web_search extractor parroting back the
+    # query-injected metadata) from overriding multiple candidates that
+    # explicitly contradict the reference on that field.
     matched_fields_across_candidates: set[str] = set()
+    contradicted_fields_across_candidates: set[str] = set()
     for ev in all_evaluations:
+        if not _qualifies_for_p3(ev):
+            continue
         fs = ev.get("comparison", {}).get("field_status", {})
         for fname in ref_fields_with_value:
             info = fs.get(fname, {})
-            if isinstance(info, dict) and info.get("status") == "match":
+            if not isinstance(info, dict):
+                continue
+            st = info.get("status")
+            if fname == "authors":
+                # For R4 coverage the authors field is authoritatively "match"
+                # only when classifier verdict is exact / r2_initial.
+                if _authors_authoritative_match(fs):
+                    matched_fields_across_candidates.add(fname)
+                elif st == "mismatch":
+                    contradicted_fields_across_candidates.add(fname)
+                continue
+            if st == "match":
                 matched_fields_across_candidates.add(fname)
+            elif st == "mismatch":
+                contradicted_fields_across_candidates.add(fname)
 
+    covered_fields = matched_fields_across_candidates - contradicted_fields_across_candidates
     all_fields_covered = (
         bool(ref_fields_with_value)
-        and ref_fields_with_value.issubset(matched_fields_across_candidates)
+        and ref_fields_with_value.issubset(covered_fields)
     )
 
-    # --- Phase 2: No VALID found → route downstream ---
     best = select_best_candidate(all_valid_results)
     if best is None:
-        # If every field was matched somewhere → P4 fallback
         if all_fields_covered:
             return CitationVerdict(
                 citation_id=citation.citation_id,
-                verdict=VerdictLabel.POTENTIAL_REFERENCE,
+                verdict=VerdictLabel.VALID,
                 evidence_sources=evidence_sources,
                 conflicts=[],
                 adjudication_reason=(
-                    f"P3 fallback: every reference field {sorted(ref_fields_with_value)} "
-                    f"was independently verified by at least one candidate, but no single "
-                    f"candidate matched all fields cleanly. Needs human review."
+                    f"R4: every reference field {sorted(ref_fields_with_value)} "
+                    f"was independently verified by at least one qualifying candidate "
+                    f"(title+authors+year matching), though no single candidate matched "
+                    f"all fields cleanly. Cross-candidate coverage."
                 ),
                 reference_snapshot=_reference_snapshot(citation),
                 candidate_evaluations=all_evaluations,
-                taxonomy_subtype=["P3"],
-                needs_human_review=True,
+                taxonomy_subtype=["R4"],
+                needs_human_review=False,
             )
         return CitationVerdict(
             citation_id=citation.citation_id,
@@ -1726,9 +1909,188 @@ def cascading_adjudicate(
     best_field_result = best.field_result
     best_comparison = best_field_result.comparison if best_field_result else {}
 
-    # --- Phase 2a: likely_potential → PotentialAgent ---
+    # Cross-candidate hard-evidence early gate: if any reference field was
+    # contradicted by some qualifying candidate and NEVER matched by any, that
+    # is stronger evidence of fabrication than whatever best's hint says. Emit
+    # FAKE + the H-code for those fields BEFORE Phase 2a/2b can route us to a
+    # softer verdict (P3 / PotentialAgent).
+    _FIELD_TO_HCODE = {
+        "title": "H1",
+        "authors": "H2",
+        "venue": "H3",
+        "year": "H4",
+        "doi": "H5",
+        "arxiv_id": "H5",
+        "pages": "H6",
+        "volume": "H6",
+        "publisher": "H6",
+        "location": "H6",
+    }
+    _unverified_mismatch = (
+        contradicted_fields_across_candidates - matched_fields_across_candidates
+    )
+    _cross_h_codes: list[str] = []
+    for _f in sorted(_unverified_mismatch):
+        _h = _FIELD_TO_HCODE.get(_f)
+        if _h and _h not in _cross_h_codes:
+            _cross_h_codes.append(_h)
+    _best_fs_early = (best_field_result.field_status if best_field_result else {}) or {}
+    _early_core_match = all(
+        _best_fs_early.get(f, {}).get("status") == "match"
+        for f in ("title", "authors", "year")
+        if _best_fs_early.get(f, {}).get("status") is not None
+    ) and any(
+        _best_fs_early.get(f, {}).get("status") == "match"
+        for f in ("title", "authors", "year")
+    )
+    if _cross_h_codes and _early_core_match and not all_fields_covered:
+        all_evaluations.append({
+            "agent": "CrossCandidateHardEvidence",
+            "verdict": "FAKE_REFERENCE",
+            "taxonomy": _cross_h_codes,
+            "reason": (
+                f"Cross-candidate hard evidence: field(s) "
+                f"{sorted(_unverified_mismatch)} contradicted by at least one "
+                f"qualifying candidate but never confirmed. Upgraded from "
+                f"potential soft path to FAKE."
+            ),
+        })
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=list(_unverified_mismatch),
+            adjudication_reason=(
+                f"CrossCandidate: field(s) {sorted(_unverified_mismatch)} "
+                f"contradicted by qualifying candidates but never confirmed "
+                f"by any. Taxonomy: {_cross_h_codes}."
+            ),
+            matched_candidate=candidate_match_to_dict(best_candidate),
+            reference_snapshot=best_comparison.get("reference", {}),
+            comparison=best_comparison,
+            candidate_evaluations=all_evaluations,
+            taxonomy_subtype=_cross_h_codes,
+            needs_human_review=False,
+        )
+
+    # P-code short-circuits: trust FieldClassifier when it gives a clean soft
+    # signal. Bypass PotentialAgent (LLM, overly strict on nicknames) and
+    # HallucinatedAgent (would default to H1 with no signal) to avoid them
+    # turning POTENTIAL into FAKE incorrectly.
+    #
+    # "match-equivalent" = {match, both_missing, reference_missing}. This is
+    # stricter than allowing candidate_missing — a candidate that lacks the
+    # field doesn't count as "match-equivalent", only as "unverifiable".
+    _sc_fs = (best_field_result.field_status or {}) if best_field_result else {}
+    def _sc_status(f):
+        e = _sc_fs.get(f)
+        return e.get("status", "") if isinstance(e, dict) else ""
+
+    _MATCH_EQ = ("match", "both_missing", "reference_missing")
+
+    _sc_author_variant = ""
+    _sc_authors_entry = _sc_fs.get("authors")
+    if isinstance(_sc_authors_entry, dict):
+        _sc_author_variant = _sc_authors_entry.get("author_variant_type", "")
+
+    # P1 short-circuit: classifier says authors = p1_variant AND every other
+    # field the reference provides is match-equivalent (match / both_missing /
+    # reference_missing — NOT candidate_missing or mismatch). PotentialAgent
+    # often over-rejects less-obvious nicknames ("Moe" vs "Mohit"); trust the
+    # classifier and emit POTENTIAL/P1 directly.
+    _p1_non_author_fields = (
+        "title", "venue", "year", "doi", "arxiv_id",
+        "pages", "volume", "publisher", "location",
+    )
+    _p1_non_author_match_eq = all(
+        _sc_status(f) in _MATCH_EQ for f in _p1_non_author_fields
+    )
+    if _sc_author_variant == "p1_variant" and _p1_non_author_match_eq:
+        all_evaluations.append({
+            "agent": "P1_short_circuit",
+            "verdict": "POTENTIAL",
+            "taxonomy": ["P1"],
+            "reason": "Short-circuit: classifier authors=p1_variant; every other reference-provided field is match-equivalent.",
+        })
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.POTENTIAL_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=["author_name_variant"],
+            adjudication_reason=(
+                "P1 short-circuit: FieldClassifier judged authors = p1_variant "
+                "and every other field the reference provides is match-equivalent. "
+                "Trust classifier; mark as POTENTIAL/P1."
+            ),
+            matched_candidate=candidate_match_to_dict(best_candidate),
+            reference_snapshot=best_comparison.get("reference", {}),
+            comparison=best_comparison,
+            candidate_evaluations=all_evaluations,
+            taxonomy_subtype=["P1"],
+            needs_human_review=True,
+        )
+
+    # P3 short-circuit: authors effectively match (classifier exact / r2_initial
+    # or raw match), every non-peripheral reference-provided field is match-
+    # equivalent, AND at least one peripheral field (pages/volume/publisher/
+    # location) is candidate_missing — with the other peripherals staying
+    # match-equivalent-or-candidate_missing (no peripheral mismatch). Bypass the
+    # HallucinatedAgent → P3 fallback chain and emit POTENTIAL/P3 directly.
+    _sc_authors_effectively_match = (
+        _sc_status("authors") == "match"
+        or _sc_author_variant in ("exact", "r2_initial")
+    )
+    _p3_non_peri_fields = ("title", "venue", "year", "doi", "arxiv_id")
+    _p3_non_peri_match_eq = all(
+        _sc_status(f) in _MATCH_EQ for f in _p3_non_peri_fields
+    )
+    _p3_peri_fields = ("pages", "volume", "publisher", "location")
+    _p3_peri_clean = all(
+        _sc_status(f) in _MATCH_EQ + ("candidate_missing",)
+        for f in _p3_peri_fields
+    )
+    _p3_has_peri_cm = any(
+        _sc_status(f) == "candidate_missing" for f in _p3_peri_fields
+    )
+    if (
+        _sc_authors_effectively_match
+        and _p3_non_peri_match_eq
+        and _p3_peri_clean
+        and _p3_has_peri_cm
+    ):
+        missing_peri = [
+            f for f in _p3_peri_fields if _sc_status(f) == "candidate_missing"
+        ]
+        all_evaluations.append({
+            "agent": "P3_short_circuit",
+            "verdict": "POTENTIAL",
+            "taxonomy": ["P3"],
+            "reason": (
+                f"Short-circuit: authors effectively match, every non-peripheral "
+                f"reference field is match-equivalent, peripherals "
+                f"{missing_peri} are candidate_missing."
+            ),
+        })
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.POTENTIAL_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=[f"{f}_candidate_missing" for f in missing_peri],
+            adjudication_reason=(
+                f"P3 short-circuit: all non-peripheral reference-provided fields "
+                f"match-equivalent, peripheral field(s) {missing_peri} not "
+                f"verifiable by any candidate. POTENTIAL/P3."
+            ),
+            matched_candidate=candidate_match_to_dict(best_candidate),
+            reference_snapshot=best_comparison.get("reference", {}),
+            comparison=best_comparison,
+            candidate_evaluations=all_evaluations,
+            taxonomy_subtype=["P3"],
+            needs_human_review=True,
+        )
+
+    # Phase 2a: likely_potential → PotentialAgent
     if best.hint == "likely_potential":
-        # Gather evidence
         sec_evidence: list[DiscrepancyEvidence] = []
         if secondary_verifier and best_field_result:
             try:
@@ -1750,7 +2112,6 @@ def cascading_adjudicate(
                     reason=f"PotentialAgent error: {exc}",
                 )
         else:
-            # No LLM → use evidence
             all_explained = sec_evidence and all(e.evidence_found for e in sec_evidence)
             if all_explained:
                 downstream = DownstreamAgentResult(
@@ -1795,7 +2156,7 @@ def cascading_adjudicate(
             "reason": downstream.reason,
         })
 
-    # --- Phase 2b: likely_hallucinated → HallucinatedAgent ---
+    # Phase 2b: likely_hallucinated → HallucinatedAgent
     if hallucinated_agent:
         try:
             downstream = hallucinated_agent.evaluate(
@@ -1807,7 +2168,6 @@ def cascading_adjudicate(
                 reason=f"HallucinatedAgent error: {exc}",
             )
     else:
-        # No LLM → use rule-based taxonomy
         taxonomy = []
         for issue in best.issues:
             if "title" in issue: taxonomy.append("H1")
@@ -1825,65 +2185,140 @@ def cascading_adjudicate(
             reason=f"Hallucinated based on issues: {best.issues}",
         )
 
-    # Rare downgrade: HallucinatedAgent says POTENTIAL
     if downstream.label == VerdictLabel.POTENTIAL_REFERENCE:
-        verdict = VerdictLabel.POTENTIAL_REFERENCE
+        verdict_label = VerdictLabel.POTENTIAL_REFERENCE
     else:
-        verdict = VerdictLabel.FAKE_REFERENCE
+        verdict_label = VerdictLabel.FAKE_REFERENCE
 
-    # P3 fallback: if HallucinatedAgent wants FAKE but every reference field was
-    # matched by some candidate, downgrade to P3 (needs human review).
-    if verdict == VerdictLabel.FAKE_REFERENCE and all_fields_covered:
+    # R4 upgrade: HallucinatedAgent said FAKE, but every reference field was
+    # independently matched by a qualifying candidate → cross-candidate
+    # coverage counts as REAL (R4), overriding the FAKE verdict.
+    if verdict_label == VerdictLabel.FAKE_REFERENCE and all_fields_covered:
         all_evaluations.append({
-            "agent": "P3_fallback",
-            "verdict": "POTENTIAL",
-            "taxonomy": ["P3"],
+            "agent": "R4_upgrade",
+            "verdict": "VALID",
+            "taxonomy": ["R4"],
             "reason": (
                 f"HallucinatedAgent said FAKE but every reference field "
-                f"{sorted(ref_fields_with_value)} was independently matched by some candidate. "
-                f"Downgraded to P3 for human review."
+                f"{sorted(ref_fields_with_value)} was independently matched by a "
+                f"qualifying candidate (title+authors+year matching). Upgraded to R4."
             ),
         })
         return CitationVerdict(
             citation_id=citation.citation_id,
-            verdict=VerdictLabel.POTENTIAL_REFERENCE,
+            verdict=VerdictLabel.VALID,
             evidence_sources=evidence_sources,
             conflicts=best.issues if best else [],
             adjudication_reason=(
-                f"P3 fallback: every reference field {sorted(ref_fields_with_value)} "
-                f"was independently verified by at least one candidate, but no single "
-                f"candidate matched all fields cleanly. Needs human review."
+                f"R4: every reference field {sorted(ref_fields_with_value)} "
+                f"was independently verified by at least one qualifying candidate "
+                f"(title+authors+year matching), though no single candidate matched "
+                f"all fields cleanly. Cross-candidate coverage."
             ),
             matched_candidate=candidate_match_to_dict(best_candidate),
             reference_snapshot=best_comparison.get("reference", {}),
             comparison=best_comparison,
             candidate_evaluations=all_evaluations,
-            taxonomy_subtype=["P3"],
-            needs_human_review=True,
+            taxonomy_subtype=["R4"],
+            needs_human_review=False,
         )
 
-    # P4 fallback: all core fields (title, authors, venue, year) match but the
-    # only issues are volume/pages/publisher candidate_missing — the candidate
-    # source simply doesn't carry those fields.  Downgrade to POTENTIAL P4
-    # (insufficient evidence, needs human review) instead of FAKE.
+    # P3 fallback: FAKE + only candidate_missing issues → P3.
+    # Guard: require that the best candidate's core fields (title, authors, year)
+    # genuinely match the reference. Candidates with core fields all `candidate_missing`
+    # (e.g. empty web_search records) must not trigger this fallback.
     _only_candidate_missing_issues = {
-        "pages_candidate_missing", "volume_candidate_missing", "publisher_candidate_missing",
-        "location_candidate_missing",
+        "pages_candidate_missing", "volume_candidate_missing",
+        "publisher_candidate_missing", "location_candidate_missing",
     }
+    _best_fs = (best.field_result.field_status if best and best.field_result else {}) or {}
+    _core_fields_match = all(
+        _best_fs.get(f, {}).get("status") == "match"
+        for f in ("title", "authors", "year")
+        if _best_fs.get(f, {}).get("status") is not None
+    ) and any(
+        _best_fs.get(f, {}).get("status") == "match"
+        for f in ("title", "authors", "year")
+    )
+
+    # Cross-candidate hard-evidence upgrade: BEFORE P3 fallback, check if any
+    # field was contradicted by some qualifying candidate but NEVER matched
+    # by any. If so, that's cross-candidate proof of fabrication — emit FAKE
+    # with the H-code for those fields, instead of P3 "insufficient evidence".
+    #
+    # This catches the common structural bug where crossref returns the real
+    # publisher (→ mismatch for that candidate) but best is DBLP (publisher
+    # empty → candidate_missing), and P3 would otherwise swallow the evidence.
+    _FIELD_TO_HCODE = {
+        "title": "H1",
+        "authors": "H2",
+        "venue": "H3",
+        "year": "H4",
+        "doi": "H5",
+        "arxiv_id": "H5",
+        "pages": "H6",
+        "volume": "H6",
+        "publisher": "H6",
+        "location": "H6",
+    }
+    unverified_mismatch_fields = (
+        contradicted_fields_across_candidates - matched_fields_across_candidates
+    )
+    cross_candidate_h_codes: list[str] = []
+    for f in sorted(unverified_mismatch_fields):
+        h = _FIELD_TO_HCODE.get(f)
+        if h and h not in cross_candidate_h_codes:
+            cross_candidate_h_codes.append(h)
     if (
-        verdict == VerdictLabel.FAKE_REFERENCE
+        verdict_label == VerdictLabel.FAKE_REFERENCE
+        and not all_fields_covered
+        and cross_candidate_h_codes
+        and best
+        and _core_fields_match
+    ):
+        all_evaluations.append({
+            "agent": "CrossCandidateHardEvidence",
+            "verdict": "FAKE_REFERENCE",
+            "taxonomy": cross_candidate_h_codes,
+            "reason": (
+                f"Cross-candidate hard evidence: reference field(s) "
+                f"{sorted(unverified_mismatch_fields)} were contradicted "
+                f"by at least one qualifying candidate and never confirmed "
+                f"by any. Upgraded from P3 to FAKE."
+            ),
+        })
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=best.issues if best else [],
+            adjudication_reason=(
+                f"CrossCandidate: field(s) {sorted(unverified_mismatch_fields)} "
+                f"contradicted by qualifying candidates but never confirmed. "
+                f"Taxonomy: {cross_candidate_h_codes}."
+            ),
+            matched_candidate=candidate_match_to_dict(best_candidate),
+            reference_snapshot=best_comparison.get("reference", {}),
+            comparison=best_comparison,
+            candidate_evaluations=all_evaluations,
+            taxonomy_subtype=cross_candidate_h_codes,
+            needs_human_review=False,
+        )
+    if (
+        verdict_label == VerdictLabel.FAKE_REFERENCE
         and best
         and best.issues
         and set(best.issues) <= _only_candidate_missing_issues
+        and _core_fields_match
     ):
         all_evaluations.append({
-            "agent": "P4_insufficient_evidence",
+            "agent": "P3_insufficient_evidence",
             "verdict": "POTENTIAL",
-            "taxonomy": ["P4"],
+            "taxonomy": ["P3"],
             "reason": (
                 f"All core fields match but candidate cannot verify "
                 f"{sorted(best.issues)}. Insufficient evidence to confirm or deny — "
-                f"downgraded to P4 for human review."
+                f"downgraded to P3 for human review."
             ),
         })
         return CitationVerdict(
@@ -1892,7 +2327,7 @@ def cascading_adjudicate(
             evidence_sources=evidence_sources,
             conflicts=best.issues,
             adjudication_reason=(
-                f"P4: all core fields match but {sorted(best.issues)} cannot be "
+                f"P3: all core fields match but {sorted(best.issues)} cannot be "
                 f"verified because no candidate source provides them. "
                 f"Needs human review."
             ),
@@ -1900,7 +2335,7 @@ def cascading_adjudicate(
             reference_snapshot=best_comparison.get("reference", {}),
             comparison=best_comparison,
             candidate_evaluations=all_evaluations,
-            taxonomy_subtype=["P4"],
+            taxonomy_subtype=["P3"],
             needs_human_review=True,
         )
 
@@ -1913,7 +2348,7 @@ def cascading_adjudicate(
 
     return CitationVerdict(
         citation_id=citation.citation_id,
-        verdict=verdict,
+        verdict=verdict_label,
         evidence_sources=evidence_sources,
         conflicts=best.issues if best else [],
         adjudication_reason=f"HallucinatedAgent: {downstream.reason}",
@@ -1924,3 +2359,109 @@ def cascading_adjudicate(
         taxonomy_subtype=downstream.taxonomy,
         needs_human_review=True,
     )
+
+
+def cascading_adjudicate(
+    citation: CitationRecord,
+    candidates: list[CandidateMatch],
+    evidence_traces: list[Any],
+    extraction_quality: ExtractionQuality = ExtractionQuality.UNKNOWN,
+    valid_agent: ValidAgentProtocol | None = None,
+    potential_agent: PotentialAgentProtocol | None = None,
+    hallucinated_agent: HallucinatedAgentProtocol | None = None,
+    secondary_verifier: Any = None,
+    extractor_agent: Any = None,
+    source_paper_title: str = "",
+    build_comparison_func=None,
+    is_direct_valid_func=None,
+    url_match_status: str = "",
+    url_issues: list[str] | None = None,
+    url_type_triggered: str = "",
+    tavily_api_key: str = "",
+    author_classifier: AuthorVariantClassifierProtocol | None = None,
+) -> CitationVerdict:
+    """Cascading 3-agent verification (legacy sequential entry point).
+
+    Thin wrapper: runs verify_single_candidate per candidate serially, then
+    hands off to cascading_phase2_only. Kept for backward compatibility.
+    New streaming entry point lives in verifier.py.
+    """
+    from .adjudicate import _build_comparison, _is_direct_valid, _reference_snapshot
+
+    build_comp = build_comparison_func or _build_comparison
+    is_valid_func = is_direct_valid_func or _is_direct_valid
+
+    evidence_sources = sorted({
+        t.connector for t in evidence_traces if hasattr(t, 'connector') and t.error is None
+    })
+
+    if url_issues is None:
+        url_issues = []
+
+    # No candidates at all
+    if not candidates:
+        source_errors = [t for t in evidence_traces if hasattr(t, 'error') and t.error]
+        if source_errors and len(source_errors) == len(evidence_traces):
+            return CitationVerdict(
+                citation_id=citation.citation_id,
+                verdict=VerdictLabel.INSUFFICIENT_EVIDENCE,
+                evidence_sources=evidence_sources,
+                conflicts=["no_candidate"],
+                adjudication_reason="All sources failed.",
+                taxonomy_subtype=[],
+                needs_human_review=True,
+            )
+        return CitationVerdict(
+            citation_id=citation.citation_id,
+            verdict=VerdictLabel.FAKE_REFERENCE,
+            evidence_sources=evidence_sources,
+            conflicts=["no_candidate"],
+            adjudication_reason="No matching paper found.",
+            reference_snapshot=_reference_snapshot(citation),
+            taxonomy_subtype=["H1"],
+            needs_human_review=True,
+        )
+
+    # Phase 1: iterate candidates serially using verify_single_candidate
+    all_valid_results: list[ValidAgentResult] = []
+    all_evaluations: list[dict[str, Any]] = []
+
+    for candidate in candidates:
+        verdict_or_none, eval_dict, vresult = verify_single_candidate(
+            citation=citation,
+            candidate=candidate,
+            sibling_candidates=candidates,
+            prior_evaluations=all_evaluations,
+            valid_agent=valid_agent,
+            extractor_agent=extractor_agent,
+            tavily_api_key=tavily_api_key,
+            evidence_sources=evidence_sources,
+            url_match_status=url_match_status,
+            url_issues=url_issues,
+            url_type_triggered=url_type_triggered,
+            build_comparison_func=build_comp,
+            is_direct_valid_func=is_valid_func,
+            author_classifier=author_classifier,
+        )
+        all_evaluations.append(eval_dict)
+        if verdict_or_none is not None:
+            return verdict_or_none
+        if vresult is not None:
+            all_valid_results.append(vresult)
+
+    # Phase 2 (cross-candidate coverage + best + 2a + 2b + R4/P3 fallbacks)
+    return cascading_phase2_only(
+        citation=citation,
+        candidates=candidates,
+        all_valid_results=all_valid_results,
+        all_evaluations=all_evaluations,
+        evidence_sources=evidence_sources,
+        secondary_verifier=secondary_verifier,
+        potential_agent=potential_agent,
+        hallucinated_agent=hallucinated_agent,
+        url_match_status=url_match_status,
+        url_issues=url_issues,
+        url_type_triggered=url_type_triggered,
+    )
+
+

@@ -78,7 +78,7 @@ def _classify_taxonomy(
     has_et_al: bool,
     has_candidates: bool,
 ) -> str:
-    """Classify the verdict into a taxonomy subtype (R1-R3, P1-P4, H1-H6)."""
+    """Classify the verdict into a taxonomy subtype (R1-R4, P1-P3, H1-H6)."""
     if verdict == VerdictLabel.VALID:
         # Check if authors used et al.
         if has_et_al:
@@ -158,6 +158,8 @@ def _norm_pages(value: Any) -> str:
     for sep in ("\u2013", "\u2014", "\u2212", "--", "—", "–"):
         text = text.replace(sep, "-")
     text = " ".join(text.split())
+    # Collapse whitespace around the hyphen so "12 - 22" ≡ "12-22".
+    text = _re.sub(r"\s*-\s*", "-", text)
     text = text.strip(" .,:;")
     # ACM article-number format: "766:1-766:28" → "1-28"
     # Pattern: <num>:<start> - <num>:<end>  (same article number on both sides)
@@ -186,8 +188,13 @@ def _norm_volume(value: Any) -> str:
     text = str(value or "").strip().lower()
     if not text:
         return ""
-    # Strip common prefixes
     import re as _re
+    # Discard arXiv-id-shaped junk: 'abs/2209.01174' is an arXiv identifier
+    # misrouted into the volume field by some citation parsers, not a real
+    # volume number.
+    if _re.match(r"^abs/\d", text):
+        return ""
+    # Strip common prefixes
     text = _re.sub(r"^(vol(?:ume)?\.?\s*)", "", text).strip()
     text = text.strip(" .,:;")
     # Convert roman numeral to arabic if applicable
@@ -313,6 +320,13 @@ def _is_et_al_marker(name: str) -> bool:
 
 
 def _compare_authors(reference: list[str], candidate: list[str]) -> dict[str, Any]:
+    """Author comparison — strict byte-identical (after whitespace + case
+    normalization). Any non-exact difference (typos, initials, reorder,
+    nickname, dropped middle name, count mismatch) is reported as `mismatch`.
+
+    Exception: et al. markers in reference match if every listed ref author
+    matches the candidate's corresponding prefix positionally (for R3 support).
+    """
     ref = _to_author_list(reference)
     cand = _to_author_list(candidate)
 
@@ -322,12 +336,12 @@ def _compare_authors(reference: list[str], candidate: list[str]) -> dict[str, An
 
     import re as _re
     def _norm_author_name(name: str) -> str:
-        """Normalize author name: lowercase, strip DBLP suffix, remove dots/commas."""
-        text = _norm_text(name)
+        """Normalize author name: lowercase + strip DBLP disambiguation suffix
+        + collapse whitespace. Does NOT remove dots or do token-level matching —
+        keeps the full string for strict equality comparison."""
+        text = str(name or "").strip().lower()
         # Strip DBLP-style disambiguation suffixes (e.g. "mark chen 0003" → "mark chen")
         text = _re.sub(r"\s+\d{4,}$", "", text).strip()
-        # Remove interior dots/commas (e.g. "daniel d." → "daniel d")
-        text = _re.sub(r"[.,]", "", text)
         return " ".join(text.split())  # collapse whitespace
 
     ref_norm = [_norm_author_name(name) for name in ref_actual]
@@ -335,62 +349,23 @@ def _compare_authors(reference: list[str], candidate: list[str]) -> dict[str, An
 
     if not ref_norm and not cand_norm:
         status = "both_missing"
-        overlap = 0
     elif not ref_norm:
         status = "reference_missing"
-        overlap = 0
     elif not cand_norm:
         status = "candidate_missing"
-        overlap = 0
     elif ref_norm == cand_norm:
+        # Strict byte-identical position-wise match
         status = "match"
-        overlap = len(ref_norm)
-    elif set(ref_norm) == set(cand_norm):
-        status = "reordered_match"
-        overlap = len(ref_norm)
+    elif (has_et_al
+          and len(ref_norm) <= len(cand_norm)
+          and cand_norm[: len(ref_norm)] == ref_norm):
+        # R3 special case: reference uses et al. and its listed authors byte-match
+        # the prefix of the candidate's author list.
+        status = "match"
     else:
-        from .normalize import author_tokens as _at
+        status = "mismatch"
 
-        def _authors_match_at_position(rn: str, cn: str) -> bool:
-            """Check if ref author and cand author at the same position are the same person."""
-            if rn == cn:
-                return True
-            r_tokens = _at(rn)
-            c_tokens = _at(cn)
-            if r_tokens and c_tokens and r_tokens & c_tokens:
-                return True
-            return False
-
-        # Step 1: Strict positional matching — compare ref[i] vs cand[i] one-to-one.
-        # This avoids the greedy cross-position matching bug where common surnames
-        # (Wang, Chen, Liu) cause false reordered_match.
-        positional_matches = 0
-        compare_len = min(len(ref_norm), len(cand_norm))
-        for i in range(compare_len):
-            if _authors_match_at_position(ref_norm[i], cand_norm[i]):
-                positional_matches += 1
-
-        overlap = positional_matches
-
-        if positional_matches == len(ref_norm) == len(cand_norm):
-            # All authors matched at same positions → match
-            status = "match"
-        elif has_et_al and positional_matches == len(ref_norm) and len(cand_norm) >= len(ref_norm):
-            # Et al.: all listed ref authors matched as prefix of candidate → match
-            status = "match"
-        elif positional_matches > 0:
-            # Some matched positionally but not all — let LLM decide
-            # whether it's reorder, name variant, or real mismatch
-            status = "partial_overlap"
-        else:
-            status = "mismatch"
-        # When citation does NOT use et al. and author counts differ significantly,
-        # this is a definitive count mismatch (H3a in taxonomy).
-        # Only flag as count_mismatch when ratio < 0.5 (more than 2x difference).
-        if not has_et_al and ref_norm and cand_norm and len(ref_norm) != len(cand_norm):
-            count_ratio = min(len(ref_norm), len(cand_norm)) / max(len(ref_norm), len(cand_norm))
-            if count_ratio < 0.5:
-                status = "count_mismatch"
+    overlap = sum(1 for i in range(min(len(ref_norm), len(cand_norm))) if ref_norm[i] == cand_norm[i])
 
     return {
         "status": status,
@@ -475,10 +450,28 @@ def _build_comparison(
         "url": candidate_data.get("url", ""),
     }
 
+    # arxiv/CoRR records carry noisy peripheral values that reflect the preprint
+    # version, not the published conference/journal version. Example: arxiv's
+    # publisher is always "arXiv", volume looks like "abs/2305.13617". Comparing
+    # these against a citation's real journal publisher / volume produces
+    # spurious `mismatch` signals. Null them out so they read as candidate_missing
+    # instead (their NON-peripheral fields — title/authors/year — are still valid).
+    _peri_venue = (candidate_core.get("venue") or "").strip().lower()
+    _peri_pub = (candidate_core.get("publisher") or "").strip().lower()
+    _is_arxiv_record = (
+        _peri_venue in ("arxiv", "corr", "arxiv preprint")
+        or _peri_pub in ("arxiv", "corr", "arxiv.org", "arxiv preprint")
+    )
+    if _is_arxiv_record:
+        candidate_core["volume"] = ""
+        candidate_core["pages"] = ""
+        candidate_core["publisher"] = ""
+        candidate_core["location"] = ""
+
     field_status = {
         "title": _compare_scalar(reference["title"], candidate_core["title"], _norm_title),
         "authors": _compare_authors(reference["authors"], candidate_core["authors"]),
-        "venue": _compare_venue(reference["venue"], candidate_core["venue"]),
+        "venue": _compare_scalar(reference["venue"], candidate_core["venue"], _norm_title),
         "year": _compare_year(reference["year"], candidate_core["year"], candidate_version_years),
         "volume": _compare_scalar(reference.get("volume", ""), candidate_core["volume"], _norm_volume),
         "pages": _compare_scalar(reference.get("pages", ""), candidate_core["pages"], _norm_pages),

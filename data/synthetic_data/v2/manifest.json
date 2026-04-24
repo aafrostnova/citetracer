@@ -42,26 +42,26 @@
     "category": "Author"
   },
   "R1": {
-    "count": 200,
+    "count": 187,
     "samples_file": "R1.json",
     "label": "REAL",
     "category": "None"
   },
   "R2": {
-    "count": 200,
+    "count": 190,
     "samples_file": "R2.json",
     "label": "REAL",
     "category": "Format"
   },
   "R3": {
-    "count": 200,
+    "count": 189,
     "samples_file": "R3.json",
     "label": "REAL",
     "category": "Author"
   },
-  "P4": {
+  "P3": {
     "count": 200,
-    "samples_file": "P4.json",
+    "samples_file": "P3.json",
     "label": "POTENTIAL_HALLUCINATED",
     "category": "Meta"
   }

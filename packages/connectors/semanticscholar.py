@@ -39,6 +39,15 @@ class SemanticScholarConnector(BaseConnector):
             volume = str(journal.get("volume", "") or "")
             pages = str(journal.get("pages", "") or "")
             publisher = str(pub_venue.get("publisher", "") or "")
+            # S2 encodes arXiv preprint IDs in the volume field as "abs/<arxiv_id>",
+            # "arXiv:<id>", or "corr/abs/<id>". These are NOT real journal volumes —
+            # treat them as empty so downstream field comparison doesn't see a fake
+            # non-empty value.
+            _vol_lower = volume.strip().lower()
+            if (_vol_lower.startswith("abs/")
+                    or _vol_lower.startswith("arxiv:")
+                    or _vol_lower.startswith("corr/")):
+                volume = ""
             records.append(
                 {
                     "title": str(paper.get("title", "") or ""),
