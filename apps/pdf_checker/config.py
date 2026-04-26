@@ -93,6 +93,13 @@ class OCRLLMExtractConfig:
     force_all_entries: bool
     entry_extraction: PDFEntryExtractionConfig
     bedrock: BedrockAuthConfig
+    # How to fix segmenter boundary cases (entries that look like they may
+    # have been split or wrongly merged across an OCR text block boundary).
+    #   "rule" — apply the in-process content-based merge heuristic
+    #   "llm"  — ask Bedrock per ambiguous adjacent pair (auto-falls back to
+    #            "rule" if the bedrock model_id is unavailable)
+    #   "none" — trust the layout-aware segmenter, do nothing
+    boundary_merge_mode: str = "rule"
 
 
 def _get_nested(payload: Mapping[str, Any], keys: list[str]) -> Any:
@@ -170,6 +177,13 @@ def _parse_local_inference_backend(value: Any) -> str:
     if backend in {"hf", "vllm"}:
         return backend
     return "hf"
+
+
+def _parse_boundary_merge_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {"rule", "llm", "none"}:
+        return mode
+    return "rule"
 
 
 def _parse_verification_provider(value: Any) -> str:
@@ -573,6 +587,10 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "bedrock", "bearer_token"])
         or bearer_token
     )
+    ocr_boundary_merge_mode = _parse_boundary_merge_mode(
+        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_BOUNDARY_MERGE_MODE")
+        or _optional_payload_str(payload, ["ocr_llm_extract", "boundary_merge_mode"])
+    )
 
     return PDFCheckerConfig(
         connectors=ConnectorRuntimeConfig(
@@ -663,5 +681,6 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
                 model_id=ocr_llm_extract_model_id,
                 bearer_token=ocr_llm_extract_bearer_token,
             ),
+            boundary_merge_mode=ocr_boundary_merge_mode,
         ),
     )

@@ -1297,7 +1297,15 @@ def _apply_llm_reparse_if_needed(
     record.title = new_title
     record.authors = new_authors
     record.venue = new_venue
-    record.year = int(new_year) if new_year is not None else None
+    # NEVER let the LLM rewrite the year. The H4 mutation in our taxonomy
+    # deliberately introduces a wrong year so that the verifier can flag it
+    # downstream; an LLM (especially the image-aware reparse) tends to
+    # silently "correct" the printed year against the conference year in the
+    # venue name or against its own training knowledge, which destroys the
+    # H4 detection signal. Keep the heuristic-extracted year as ground truth
+    # for what is on the page.
+    parsed_fields["llm_reparse_year_skipped"] = True
+    # record.year stays whatever the heuristic parser produced.
     record.volume = new_volume
     record.pages = new_pages
     record.publisher = new_publisher

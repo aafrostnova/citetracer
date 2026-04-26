@@ -100,13 +100,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable two-stage OCR->LLM pipeline optimization for ocr_llm_extract batch mode.",
     )
+    parser.add_argument(
+        "--boundary-merge-mode",
+        choices=("rule", "llm", "none"),
+        default=None,
+        help=(
+            "Override ocr_llm_extract.boundary_merge_mode. "
+            "'rule' uses the regex content-merge heuristic; "
+            "'llm' asks Bedrock per ambiguous adjacent pair; "
+            "'none' trusts the layout-aware segmenter as-is."
+        ),
+    )
     return parser
+
+
+def _resolve_boundary_merge_mode(args: argparse.Namespace, default_mode: str) -> str:
+    override = getattr(args, "boundary_merge_mode", None)
+    if override:
+        return str(override).strip().lower()
+    return (default_mode or "rule").strip().lower()
 
 
 def _extract_pdf_to_payload_config(pdf: Path, args: argparse.Namespace) -> Dict[str, Any]:
     cfg = load_pdf_checker_config()
 
     pages = extract_pdf_pages(pdf)
+    boundary_mode = _resolve_boundary_merge_mode(args, cfg.ocr_llm_extract.boundary_merge_mode)
     entries, quality, meta = segment_references_from_pages(
         pages,
         entry_extraction=cfg.entry_extraction.mode,
@@ -118,6 +137,10 @@ def _extract_pdf_to_payload_config(pdf: Path, args: argparse.Namespace) -> Dict[
         local_model_path=cfg.entry_extraction.local.model_path,
         local_inference_backend=cfg.entry_extraction.local.inference_backend,
         source_pdf_path=pdf,
+        boundary_merge_mode=boundary_mode,
+        boundary_merge_model_id=cfg.ocr_llm_extract.bedrock.model_id,
+        boundary_merge_region=cfg.ocr_llm_extract.bedrock.region,
+        boundary_merge_bearer_token=cfg.ocr_llm_extract.bedrock.bearer_token,
     )
     parsed_citations = [
         asdict(record)
@@ -174,6 +197,7 @@ def _prepare_ocr_llm_extract_intermediate(pdf: Path, args: argparse.Namespace) -
         raise RuntimeError("method=ocr_llm_extract requires Bedrock model_id (config or --bedrock-model-id).")
 
     pages = extract_pdf_pages(pdf)
+    boundary_mode = _resolve_boundary_merge_mode(args, cfg.ocr_llm_extract.boundary_merge_mode)
     entries, quality, meta = segment_references_from_pages(
         pages,
         entry_extraction=extract_mode,
@@ -185,6 +209,10 @@ def _prepare_ocr_llm_extract_intermediate(pdf: Path, args: argparse.Namespace) -
         local_model_path=local_model_path,
         local_inference_backend=extract_cfg.local.inference_backend,
         source_pdf_path=pdf,
+        boundary_merge_mode=boundary_mode,
+        boundary_merge_model_id=model_id,
+        boundary_merge_region=region,
+        boundary_merge_bearer_token=bearer_token,
     )
 
     llm_cfg = {

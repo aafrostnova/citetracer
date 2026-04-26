@@ -147,6 +147,10 @@ def _extract_and_parse(
         local_model_path=cfg.entry_extraction.local.model_path,
         local_inference_backend=cfg.entry_extraction.local.inference_backend,
         source_pdf_path=pdf,
+        boundary_merge_mode=cfg.ocr_llm_extract.boundary_merge_mode,
+        boundary_merge_model_id=cfg.ocr_llm_extract.bedrock.model_id,
+        boundary_merge_region=cfg.ocr_llm_extract.bedrock.region,
+        boundary_merge_bearer_token=cfg.ocr_llm_extract.bedrock.bearer_token,
     )
     _log(
         verbose,
