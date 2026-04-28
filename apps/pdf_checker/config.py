@@ -100,6 +100,12 @@ class OCRLLMExtractConfig:
     #            "rule" if the bedrock model_id is unavailable)
     #   "none" — trust the layout-aware segmenter, do nothing
     boundary_merge_mode: str = "rule"
+    # Paper-style hint for the reparse LLM: tells it which canonical
+    # bibliography format to expect, which materially helps disambiguate
+    # year vs. page numbers when the layout puts them in non-default slots.
+    # Supported: "" (generic, default) | "ccs" | "acm" | "ieee" | "lncs" |
+    # "iclr" | "neurips" | "icml" | "plain"
+    paper_style: str = ""
 
 
 def _get_nested(payload: Mapping[str, Any], keys: list[str]) -> Any:
@@ -531,6 +537,11 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _get_nested(payload, ["ocr_llm_extract", "force_all_entries"]),
         default=True,
     )
+    ocr_llm_extract_paper_style = (
+        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_PAPER_STYLE")
+        or _optional_payload_str(payload, ["ocr_llm_extract", "paper_style"])
+        or ""
+    )
     ocr_llm_extract_region = (
         _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_BEDROCK_REGION")
         or _optional_payload_str(payload, ["ocr_llm_extract", "bedrock", "region"])
@@ -682,5 +693,6 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
                 bearer_token=ocr_llm_extract_bearer_token,
             ),
             boundary_merge_mode=ocr_boundary_merge_mode,
+            paper_style=ocr_llm_extract_paper_style.strip().lower(),
         ),
     )

@@ -850,7 +850,7 @@ def _extract_url(raw_text: str) -> str:
     return match.group(0).rstrip(".,);]")
 
 
-def _extract_year(raw_text: str) -> int | None:
+def _extract_year(raw_text: str, paper_style: str = "") -> int | None:
     cleaned = raw_text
     cleaned = re.sub(r"https?://\S+", " ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bdoi\s*:\s*\S+", " ", cleaned, flags=re.IGNORECASE)
@@ -874,7 +874,16 @@ def _extract_year(raw_text: str) -> int | None:
             candidates.append(year)
     if not candidates:
         return None
-    # Prefer the trailing publication year over earlier numbers (e.g., arXiv IDs or page spans).
+    # CCS / ACM Reference Format: "Authors. YEAR. Title. Venue, vol, pages."
+    # The year is the FIRST 4-digit number (right after authors), and any
+    # later digit clusters (volume, page range) can confuse a "trailing year"
+    # heuristic into picking e.g. 1954 from "pp. 1954-1990". When the style
+    # hint says ccs/acm, prefer the leading year.
+    style_key = (paper_style or "").strip().lower()
+    if style_key in {"ccs", "acm"}:
+        return candidates[0]
+    # Default: prefer the trailing publication year over earlier numbers
+    # (e.g., arXiv IDs that escaped the prefix strip, or page spans).
     return candidates[-1]
 
 
@@ -1095,6 +1104,75 @@ def _run_llm_reparse_on_raw(
     return _normalize_llm_reparse_result(payload)
 
 
+# Paper-style hints for the reparse LLM. Each block names the canonical
+# bibliography format the venue uses, with a focus on whichever fields the
+# format places in non-default slots (most importantly: where YEAR sits).
+# When a citation gets reparsed against the right style hint, the LLM is
+# much less likely to swap year with a page number or a volume — the
+# pdf-ref:20 case ("Year 1954 in citation vs 2021 in candidate") came from
+# a CCS-style reference where year follows authors but the heuristic
+# parser grabbed a stray digit further down the entry.
+_PAPER_STYLE_GUIDES = {
+    "ccs": (
+        "PAPER STYLE: ACM CCS / ACM Reference Format. Canonical layout per entry:\n"
+        "  [N] Authors. <YEAR>. Title. Venue, volume, pages. doi/url.\n"
+        "Year ALWAYS appears RIGHT AFTER the trailing period of the author list "
+        "and BEFORE the title. It is a 4-digit number standing alone, not part "
+        "of a page range or a volume. If you see two 4-digit numbers in the "
+        "entry (e.g. one after authors, another inside 'pages 1954-1990'), the "
+        "year is the one IMMEDIATELY after authors.\n"
+    ),
+    "acm": (
+        "PAPER STYLE: ACM Reference Format. Canonical layout per entry:\n"
+        "  [N] Authors. <YEAR>. Title. Venue, volume, pages. doi/url.\n"
+        "Year ALWAYS appears right after authors, before the title.\n"
+    ),
+    "ieee": (
+        "PAPER STYLE: IEEE. Canonical layout:\n"
+        "  [N] Authors, \"Title,\" Venue, vol. V, no. M, pp. P-Q, <YEAR>.\n"
+        "Year is at the END of the entry, after pages. Volume is preceded "
+        "by 'vol.', issue by 'no.', pages by 'pp.'.\n"
+    ),
+    "lncs": (
+        "PAPER STYLE: Springer LNCS. Canonical layout:\n"
+        "  N. Authors: Title. In: Editors (eds.) Venue. LNCS, vol. V, pp. P-Q. "
+        "Springer, Location (<YEAR>).\n"
+        "Year sits in parentheses near the END of the entry. Volume is "
+        "preceded by 'vol.'.\n"
+    ),
+    "iclr": (
+        "PAPER STYLE: ICLR / arXiv author-year. Canonical layout:\n"
+        "  Authors. Title. Venue, <YEAR>.\n"
+        "Year appears at the end of the entry, after the venue.\n"
+    ),
+    "neurips": (
+        "PAPER STYLE: NeurIPS author-year. Canonical layout:\n"
+        "  Authors. Title. Venue, volume:pages, <YEAR>.\n"
+        "Year appears at the end, after the page range.\n"
+    ),
+    "icml": (
+        "PAPER STYLE: ICML author-year. Canonical layout similar to NeurIPS.\n"
+        "Year sits at the end of the entry.\n"
+    ),
+    "plain": (
+        "PAPER STYLE: plain (BibTeX plain). Canonical layout:\n"
+        "  N. Authors. Title. Venue, volume(issue):pages, <YEAR>.\n"
+        "Year is at the END of the entry, just before the closing period.\n"
+    ),
+}
+
+
+def _build_paper_style_hint(paper_style: str) -> str:
+    """Return a paper-style guidance block for the reparse prompt."""
+    key = (paper_style or "").strip().lower()
+    if not key:
+        return ""
+    guide = _PAPER_STYLE_GUIDES.get(key)
+    if not guide:
+        return ""
+    return guide + "\n"
+
+
 def _run_llm_reparse_on_raw_bedrock(
     raw_text: str,
     model_id: str,
@@ -1103,6 +1181,7 @@ def _run_llm_reparse_on_raw_bedrock(
     max_new_tokens: int,
     temperature: float,
     reference_page_images: list[bytes] | None = None,
+    paper_style: str = "",
 ) -> dict[str, Any] | None:
     client = _build_bedrock_client(region=region, bearer_token=bearer_token)
 
@@ -1133,21 +1212,26 @@ def _run_llm_reparse_on_raw_bedrock(
     image_instruction = ""
     if n_images == 1:
         image_instruction = (
-            "IMPORTANT: An image of the reference page is attached.\n\n"
+            "IMPORTANT: An image is attached. It shows ONLY the cited "
+            "reference (cropped from the original page), so you do not need "
+            "to search for it — read the fields directly from the image.\n\n"
             + common_image_block
         )
     elif n_images >= 2:
         image_instruction = (
-            f"IMPORTANT: {n_images} images of reference pages are attached. "
-            "This reference entry SPANS ACROSS PAGES — the beginning is on the "
-            "first image and continues on the second.\n\n"
+            f"IMPORTANT: {n_images} images are attached. The reference SPANS "
+            "ACROSS COLUMNS OR PAGES — the start is in the first crop and "
+            "continues in the next. Read fields directly from the crops.\n\n"
             + common_image_block
         )
+
+    style_hint = _build_paper_style_hint(paper_style)
 
     prompt = (
         "You are a strict bibliography parser. "
         "Extract structured fields from a raw reference string.\n"
-        + image_instruction +
+        + image_instruction
+        + style_hint +
         "Return only valid JSON with exact keys:\n"
         '{"title": "", "authors": [], "venue": "", "year": null, "volume": "", "pages": "", "publisher": "", "location": "", "doi": "", "arxiv_id": "", "url": ""}\n'
         "Rules:\n"
@@ -1246,9 +1330,12 @@ def _apply_llm_reparse_if_needed(
     max_new_tokens: int,
     temperature: float,
     reference_page_images: list[bytes] | None = None,
+    paper_style: str = "",
 ) -> None:
     parsed_fields = dict(record.parsed_fields or {})
     parsed_fields["llm_reparse_attempted"] = True
+    if paper_style:
+        parsed_fields["llm_reparse_paper_style"] = paper_style
     try:
         if provider == "bedrock":
             parsed = _run_llm_reparse_on_raw_bedrock(
@@ -1259,6 +1346,7 @@ def _apply_llm_reparse_if_needed(
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 reference_page_images=reference_page_images,
+                paper_style=paper_style,
             )
         else:
             parsed = _run_llm_reparse_on_raw(
@@ -1391,7 +1479,7 @@ def _apply_llm_reparse_if_needed(
     record.parsed_fields = parsed_fields
 
 
-def parse_reference_entry(entry: str, citation_id: str) -> CitationRecord:
+def parse_reference_entry(entry: str, citation_id: str, paper_style: str = "") -> CitationRecord:
     normalized = re.sub(r"\s+", " ", entry).strip()
     segments = _split_reference_segments(normalized)
     style_hint = _detect_reference_style(normalized)
@@ -1445,7 +1533,7 @@ def parse_reference_entry(entry: str, citation_id: str) -> CitationRecord:
             if split_norm and venue_norm and (split_norm.endswith(venue_norm) or venue_norm.endswith(split_norm)):
                 venue = split_venue if len(split_venue) >= len(venue) else venue
 
-    year = _extract_year(normalized)
+    year = _extract_year(normalized, paper_style=paper_style)
     doi, arxiv_id = extract_identifier(entry)
     doi = doi.rstrip(".,;")
     url = _extract_url(normalized)
@@ -1527,18 +1615,19 @@ def parse_reference_entries(
             reference_page_images[i] = list of images for entries[i].
             For cross-page entries, the list has 2 images.
     """
-    records = []
-    total = len(entries)
-    for idx, entry in enumerate(entries, start=1):
-        print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
-        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}"))
-    print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
-
     cfg = llm_reparse_config or {}
     if isinstance(cfg, Mapping):
         get_value = cfg.get
     else:
         get_value = lambda key, default=None: getattr(cfg, key, default)
+    _paper_style_for_heuristic = str(get_value("paper_style", "") or "").strip().lower()
+
+    records = []
+    total = len(entries)
+    for idx, entry in enumerate(entries, start=1):
+        print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
+        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}", paper_style=_paper_style_for_heuristic))
+    print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
 
     enabled = bool(get_value("enabled", False))
     provider = str(get_value("provider", "local") or "local").strip().lower()
@@ -1638,18 +1727,21 @@ def parse_reference_entries_streaming(
             NOT a key in this dict are already verify-ready; records that ARE
             keyed must wait for their future to complete before verification.
     """
-    records: list[CitationRecord] = []
-    total = len(entries)
-    for idx, entry in enumerate(entries, start=1):
-        print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
-        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}"))
-    print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
-
     cfg = llm_reparse_config or {}
     if isinstance(cfg, Mapping):
         get_value = cfg.get
     else:
         get_value = lambda key, default=None: getattr(cfg, key, default)
+    # Read paper_style up-front so the heuristic year extractor (used during
+    # the parse_reference_entry loop below) can apply style-aware rules.
+    _paper_style_for_heuristic = str(get_value("paper_style", "") or "").strip().lower()
+
+    records: list[CitationRecord] = []
+    total = len(entries)
+    for idx, entry in enumerate(entries, start=1):
+        print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
+        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}", paper_style=_paper_style_for_heuristic))
+    print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
 
     enabled = bool(get_value("enabled", False))
     provider = str(get_value("provider", "local") or "local").strip().lower()
@@ -1667,6 +1759,7 @@ def parse_reference_entries_streaming(
     force_all_entries = bool(get_value("force_all_entries", False))
     parallel_workers = int(get_value("parallel_workers", 1) or 1)
     parallel_workers = max(1, parallel_workers)
+    paper_style = str(get_value("paper_style", "") or "").strip().lower()
 
     _per_record_images: dict[str, list[bytes]] = {}
     if provider == "bedrock" and reference_page_images:
@@ -1689,10 +1782,11 @@ def parse_reference_entries_streaming(
 
     n_with_images = sum(1 for r in targets if r.citation_id in _per_record_images)
     img_tag = f" +image({n_with_images}/{n_targets})" if n_with_images else ""
+    style_tag = f" style={paper_style}" if paper_style else ""
     max_workers = min(parallel_workers, n_targets)
     print(
         f"      [reparse] LLM reparsing {n_targets} citations "
-        f"(provider={provider}{img_tag}, workers={max_workers}, streaming→verify)...",
+        f"(provider={provider}{img_tag}{style_tag}, workers={max_workers}, streaming→verify)...",
         flush=True,
     )
 
@@ -1710,5 +1804,6 @@ def parse_reference_entries_streaming(
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             reference_page_images=_per_record_images.get(record.citation_id),
+            paper_style=paper_style,
         )
     return records, pool, futures

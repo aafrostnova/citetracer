@@ -644,6 +644,7 @@ def _merge_layout_fragments(
     *,
     llm_merge_kwargs: dict[str, Any] | None = None,
     stats_sink: dict[str, int] | None = None,
+    layout_sink: list[list[tuple[int, tuple[int, int, int, int]]]] | None = None,
 ) -> list[str]:
     """Join consecutive ``text`` blocks only when ``curr`` is the
     continuation of ``prev`` across a column or page boundary.
@@ -662,14 +663,17 @@ def _merge_layout_fragments(
     if not records:
         return []
     out: list[str] = []
+    layout_per_entry: list[list[tuple[int, tuple[int, int, int, int]]]] = []
     last: dict | None = None
     for r in records:
         if last is None:
             out.append(r["content"])
+            layout_per_entry.append([(r["page"], r["bbox"])])
             last = r
             continue
         if not _is_layout_continuation(last, r):
             out.append(r["content"])
+            layout_per_entry.append([(r["page"], r["bbox"])])
             last = r
             continue
         if stats_sink is not None:
@@ -693,10 +697,17 @@ def _merge_layout_fragments(
             if stats_sink is not None:
                 stats_sink["merged"] = stats_sink.get("merged", 0) + 1
             out[-1] = normalize_space(f"{out[-1]} {r['content']}")
+            # Append continuation fragment's (page, bbox) onto the existing
+            # entry's layout list so the per-entry crop covers both the
+            # bottom of one column/page and the top of the next.
+            layout_per_entry[-1].append((r["page"], r["bbox"]))
             last = {**last, "page": r["page"], "bbox": r["bbox"]}
         else:
             out.append(r["content"])
+            layout_per_entry.append([(r["page"], r["bbox"])])
             last = r
+    if layout_sink is not None:
+        layout_sink.extend(layout_per_entry)
     return out
 
 
@@ -705,6 +716,7 @@ def _extract_reference_entries_from_tagged_markdown(
     *,
     llm_merge_kwargs: dict[str, Any] | None = None,
     stats_sink: dict[str, int] | None = None,
+    layout_sink: list[list[tuple[int, tuple[int, int, int, int]]]] | None = None,
 ) -> list[str]:
     """Pull reference entries out of DeepSeek-OCR tagged markdown.
 
@@ -760,7 +772,7 @@ def _extract_reference_entries_from_tagged_markdown(
         if in_references and has_end_inside:
             break
 
-    return _merge_layout_fragments(in_region, llm_merge_kwargs=llm_merge_kwargs, stats_sink=stats_sink)
+    return _merge_layout_fragments(in_region, llm_merge_kwargs=llm_merge_kwargs, stats_sink=stats_sink, layout_sink=layout_sink)
 
 
 def _page_has_heading(page_text: str, heading_re: re.Pattern[str]) -> bool:
@@ -1328,6 +1340,7 @@ def _extract_entries_from_markdown_pages(
     output_dir: Path,
     *,
     finalize_opts: dict[str, Any] | None = None,
+    layout_sink: list[list[tuple[int, tuple[int, int, int, int]]]] | None = None,
 ) -> list[str]:
     if not markdown_pages:
         return []
@@ -1351,12 +1364,46 @@ def _extract_entries_from_markdown_pages(
         # Hide the metadata_sink from the post-merge stage so it does not
         # overwrite our boundary_merge_mode/stats with "none".
         post_opts["metadata_sink"] = None
+    # Capture raw tagged entries + their layouts BEFORE finalize so we can
+    # realign them afterwards (finalize drops/dedupes/filters and breaks the
+    # parallel index mapping).
+    _raw_layouts: list[list[tuple[int, tuple[int, int, int, int]]]] = []
     tagged_entries = _extract_reference_entries_from_tagged_markdown(
         combined_markdown,
         llm_merge_kwargs=layout_llm_kwargs,
         stats_sink=layout_stats if layout_llm_kwargs else None,
+        layout_sink=_raw_layouts,
     )
+    raw_tagged = list(tagged_entries)  # snapshot for post-finalize realign
     tagged_entries = _finalize_raw_entries(tagged_entries, **post_opts)
+
+    if layout_sink is not None and raw_tagged and _raw_layouts:
+        # Realign layouts to the post-finalize entry list. For each finalized
+        # entry, find the raw tagged entry whose first 30 chars best match —
+        # that entry's layout is the source rectangle. When finalize merges
+        # adjacent fragments the merged content begins with the first
+        # fragment's prefix, so prefix matching is enough.
+        import re as _re
+        def _key30(s: str) -> str:
+            return _re.sub(r"\s+", " ", s)[:30].lower()
+        raw_keys = [_key30(t) for t in raw_tagged]
+        used: set[int] = set()
+        for fe in tagged_entries:
+            fk = _key30(fe)
+            best_idx = None
+            for ri, rk in enumerate(raw_keys):
+                if ri in used:
+                    continue
+                if not rk:
+                    continue
+                if rk[:20] == fk[:20] or fk.startswith(rk[:20]) or rk.startswith(fk[:20]):
+                    best_idx = ri
+                    break
+            if best_idx is not None:
+                used.add(best_idx)
+                layout_sink.append(_raw_layouts[best_idx])
+            else:
+                layout_sink.append([])
     if layout_llm_kwargs and metadata_sink is not None:
         metadata_sink["boundary_merge_mode"] = "llm"
         metadata_sink["boundary_merge_stats"] = layout_stats
@@ -1434,6 +1481,7 @@ def _extract_entries_with_local_model_from_images(
     backend: str = "hf",
     model_path: str | None = None,
     finalize_opts: dict[str, Any] | None = None,
+    layout_sink: list[list[tuple[int, tuple[int, int, int, int]]]] | None = None,
 ) -> list[str]:
     backend = _normalize_local_inference_backend(backend)
     markdown_pages: list[str] = []
@@ -1480,7 +1528,7 @@ def _extract_entries_with_local_model_from_images(
                 markdown_pages.append(f"[[PAGE {idx}]]\n{text_str}")
             _safe_write_text(page_output_dir / "page_reference_markdown.mmd", text_str)
 
-        return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir, finalize_opts=finalize_opts)
+        return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir, finalize_opts=finalize_opts, layout_sink=layout_sink)
 
     for idx, image_path in enumerate(image_paths, start=1):
         page_output_dir = output_dir / f"page_{idx}"
@@ -1535,7 +1583,7 @@ def _extract_entries_with_local_model_from_images(
             markdown_pages.append(f"[[PAGE {idx}]]\n{text_str.strip()}")
         _safe_write_text(page_output_dir / "page_reference_markdown.mmd", text_str.strip())
 
-    return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir, finalize_opts=finalize_opts)
+    return _extract_entries_from_markdown_pages(markdown_pages, output_dir=output_dir, finalize_opts=finalize_opts, layout_sink=layout_sink)
 
 
 def _extract_entries_with_local_model_from_text(
@@ -1645,6 +1693,7 @@ def _extract_entries_with_local_model(
     reference_page_end: int | None = None,
     local_inference_backend: str = "hf",
     finalize_opts: dict[str, Any] | None = None,
+    layout_sink: list[list[tuple[int, tuple[int, int, int, int]]]] | None = None,
 ) -> tuple[list[str], str, str | None]:
     backend = _normalize_local_inference_backend(local_inference_backend)
     tokenizer = None
@@ -1707,6 +1756,7 @@ def _extract_entries_with_local_model(
                     backend=backend,
                     model_path=model_path,
                     finalize_opts=finalize_opts,
+                    layout_sink=layout_sink,
                 )
                 if entries:
                     return entries, "reference_page_images_markdown", str(run_dir)
@@ -1863,6 +1913,7 @@ def segment_references_from_pages(
 
     numbered_mode = False
     entries: list[str] = []
+    layout_sink: list[list[tuple[int, tuple[int, int, int, int]]]] = []
     if mode == "model":
         try:
             if provider == "local" and local_model_path:
@@ -1875,6 +1926,7 @@ def segment_references_from_pages(
                     reference_page_end=end_page,
                     local_inference_backend=local_inference_backend,
                     finalize_opts=finalize_opts,
+                    layout_sink=layout_sink,
                 )
                 metadata["entry_extraction_mode"] = "model"
                 metadata["entry_extraction_provider"] = "local"
@@ -1882,6 +1934,13 @@ def segment_references_from_pages(
                 metadata["entry_extraction_input"] = input_mode
                 if local_ocr_run_dir:
                     metadata["ocr_intermediate_dir"] = local_ocr_run_dir
+                # Stash bbox/page metadata so the runner can crop per-entry
+                # images for the VLM reparse. Layouts may have fewer entries
+                # than `entries` (e.g. if a downstream filter dropped some
+                # heuristic-only entries) — len mismatch handled by the
+                # consumer with index-aligned best-effort lookup.
+                if layout_sink:
+                    metadata["entry_layouts"] = layout_sink
                 numbered_mode = len(NUMBERED_REF_RE.findall(ref_block)) >= 3
             elif provider == "bedrock" and model_id:
                 entries = _extract_entries_with_bedrock(

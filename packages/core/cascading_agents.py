@@ -16,6 +16,7 @@ HallucinatedAgent: Classify ALL errors. (LLM)
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Protocol
 
 from .models import (
@@ -91,6 +92,50 @@ class HallucinatedAgentProtocol(Protocol):
 # ---------------------------------------------------------------------------
 
 _WEB_CONNECTORS = {"google_search", "web_search", "searxng_search"}
+
+_TAXONOMY_CODE_RE = re.compile(r"^[HPR]\d+$")
+
+
+def _author_variant_pairs(ref_authors: list[str], cand_authors: list[str]) -> list[tuple[str, str]]:
+    """Pairwise diff of two author lists; return positions whose names are
+    not byte-identical after lower+whitespace normalization.
+
+    Used to make P1 verdicts informative ("which author is the variant?").
+    Returns up to 5 (ref, cand) pairs to keep the reason text compact.
+    """
+    if not ref_authors or not cand_authors:
+        return []
+
+    def _norm(s: str) -> str:
+        return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+    out: list[tuple[str, str]] = []
+    for r, c in zip(ref_authors, cand_authors):
+        if _norm(r) != _norm(c):
+            out.append((str(r), str(c)))
+            if len(out) >= 5:
+                break
+    return out
+
+
+def _format_variant_pairs(pairs: list[tuple[str, str]]) -> str:
+    if not pairs:
+        return ""
+    return "; ".join(f"'{r}' ↔ '{c}'" for r, c in pairs)
+
+
+def _clean_conflicts(items: list[str] | None) -> list[str]:
+    """Strip taxonomy codes (H1/P3/R2/...) from a conflicts list.
+
+    The conflicts field is meant to carry field-level descriptors
+    ('author_name_variant', 'pages_candidate_missing', etc.); a taxonomy
+    code leaking in is a sign that an upstream stage reused issues for
+    cross-agent communication. Filter defensively at every emit site so
+    one stray pollution does not show up in the report.
+    """
+    if not items:
+        return []
+    return [it for it in items if not _TAXONOMY_CODE_RE.match(str(it))]
 
 
 def _enrich_web_candidate_via_url(
@@ -1691,6 +1736,18 @@ def verify_single_candidate(
             if isinstance(authors_entry, dict):
                 authors_entry["author_variant_type"] = field_classification.authors.overall
                 authors_entry["author_variant_reason"] = field_classification.authors.reason
+                # Mirror the venue/publisher behavior: when the LLM
+                # classifier concludes "exact" or "r2_initial" (a pure
+                # formatting variant), promote status from mismatch back
+                # to match so HallucinatedAgent does not see a
+                # contradictory (status=mismatch, variant=exact) signal
+                # and mechanically flag H2 against the classifier's own
+                # conclusion ("...so per rules we flag as H2" cases).
+                if (field_classification.authors.overall in ("exact", "r2_initial")
+                        and authors_entry.get("status") == "mismatch"):
+                    authors_entry["_rule_status"] = authors_entry.get("status")
+                    authors_entry["status"] = "match"
+                    authors_entry["_classifier_corrected"] = True
 
             # Stamp venue verdict; upgrade status to match when classifier says alias/exact
             venue_entry = fs.setdefault("venue", {})
@@ -2071,11 +2128,20 @@ def cascading_phase2_only(
         _sc_status(f) in _MATCH_EQ for f in _p1_non_author_fields
     )
     if _sc_author_variant == "p1_variant" and _p1_non_author_match_eq:
+        # Name the specific author(s) that flagged as p1_variant so
+        # reviewers see which name(s) are unverifiable instead of a
+        # generic "author name variant" message.
+        _ref_authors = best_comparison.get("reference", {}).get("authors", []) or []
+        _cand_authors = list(getattr(best_candidate, "authors", []) or [])
+        _variant_pairs = _author_variant_pairs(_ref_authors, _cand_authors)
+        _variant_desc = _format_variant_pairs(_variant_pairs)
+        _reason_suffix = f" Variant author(s): {_variant_desc}." if _variant_desc else ""
         all_evaluations.append({
             "agent": "P1_short_circuit",
             "verdict": "POTENTIAL",
             "taxonomy": ["P1"],
             "reason": "Short-circuit: classifier authors=p1_variant; every other reference-provided field is match-equivalent.",
+            "variant_authors": [{"reference": r, "candidate": c} for r, c in _variant_pairs],
         })
         return CitationVerdict(
             citation_id=citation.citation_id,
@@ -2085,7 +2151,7 @@ def cascading_phase2_only(
             adjudication_reason=(
                 "P1 short-circuit: FieldClassifier judged authors = p1_variant "
                 "and every other field the reference provides is match-equivalent. "
-                "Trust classifier; mark as POTENTIAL/P1."
+                "Trust classifier; mark as POTENTIAL/P1." + _reason_suffix
             ),
             matched_candidate=candidate_match_to_dict(best_candidate),
             reference_snapshot=best_comparison.get("reference", {}),
@@ -2227,7 +2293,7 @@ def cascading_phase2_only(
                 citation_id=citation.citation_id,
                 verdict=VerdictLabel.POTENTIAL_REFERENCE,
                 evidence_sources=evidence_sources,
-                conflicts=best.issues,
+                conflicts=_clean_conflicts(best.issues),
                 adjudication_reason=f"PotentialAgent: {downstream.reason}",
                 matched_candidate=candidate_match_to_dict(best_candidate),
                 reference_snapshot=best_comparison.get("reference", {}),
@@ -2237,9 +2303,15 @@ def cascading_phase2_only(
                 secondary_evidence=sec_evidence,
                 needs_human_review=True,
             )
-        # Escalate to HallucinatedAgent
+        # Escalate to HallucinatedAgent. Track PotentialAgent's taxonomy
+        # findings on a separate slot so they do not pollute best.issues
+        # (which is downstream-fed as the verdict's conflicts list, where
+        # field-level tags like 'author_name_variant' are appropriate but
+        # taxonomy codes like 'H1' are not).
         best.hint = "likely_hallucinated"
-        best.issues = list(set(best.issues + (downstream.taxonomy or [])))
+        if not hasattr(best, "escalated_taxonomy"):
+            best.escalated_taxonomy = []
+        best.escalated_taxonomy = list(set((best.escalated_taxonomy or []) + (downstream.taxonomy or [])))
         all_evaluations.append({
             "agent": "PotentialAgent",
             "verdict": "ESCALATED_TO_HALLUCINATED",
@@ -2299,7 +2371,7 @@ def cascading_phase2_only(
             citation_id=citation.citation_id,
             verdict=VerdictLabel.VALID,
             evidence_sources=evidence_sources,
-            conflicts=best.issues if best else [],
+            conflicts=_clean_conflicts(best.issues if best else []),
             adjudication_reason=(
                 f"R4: every reference field {sorted(ref_fields_with_value)} "
                 f"was independently verified by at least one qualifying candidate "
@@ -2382,7 +2454,7 @@ def cascading_phase2_only(
             citation_id=citation.citation_id,
             verdict=VerdictLabel.FAKE_REFERENCE,
             evidence_sources=evidence_sources,
-            conflicts=best.issues if best else [],
+            conflicts=_clean_conflicts(best.issues if best else []),
             adjudication_reason=(
                 f"CrossCandidate: field(s) {sorted(unverified_mismatch_fields)} "
                 f"contradicted by qualifying candidates but never confirmed. "
@@ -2416,7 +2488,7 @@ def cascading_phase2_only(
             citation_id=citation.citation_id,
             verdict=VerdictLabel.POTENTIAL_REFERENCE,
             evidence_sources=evidence_sources,
-            conflicts=best.issues,
+            conflicts=_clean_conflicts(best.issues),
             adjudication_reason=(
                 f"P3: all core fields match but {sorted(best.issues)} cannot be "
                 f"verified because no candidate source provides them. "
@@ -2441,7 +2513,7 @@ def cascading_phase2_only(
         citation_id=citation.citation_id,
         verdict=verdict_label,
         evidence_sources=evidence_sources,
-        conflicts=best.issues if best else [],
+        conflicts=_clean_conflicts(best.issues if best else []),
         adjudication_reason=f"HallucinatedAgent: {downstream.reason}",
         matched_candidate=candidate_match_to_dict(best_candidate),
         reference_snapshot=best_comparison.get("reference", {}),

@@ -107,6 +107,7 @@ def _build_llm_reparse_config(cfg) -> tuple[dict[str, Any], dict[str, Any]]:
         "temperature": float(cfg.ocr_llm_extract.temperature),
         "force_all_entries": bool(cfg.ocr_llm_extract.force_all_entries),
         "parallel_workers": 8,
+        "paper_style": str(getattr(cfg.ocr_llm_extract, "paper_style", "") or "").strip().lower(),
         "bedrock": {
             "model_id": model_id,
             "region": region,
@@ -123,6 +124,7 @@ def _build_llm_reparse_config(cfg) -> tuple[dict[str, Any], dict[str, Any]]:
         "llm_reparse_max_new_tokens": int(llm_cfg["max_new_tokens"]),
         "llm_reparse_temperature": float(llm_cfg["temperature"]),
         "llm_reparse_parallel_workers": int(llm_cfg["parallel_workers"]),
+        "llm_reparse_paper_style": llm_cfg.get("paper_style", "") or "(generic)",
     }
     return llm_cfg, meta
 
@@ -216,45 +218,97 @@ def _extract_and_parse(
         return set(_re_token.findall(r"[A-Za-z]{4,}", text.lower()))
 
     per_entry_images: list[list[bytes]] = []
-    page_token_cache: list[tuple[int, str, set[str]]] = [
-        (pi, ptext, _entry_tokens(ptext)) for pi, ptext in ref_page_texts
-    ]
 
-    for entry_text in reference_entries:
-        entry_pages: list[int] = []
-        # Use first 60 chars of entry as search key (enough to locate, handles line breaks)
-        search_key = entry_text[:60].strip().lower()
-        for pi, ptext, _ in page_token_cache:
-            if search_key and search_key in ptext.lower():
-                entry_pages.append(pi)
-        # If not found by prefix, check if entry spans consecutive pages
-        if not entry_pages and len(entry_text) > 80:
-            first_half = entry_text[:40].strip().lower()
-            second_half = entry_text[-40:].strip().lower()
+    # Path A — bbox-aware per-entry crops. The segmenter exposes a
+    # parallel list of (page_marker, bbox) tuples per entry in
+    # extraction_metadata["entry_layouts"]; bboxes come from DeepSeek-OCR-2
+    # which normalizes coordinates to a 1000x1000 space. Cropping to the
+    # entry's exact region (instead of the whole page) makes the
+    # citation occupy ~80% of the image and gives the VLM enough character
+    # detail to fix OCR typos like "Akocora" → "Akcora".
+    entry_layouts = extraction_metadata.get("entry_layouts") or []
+
+    def _crop_entry_image(page_png: bytes, bbox: tuple[int, int, int, int],
+                          norm: int = 1000, padding: int = 15) -> bytes | None:
+        try:
+            from PIL import Image as _Image
+            import io as _io
+            img = _Image.open(_io.BytesIO(page_png))
+            W, H = img.size
+            x1, y1, x2, y2 = bbox
+            sx, sy = W / norm, H / norm
+            cx1 = max(0, int(x1 * sx) - padding)
+            cy1 = max(0, int(y1 * sy) - padding)
+            cx2 = min(W, int(x2 * sx) + padding)
+            cy2 = min(H, int(y2 * sy) + padding)
+            if cx2 <= cx1 or cy2 <= cy1:
+                return None
+            crop = img.crop((cx1, cy1, cx2, cy2))
+            buf = _io.BytesIO()
+            crop.save(buf, format="PNG")
+            return buf.getvalue()
+        except Exception as exc:
+            _log(verbose, f"      [crop-bbox failed] {exc}")
+            return None
+
+    used_bbox_path = bool(entry_layouts) and bool(page_images) and len(entry_layouts) == len(reference_entries)
+
+    if used_bbox_path:
+        for entry_text, layouts in zip(reference_entries, entry_layouts):
+            crops: list[bytes] = []
+            for page_marker, bbox in layouts:
+                # OCR marker is 1-based and counts only reference pages, so
+                # marker N maps to PDF 0-indexed page (ref_start + N - 1).
+                pdf_page_idx = ref_start + int(page_marker) - 1
+                src = page_images.get(pdf_page_idx)
+                if src is None:
+                    continue
+                crop = _crop_entry_image(src, tuple(bbox))
+                if crop:
+                    crops.append(crop)
+            per_entry_images.append(crops)
+    else:
+        # Path B — fallback: whole-page image, located by string match.
+        # Used when bbox metadata is unavailable (Bedrock OCR mode,
+        # heuristic-fallback mode, or segmenter version mismatch).
+        ref_page_texts: list[tuple[int, str]] = [
+            (pi, pages[pi]) for pi in range(max(0, ref_start), min(ref_end + 1, len(pages)))
+        ]
+        page_token_cache: list[tuple[int, str, set[str]]] = [
+            (pi, ptext, _entry_tokens(ptext)) for pi, ptext in ref_page_texts
+        ]
+        for entry_text in reference_entries:
+            entry_pages: list[int] = []
+            search_key = entry_text[:60].strip().lower()
             for pi, ptext, _ in page_token_cache:
-                pl = ptext.lower()
-                if first_half in pl:
+                if search_key and search_key in ptext.lower():
                     entry_pages.append(pi)
-                elif second_half in pl:
-                    entry_pages.append(pi)
-        # Final fallback: token-overlap. Substring matching breaks when OCR
-        # has typos ("Haignet" vs "HiAgent") so the entry never finds its
-        # page; use word-set intersection to recover those cases.
-        if not entry_pages:
-            etokens = _entry_tokens(entry_text)
-            if len(etokens) >= 5:
-                for pi, _, ptokens in page_token_cache:
-                    overlap = len(etokens & ptokens) / max(len(etokens), 1)
-                    if overlap >= 0.4:
+            if not entry_pages and len(entry_text) > 80:
+                first_half = entry_text[:40].strip().lower()
+                second_half = entry_text[-40:].strip().lower()
+                for pi, ptext, _ in page_token_cache:
+                    pl = ptext.lower()
+                    if first_half in pl:
                         entry_pages.append(pi)
-        entry_pages = sorted(set(entry_pages))
-        # Collect images for these pages
-        imgs = [page_images[pi] for pi in entry_pages if pi in page_images]
-        per_entry_images.append(imgs)
+                    elif second_half in pl:
+                        entry_pages.append(pi)
+            if not entry_pages:
+                etokens = _entry_tokens(entry_text)
+                if len(etokens) >= 5:
+                    for pi, _, ptokens in page_token_cache:
+                        overlap = len(etokens & ptokens) / max(len(etokens), 1)
+                        if overlap >= 0.4:
+                            entry_pages.append(pi)
+            entry_pages = sorted(set(entry_pages))
+            imgs = [page_images[pi] for pi in entry_pages if pi in page_images]
+            per_entry_images.append(imgs)
 
+    if used_bbox_path:
+        _log(verbose, f"      Per-entry bbox crops: "
+                     f"{sum(1 for imgs in per_entry_images if imgs)}/{len(reference_entries)}")
     no_image_idxs = [i + 1 for i, imgs in enumerate(per_entry_images) if not imgs]
     if no_image_idxs:
-        _log(verbose, f"      [WARN] {len(no_image_idxs)}/{len(reference_entries)} entries got no page image: pdf-ref indices {no_image_idxs[:15]}")
+        _log(verbose, f"      [WARN] {len(no_image_idxs)}/{len(reference_entries)} entries got no image: pdf-ref indices {no_image_idxs[:15]}")
 
     if streaming:
         citations, reparse_pool, reparse_futures = parse_reference_entries_streaming(
