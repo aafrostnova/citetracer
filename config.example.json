@@ -55,7 +55,7 @@
     "max_new_tokens": 4048,
     "temperature": 0.0,
     "force_all_entries": true,
-    "boundary_merge_mode": "rule",
+    "boundary_merge_mode": "llm",
     "bedrock": {
       "region": "us-east-1",
       "model_id": "qwen.qwen3-vl-235b-a22b"
@@ -71,3 +71,4 @@
     }
   }
 }
+
