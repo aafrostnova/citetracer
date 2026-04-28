@@ -198,13 +198,110 @@ docs/
 
 ### 1. Install dependencies
 
+The pipeline needs **one** of two backends for Stage 1 OCR:
+
+- **A. All-Bedrock** — every LLM call (OCR + reparse + verifier) goes to
+  AWS Bedrock. No GPU, no local model files. The minimum-dependency
+  install. Recommended unless you have a GPU and want the throughput
+  boost from a local OCR model.
+- **B. Local DeepSeek-OCR-2 + Bedrock for verification** — Stage 1 OCR
+  runs locally on a GPU (≥40 GB VRAM); Stage 3 still uses Bedrock for
+  the Potential judge and extractor agent. Materially faster than
+  all-Bedrock when you process many papers.
+
+Pick one path below.
+
+#### Option A — All-Bedrock (no GPU)
+
 ```bash
 conda create -n citeaudit python=3.10 -y && conda activate citeaudit
 pip install -r requirements.txt
 ```
 
-The pipeline also needs `pdflatex` and `bibtex` on `PATH` if you plan to
-regenerate the benchmark PDFs.
+Then in `config.json` set:
+```jsonc
+"entry_extraction": {
+  "mode":     "model",
+  "provider": "bedrock"   // ← Bedrock OCR; no local model needed
+}
+```
+
+You can stop here. Skip directly to [§2 Configure](#2-configure).
+
+#### Option B — Local DeepSeek-OCR-2 with vLLM (recommended for batch)
+
+vLLM pins specific CUDA / torch versions, so DeepSeek-OCR-2 ships its
+own `setup.sh`. The cleanest path is to follow their environment
+exactly, then add this repo's deps on top.
+
+```bash
+# 1. Clone DeepSeek-OCR-2 and follow its environment setup
+git clone https://github.com/deepseek-ai/DeepSeek-OCR-2 ~/DeepSeek-OCR-2
+cd ~/DeepSeek-OCR-2
+# Run their suggested env setup (creates a conda env with torch + vllm + flash-attn)
+bash setup.sh    # adjust per their README; they install vllm 0.8.5 + torch 2.6 + flash-attn
+conda activate deepseek_ocr2   # or whatever name their script chose
+
+# 2. Install this repo's extra deps in the SAME env
+cd /path/to/Citation_Hallucination_Detection
+pip install -r requirements.txt
+
+# 3. Download the DeepSeek-OCR-2 model checkpoint (~6 GB, requires HF login)
+huggingface-cli login           # one-time; or set HF_TOKEN
+huggingface-cli download deepseek-ai/DeepSeek-OCR-2 \
+    --local-dir /your/path/to/DeepSeek-OCR-2
+
+# 4. Verify both backends are importable
+python -c "
+import torch, transformers, vllm, boto3, fitz, requests
+print('torch     :', torch.__version__, 'cuda:', torch.cuda.is_available())
+print('transformers:', transformers.__version__)
+print('vllm      :', vllm.__version__)
+print('boto3     :', boto3.__version__)
+print('pymupdf   :', fitz.__version__)
+"
+```
+
+Then in `config.json`:
+```jsonc
+"entry_extraction": {
+  "mode":     "model",
+  "provider": "local",
+  "local": {
+    "model_path":         "/your/path/to/DeepSeek-OCR-2",
+    "inference_backend":  "vllm"   // or "hf" if vllm is unavailable
+  }
+}
+```
+
+**Common pitfalls.**
+- **`mode=model->heuristic, provider=local->heuristic`** in the run log
+  means the local OCR loader hit an error and silently fell back. The
+  most common cause is `ModuleNotFoundError: No module named 'vllm'`
+  because the script is running in a different conda env than the one
+  that has vllm. Activate the right env (`conda activate deepseek_ocr2`)
+  and rerun. To force the loader to raise the underlying error instead
+  of swallowing it, set `CITATION_CHECKER_LOCAL_OCR_DEBUG_RAISE=1`.
+- **`pip` complains** `vllm 0.8.5+cu118 requires transformers>=4.51.1, but
+  you have transformers 4.46.3 which is incompatible.` Per DeepSeek-OCR-2's
+  installation note, this dependency-resolver warning is **safe to ignore**
+  when you want vLLM and transformers to coexist in the same env — the
+  pinned `transformers==4.46.3` is what DeepSeek-OCR-2 was tested against
+  and works fine with vLLM 0.8.5 at runtime. Install vllm with
+  `pip install "vllm==0.8.5" --no-deps` (or accept the warning) to keep
+  the transformers version stable.
+- vLLM's first import compiles CUDA kernels and can take 30–60 s; this
+  is normal on the first run.
+- For a quick test without vLLM, switch `inference_backend` to `"hf"`
+  (slower, but only needs `transformers`).
+
+#### Optional extras
+
+| Need | Install |
+|---|---|
+| Regenerate the benchmark PDFs | `pdflatex` + `bibtex` on `PATH` |
+| Self-hosted SearxNG web search | See [SearxNG section below](#self-hosted-searxng-optional) |
+| ACL Anthology mirror | `git clone https://github.com/acl-org/acl-anthology.git` (see §3b) |
 
 ### 2. Configure
 

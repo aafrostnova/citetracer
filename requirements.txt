@@ -1,15 +1,40 @@
-# Core runtime
+# =============================================================================
+# Core runtime — required for every install
+# =============================================================================
 pypdf>=4.0.0
 pymupdf>=1.24.0
 boto3>=1.34.0
+requests>=2.32.0
+Pillow>=10.0.0
+einops
+addict
+easydict
+safetensors>=0.4.0
 
-# Local OCR/model backend (CITATION_CHECKER_PDF_MODEL_PROVIDER=local)
+# =============================================================================
+# Local OCR backend (DeepSeek-OCR-2 via HuggingFace transformers)
+#   Used when entry_extraction.provider = "local" AND
+#         entry_extraction.local.inference_backend = "hf"
+# Skip these if you only run Bedrock-based OCR.
+# =============================================================================
 torch==2.6.0
 torchvision==0.21.0
 transformers==4.46.3
 tokenizers==0.20.3
-Pillow>=10.0.0
-safetensors>=0.4.0
-einops
-addict
-easydict
+
+# =============================================================================
+# Local OCR backend — vLLM (faster than HF, recommended for batch runs)
+#   Used when inference_backend = "vllm". Requires a CUDA GPU.
+#   Install separately because vllm pins specific torch / CUDA versions:
+#     pip install "vllm==0.8.5"
+#   Or follow https://github.com/deepseek-ai/DeepSeek-OCR-2 for the exact
+#   environment they tested against.
+#
+#   Note (per DeepSeek-OCR-2): pip may print
+#     "vllm 0.8.5+cu118 requires transformers>=4.51.1, but you have
+#      transformers 4.46.3 which is incompatible."
+#   This dependency-resolver warning is safe to ignore when you want
+#   vLLM and transformers to share the same env — runtime is fine.
+#   Install with `pip install "vllm==0.8.5" --no-deps` to suppress it.
+# =============================================================================
+# vllm==0.8.5     # uncomment if using the vllm backend
