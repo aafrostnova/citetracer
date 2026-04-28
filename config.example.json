@@ -3,7 +3,7 @@
   "connectors": {
     "cache_path": "data/cache/connector_cache.sqlite",
     "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
-    "dblp_sqlite_path": "/path/to/dblp.sqlite",
+    "dblp_sqlite_path": "data/dblp.sqlite",
     "enabled_sources": [
       "dblp_sqlite",
       "url_direct",
@@ -17,25 +17,27 @@
       "semantic_scholar",
       "web_search"
     ],
+    "_searxng_search_optional_note": "add 'searxng_search' to enabled_sources above to enable; uses searxng_base_url below",
+    "searxng_base_url": "http://127.0.0.1:8080",
     "semantic_scholar_api_key": "",
     "serpapi_key": "",
     "ncbi_api_key": "",
     "ncbi_email": "",
     "openalex_api_key": "",
     "web_search_provider": "tavily",
-    "tavily_api_key": ""
+    "tavily_api_key": "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"
   },
   "entry_extraction": {
     "mode": "model",
     "provider": "local",
     "chunk_chars": 12000,
     "local": {
-      "model_path": "/path/to/DeepSeek-OCR-2",
+      "model_path": "path-to-DeepSeek-OCR-2",
       "inference_backend": "vllm"
     },
     "bedrock": {
       "region": "us-east-1",
-      "bearer_token": ""
+      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS04dHNxLWF0LTgzMjAxNjAxNDQyNTorT3VwTFZTY1d4MUdZNk9MdHhVb1NXMUtxd2I4S2dPV1l2OER6RWZOVjY4WC9hcHlrRytyZEtEUEFqcz0="
     }
   },
   "citation_reparse": {
@@ -53,6 +55,7 @@
     "max_new_tokens": 4048,
     "temperature": 0.0,
     "force_all_entries": true,
+    "boundary_merge_mode": "rule",
     "bedrock": {
       "region": "us-east-1",
       "model_id": "qwen.qwen3-vl-235b-a22b"
