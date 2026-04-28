@@ -214,7 +214,7 @@ Pick one path below.
 #### Option A — All-Bedrock (no GPU)
 
 ```bash
-conda create -n ref_checker python=3.10 -y && conda activate ref_checker
+conda create -n ref_checker python=3.12.9 -y && conda activate ref_checker
 pip install -r requirements.txt
 ```
 
@@ -232,26 +232,39 @@ You can stop here. Skip directly to [§2 Configure](#2-configure).
 
 vLLM pins specific CUDA / torch versions. Use a single conda env named
 `ref_checker` for everything (this repo + DeepSeek-OCR-2's vLLM stack).
+The exact commands below mirror DeepSeek-OCR-2's official install
+guide ([upstream README](https://github.com/deepseek-ai/DeepSeek-OCR-2#install))
+— their tested combo is **CUDA 11.8 + torch 2.6.0 + vLLM 0.8.5**.
 
 ```bash
-# 1. Create the env and install vLLM following the deepseek-ai/DeepSeek-OCR-2
-#    instructions (they pin vllm 0.8.5 + torch 2.6 + flash-attn).
-conda create -n ref_checker python=3.10 -y
+# 1. Create the conda env (Python 3.12.9, matches DeepSeek-OCR-2's env)
+conda create -n ref_checker python=3.12.9 -y
 conda activate ref_checker
 
-# Reference: https://github.com/deepseek-ai/DeepSeek-OCR-2 (its setup.sh
-# or README documents the exact CUDA-matched torch + vllm wheels).
+# 2. Install torch + vllm in the order DeepSeek-OCR-2 specifies
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu118
 
-# 2. Install this repo's deps in the SAME env
-cd /path/to/Citation_Hallucination_Detection
+# Download the cu118 vllm wheel from
+# https://github.com/vllm-project/vllm/releases/tag/v0.8.5
+# (file: vllm-0.8.5+cu118-cp38-abi3-manylinux1_x86_64.whl)
+wget https://github.com/vllm-project/vllm/releases/download/v0.8.5/vllm-0.8.5+cu118-cp38-abi3-manylinux1_x86_64.whl
+pip install vllm-0.8.5+cu118-cp38-abi3-manylinux1_x86_64.whl
+
+# 3. Install DeepSeek-OCR-2's own deps (transformers 4.46.3 etc.) +
+#    flash-attn (must use --no-build-isolation per their guide)
+pip install -r DeepSeek-OCR-2/requirements.txt
+pip install flash-attn==2.7.3 --no-build-isolation
+
+# 4. Install this repo's extra deps in the SAME env
 pip install -r requirements.txt
 
-# 3. Download the DeepSeek-OCR-2 model checkpoint (~6 GB, requires HF login)
+# 5. Download the DeepSeek-OCR-2 model checkpoint (~6 GB, requires HF login)
 huggingface-cli login           # one-time; or set HF_TOKEN
 huggingface-cli download deepseek-ai/DeepSeek-OCR-2 \
     --local-dir /your/path/to/DeepSeek-OCR-2
 
-# 4. Verify both backends are importable
+# 6. Verify both backends are importable
 python -c "
 import torch, transformers, vllm, boto3, fitz, requests
 print('torch     :', torch.__version__, 'cuda:', torch.cuda.is_available())

@@ -1,5 +1,7 @@
 # =============================================================================
-# Core runtime — required for every install
+# Core runtime — required for every install (Option A and Option B both need
+# these). All pure-Python or platform-independent; safe to install with a
+# plain `pip install -r requirements.txt` regardless of CUDA / GPU choice.
 # =============================================================================
 pypdf>=4.0.0
 pymupdf>=1.24.0
@@ -12,29 +14,16 @@ easydict
 safetensors>=0.4.0
 
 # =============================================================================
-# Local OCR backend (DeepSeek-OCR-2 via HuggingFace transformers)
-#   Used when entry_extraction.provider = "local" AND
-#         entry_extraction.local.inference_backend = "hf"
-# Skip these if you only run Bedrock-based OCR.
-# =============================================================================
-torch==2.6.0
-torchvision==0.21.0
-transformers==4.46.3
-tokenizers==0.20.3
-
-# =============================================================================
-# Local OCR backend — vLLM (faster than HF, recommended for batch runs)
-#   Used when inference_backend = "vllm". Requires a CUDA GPU.
-#   Install separately because vllm pins specific torch / CUDA versions:
-#     pip install "vllm==0.8.5"
-#   Or follow https://github.com/deepseek-ai/DeepSeek-OCR-2 for the exact
-#   environment they tested against.
+# torch / torchvision / transformers / tokenizers / vllm / flash-attn are
+# DELIBERATELY NOT pinned here:
 #
-#   Note (per DeepSeek-OCR-2): pip may print
-#     "vllm 0.8.5+cu118 requires transformers>=4.51.1, but you have
-#      transformers 4.46.3 which is incompatible."
-#   This dependency-resolver warning is safe to ignore when you want
-#   vLLM and transformers to share the same env — runtime is fine.
-#   Install with `pip install "vllm==0.8.5" --no-deps` to suppress it.
+#   - Option A (all-Bedrock, no GPU) does not need any of them.
+#   - Option B (local DeepSeek-OCR-2) installs them in the order the
+#     upstream repo specifies (cu118 wheels for torch, vllm 0.8.5 cu118
+#     wheel, then DeepSeek-OCR-2/requirements.txt for transformers, then
+#     flash-attn with --no-build-isolation). Pinning them here would
+#     either force unnecessary CUDA downloads on Option A or fight with
+#     the CUDA-matched wheels on Option B.
+#
+# See README §1 Option B for the exact install commands.
 # =============================================================================
-# vllm==0.8.5     # uncomment if using the vllm backend
