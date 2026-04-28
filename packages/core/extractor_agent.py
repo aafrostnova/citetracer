@@ -153,6 +153,11 @@ class BedrockExtractorAgent:
         new_volume = str(parsed.get("volume", "") or "").strip()
         new_publisher = str(parsed.get("publisher", "") or "").strip()
 
+        heuristic_doi = str(raw.get("heuristic_doi", "") or "").strip()
+        heuristic_arxiv_id = str(raw.get("heuristic_arxiv_id", "") or "").strip()
+        new_doi = new_doi or heuristic_doi
+        new_arxiv_id = heuristic_arxiv_id
+
         # Update raw_record with extraction info
         updated_raw = dict(raw)
         updated_raw["extractor_agent_result"] = parsed
@@ -164,6 +169,7 @@ class BedrockExtractorAgent:
             venue=new_venue or candidate.venue,
             year=new_year if new_year is not None else candidate.year,
             doi=new_doi or candidate.doi,
+            arxiv_id=new_arxiv_id or candidate.arxiv_id,
             pages=new_pages or candidate.pages,
             volume=new_volume or candidate.volume,
             publisher=new_publisher or candidate.publisher,

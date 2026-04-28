@@ -17,6 +17,7 @@ from .cascading_agents import (
     phase0_url_check,
     phase0_decide_verdict,
     downgrade_non_academic_fake,
+    is_non_academic_citation,
 )
 from .matching import CandidateMatch, build_candidate_match, collect_candidates
 from .models import CheckReport, CitationRecord, CitationVerdict, EvidenceTrace, ExtractionQuality, VerdictLabel
@@ -559,6 +560,33 @@ class CitationVerifier:
         id_mismatch = self._check_identifier_mismatch(citation, phase0_records)
         if id_mismatch:
             return downgrade_non_academic_fake(citation, id_mismatch)
+
+        # Non-academic short-circuit: skip cascade entirely. Connector cascade
+        # against blogs/repos/tools just retrieves unrelated content and the
+        # HallucinatedAgent then reasons spuriously (e.g. "Cityly" matched
+        # against an unrelated CiteAudit paper). The downstream downgrade
+        # always rewrites that to P2 anyway, so save the connector hits and
+        # the LLM call.
+        if is_non_academic_citation(citation):
+            return CitationVerdict(
+                citation_id=citation.citation_id,
+                verdict=VerdictLabel.POTENTIAL_REFERENCE,
+                evidence_sources=[],
+                conflicts=["non_academic_source"],
+                adjudication_reason=(
+                    "Non-academic source (blog/repo/tool); skipped connector "
+                    "cascade because academic databases cannot verify it. "
+                    "Marked POTENTIAL/P2."
+                ),
+                matched_candidate=None,
+                reference_snapshot={},
+                comparison={},
+                candidate_evaluations=[],
+                taxonomy_subtype=["P2"],
+                needs_human_review=True,
+                extraction_quality=extraction_quality,
+                secondary_evidence=[],
+            )
 
         # Build Phase 0 evaluation record for the report (always included)
         _phase0_eval: dict | None = None

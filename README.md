@@ -208,49 +208,136 @@ regenerate the benchmark PDFs.
 
 ### 2. Configure
 
-Copy the example config and fill in your API keys and local paths:
+Start from the template:
 
 ```bash
 cp config.example.json config.json
 ```
 
-Key fields:
+`config.json` has four top-level blocks. Below is the **minimum viable
+config** with inline comments showing what each field controls; the example
+below uses all-Bedrock for both the OCR-extractor LLM and the verification
+judge. The sections after walk through each block in detail.
 
-| Field | Purpose |
-| ----- | ------- |
-| `connectors.enabled_sources` | Which bibliographic connectors to query. Remove any source you cannot authenticate. |
-| `connectors.dblp_sqlite_path` | Path to a local DBLP SQLite mirror (fastest connector). Leave empty to skip. |
-| `connectors.semantic_scholar_api_key` | Semantic Scholar API key. Without it, rate limits throttle the connector heavily. |
-| `connectors.openalex_api_key`, `openalex_mailto` | Authenticated OpenAlex access (polite pool). |
-| `connectors.web_search_provider` | `tavily`, `serpapi`, or `google_cse`. Only needed when structured connectors miss a citation. |
-| `connectors.tavily_api_key` / `serpapi_key` / `google_api_key` + `google_cse_id` | Credentials for the chosen web search provider. |
-| `connectors.ncbi_api_key`, `ncbi_email` | PubMed/Europe PMC credentials. |
-| `entry_extraction.local.model_path` | Path to the local OCR/extractor model. Set to a DeepSeek-OCR checkpoint for the `local` provider. |
-| `entry_extraction.bedrock.*` | AWS Bedrock model id + bearer token for the `bedrock` provider. |
-| `verification_llm.bedrock.model_id` | The LLM used by the `Potential` judge. |
-
-Example provider selection in `config.json`:
-
-```json
+```jsonc
 {
+  // --- Stage 1 method ---
+  "citation_parse_method": "ocr_llm_extract",  // "ocr_llm_extract" (PDF, default) or "citation_reparse"
+
+  // --- Stage 2 connectors ---
+  "connectors": {
+    "cache_path": "data/cache/connector_cache.sqlite",
+    "dblp_sqlite_path": "/abs/path/to/dblp.sqlite",  // built once via scripts/build_dblp_sqlite.py
+    "enabled_sources": [
+      "dblp_sqlite", "url_direct", "dblp_online", "crossref", "arxiv",
+      "acl_anthology", "europepmc", "pubmed", "openalex", "semantic_scholar",
+      "web_search"
+      // "searxng_search"  // optional: add this entry to enable the local SearxNG fallback
+    ],
+    "semantic_scholar_api_key": "<your-key>",   // strongly recommended, otherwise heavy throttling
+    "openalex_api_key":         "<your-key>",   // optional, polite pool
+    "openalex_mailto":          "you@host.edu", // optional, polite pool
+    "ncbi_api_key":             "<your-key>",   // optional, lifts PubMed RPS cap
+    "ncbi_email":               "you@host.edu", // recommended together with ncbi_api_key
+    "web_search_provider":      "tavily",        // "tavily" | "serpapi" | "google_cse"
+    "tavily_api_key":           "<your-key>",
+    "searxng_base_url":         "http://127.0.0.1:8080"  // optional; only used if "searxng_search" is in enabled_sources
+  },
+
+  // --- Stage 1 LLM extractor (OCR → structured fields) ---
   "entry_extraction": {
     "mode": "model",
-    "provider": "bedrock",
+    "provider": "bedrock",          // "bedrock" or "local"
     "bedrock": {
-      "region": "us-east-1",
-      "bearer_token": "AWSV2-..."
+      "region":       "us-east-1",
+      "bearer_token": "<aws-bearer-token>"
+    },
+    "local": {                      // only used if provider == "local"
+      "model_path":       "/abs/path/to/DeepSeek-OCR-2",
+      "inference_backend": "vllm"
     }
   },
-  "verification_llm": {
+
+  // --- Stage 1 OCR + LLM merge (PDF input only) ---
+  "ocr_llm_extract": {
     "enabled": true,
-    "provider": "bedrock",
+    "boundary_merge_mode": "rule",  // "rule" (cheap) | "llm" (Bedrock at boundaries) | "none"
     "bedrock": {
-      "region": "us-east-1",
+      "region":   "us-east-1",
+      "model_id": "qwen.qwen3-vl-235b-a22b"
+    }
+  },
+
+  // --- Stage 3 verification LLM (Potential-judge + extractor agent) ---
+  "verification_llm": {
+    "enabled":        true,
+    "provider":       "bedrock",
+    "max_candidates": 5,
+    "bedrock": {
+      "region":   "us-east-1",
       "model_id": "qwen.qwen3-vl-235b-a22b"
     }
   }
 }
 ```
+
+#### 2a. Pick your connectors
+
+Drop any source from `enabled_sources` that you cannot authenticate. The
+defaults are tuned for ML/NLP papers; for life-science papers keep
+`pubmed`/`europepmc`, for math/physics keep `arxiv`. The cascade short-circuits
+once a clean candidate appears, so listing more sources is rarely a cost
+problem — but **the order in `enabled_sources` matters**: faster/cleaner
+sources should come first.
+
+| Field | Purpose | When you need it |
+|---|---|---|
+| `enabled_sources` | Which connectors run in Stage 2. | Always set. |
+| `dblp_sqlite_path` | Path to a local DBLP mirror (fastest connector by ~30×). | Strongly recommended for any large run; otherwise fall back to `dblp_online`. |
+| `semantic_scholar_api_key` | Lifts S2 from ~100 req/5min to a usable rate. | Any batch run. |
+| `openalex_api_key` + `openalex_mailto` | Joins OpenAlex's polite pool. | Optional but free. |
+| `ncbi_api_key` + `ncbi_email` | Lifts PubMed/E-utilities RPS cap. | Life-science papers. |
+| `web_search_provider` + `tavily_api_key` (or `serpapi_key`, or `google_api_key` + `google_cse_id`) | Web-search fallback for non-academic citations. | Any paper that may cite blogs/repos/whitepapers. |
+| `searxng_base_url` | Self-hosted SearxNG instance for free web fallback. | Optional; add `"searxng_search"` to `enabled_sources` to activate. |
+
+#### 2b. Pick your LLM provider
+
+The pipeline calls an LLM in three places, all controlled by separate blocks:
+
+| Block | What it does | Default model |
+|---|---|---|
+| `entry_extraction` | Stage 1: turns OCR output (or web-search snippets) into structured citation fields. | `qwen.qwen3-vl-235b-a22b` via Bedrock; or local DeepSeek-OCR |
+| `ocr_llm_extract` | Stage 1: column/page-boundary merge judge for PDF input. | `qwen.qwen3-vl-235b-a22b` via Bedrock |
+| `verification_llm` | Stage 3: Potential-judge for `P1`/`P3` adjudication, plus the web-result extractor agent. | `qwen.qwen3-vl-235b-a22b` via Bedrock |
+
+For an all-Bedrock setup you only need to fill `region` + `bearer_token`
+once per block (or share them across blocks by hand). For a mixed setup
+— for example local DeepSeek-OCR for Stage 1, Bedrock Qwen for Stage 3 —
+set `entry_extraction.provider: "local"` and leave the other blocks on
+`bedrock`. The Stage 3 judge cannot currently run locally; see "Planned
+extensions" below for non-Bedrock provider support.
+
+`ocr_llm_extract.boundary_merge_mode` is the one knob worth tuning per run:
+
+- `rule` (default) — deterministic merge heuristic at column/page
+  boundaries. No LLM cost. Use this unless you see merge errors in the
+  parsed reference list.
+- `llm` — Bedrock decides at every ambiguous boundary. Strongest
+  correctness on noisy OCR; adds one Bedrock call per boundary
+  (~10–30 per paper).
+- `none` — trust the layout segmenter as-is. Cheapest; OK for clean
+  arXiv/conference PDFs.
+
+#### 2c. Sanity-check your config
+
+```bash
+python -m apps.pdf_checker.run --input data/pdf_papers/sample.pdf \
+  --out /tmp/sanity_report.json --citation-workers 1 --paper-workers 1
+```
+
+If this runs end-to-end on one paper, your config is wired correctly. The
+log line `Cascading 3-agent + field classifier + extractor enabled` confirms
+that Stage 3 LLM agents booted (i.e., your Bedrock credentials work).
 
 ### 3. Pre-fetch caches (optional)
 
@@ -318,6 +405,93 @@ python -m apps.source_checker.run \
 
 The report JSON contains one entry per citation with the full adjudication
 trail; see the **Output glossary** section below for every field.
+
+## Running in parallel
+
+The PDF checker exposes a **three-level concurrency model**: papers ×
+citations within a paper × connectors per citation. All three are I/O-bound
+(HTTP + LLM API calls), so increasing workers gives near-linear speedup
+until you hit a remote rate limit. Defaults are tuned to be safe.
+
+| Flag | Default | What it parallelizes |
+|---|---:|---|
+| `--paper-workers` | 2 | PDFs in flight when `--input` is a directory |
+| `--citation-workers` | 4 | Citations within a single paper |
+| `--connector-workers` | 8 | Connector queries per citation |
+
+Total in-flight HTTP/LLM calls = `paper × citation × connector`. The
+defaults give 2 × 4 × 8 = 64 concurrent calls; on a single beefy machine
+this is a comfortable upper bound for free-tier S2/Crossref/OpenAlex keys.
+Push higher only if you have authenticated keys and confirmed rate limits.
+
+### One paper, default parallelism
+
+```bash
+python -m apps.pdf_checker.run \
+  --input data/pdf_papers/your_paper.pdf \
+  --out   artifacts/your_paper_report.json
+```
+
+### A directory of PDFs
+
+`--input` accepts a directory; the runner recursively collects every
+`*.pdf` and writes one report per paper into `--out`:
+
+```bash
+python -m apps.pdf_checker.run \
+  --input data/pdf_papers/iclr2026_set/ \
+  --out   artifacts/iclr2026_reports/ \
+  --paper-workers    4 \
+  --citation-workers 4 \
+  --connector-workers 8
+```
+
+Each paper's report lands at
+`artifacts/iclr2026_reports/<paper_stem>_report.json`. Reports are written
+**incrementally per citation**, so a crash mid-run leaves valid partial
+output for every citation that had finished.
+
+### Tuning the workers
+
+| Symptom | Action |
+|---|---|
+| Many `[rate-limit] X 429` lines in the log | Lower `--connector-workers`, or get an API key for connector `X` (most often Crossref or Semantic Scholar). |
+| Bedrock throttling on the Stage 3 judge | Lower `--citation-workers`. Each citation makes at most one LLM call (Potential judge), so this directly throttles LLM RPS. |
+| Single paper with 200+ citations runs slowly | Raise `--citation-workers` (try 8–12). Memory cost is negligible — the verifier is shared read-only across threads. |
+| Whole machine sits idle waiting | Raise `--paper-workers`. The verifier instance is shared across paper threads, so RAM stays flat. |
+
+### Serial debugging
+
+When a citation produces an unexpected verdict, drop to serial to make
+logs readable:
+
+```bash
+python -m apps.pdf_checker.run \
+  --input data/pdf_papers/your_paper.pdf \
+  --out   /tmp/debug.json \
+  --paper-workers 1 --citation-workers 1 --connector-workers 1
+```
+
+### Skipping verification (extraction only)
+
+For Stage 1 ablations, `--extract-only` runs OCR + reference parsing and
+dumps the parsed citations without invoking Stage 2/3:
+
+```bash
+python -m apps.pdf_checker.run \
+  --input data/pdf_papers/your_paper.pdf \
+  --out   /tmp/parsed.json \
+  --extract-only
+```
+
+### SLURM batch
+
+Two ready-made SLURM scripts run the synthetic-data evaluation as parallel
+arrays: `scripts/eval_R_rule_based.sbatch` and
+`scripts/eval_H_rule_based.sbatch`. For PDF batch jobs, wrap the directory
+form above in your own sbatch script and pin `--paper-workers` to the node
+CPU count divided by 4 (one citation worker per CPU is a reasonable
+starting point).
 
 ## Reproducing the benchmark
 

@@ -170,6 +170,14 @@ def _norm_pages(value: Any) -> str:
     m2 = _re.match(r"^\d+:(\d+)\s*-\s*\d+:(\d+)$", text)
     if m2:
         text = f"{m2.group(1)}-{m2.group(2)}"
+    # Collapse degenerate single-page ranges so "139-139" matches "139".
+    # Single-page citations are sometimes rendered as a same-start/same-end
+    # range by BibTeX styles ("pages={139--139}") and the candidate side
+    # usually stores the bare page number. Without this collapse we get a
+    # pages_mismatch on what is actually the same page.
+    m3 = _re.match(r"^(\d+[a-z]?)\s*-\s*(\d+[a-z]?)$", text)
+    if m3 and m3.group(1) == m3.group(2):
+        text = m3.group(1)
     return text
 
 
@@ -579,6 +587,27 @@ def _candidate_has_no_structured_data(field_status: dict[str, dict[str, Any]]) -
     )
 
 
+# Core identity fields. If a candidate is missing ANY of these while the
+# reference provides one, the candidate cannot plausibly be the cited paper:
+# absence of the title, authors, venue, year, or DOI is a hard FAKE signal,
+# not a soft discrepancy. Peripheral fields (volume, pages, publisher,
+# location) are kept out because they correspond to the P3 unverifiable-
+# peripheral case. arxiv_id is also excluded because most non-arXiv
+# connectors (DBLP, Crossref, etc.) legitimately do not carry it, so
+# treating its absence as FAKE would over-penalise real-paper matches from
+# those sources.
+_CORE_IDENTITY_FIELDS = ("title", "authors", "venue", "year", "doi")
+
+
+def _core_fields_candidate_missing(field_status: dict[str, dict[str, Any]]) -> list[str]:
+    """Return the subset of core identity fields where the reference has a
+    value but the candidate does not."""
+    return [
+        f for f in _CORE_IDENTITY_FIELDS
+        if field_status.get(f, {}).get("status") == "candidate_missing"
+    ]
+
+
 def _evaluate_candidate(
     citation: CitationRecord,
     candidate: CandidateMatch,
@@ -605,6 +634,13 @@ def _evaluate_candidate(
         reason = (
             f"Author count mismatch without et al.: citation lists {ref_count} "
             f"specific authors but candidate has {cand_count} (H3a)."
+        )
+        should_run_llm_recheck = True
+    elif (core_missing := _core_fields_candidate_missing(field_status)):
+        verdict = VerdictLabel.FAKE_REFERENCE
+        reason = (
+            f"Candidate is missing core identity field(s) the reference provides "
+            f"({', '.join(core_missing)}); the matched record cannot be the cited paper."
         )
         should_run_llm_recheck = True
     elif _has_soft_discrepancies(field_status, conflicts):

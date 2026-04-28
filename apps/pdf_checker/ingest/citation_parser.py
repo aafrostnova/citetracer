@@ -4,7 +4,7 @@ import json
 import os
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
 from packages.core.models import CitationRecord
@@ -13,6 +13,16 @@ from packages.core.normalize import extract_identifier
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}[a-z]?\b")
 TITLE_QUOTE_RE = re.compile(r"[\"“](.+?)[\"”]")
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# Identifier validation. Rejects truncated arxiv IDs ("2511" without
+# .NNNNN suffix, e.g. when BibTeX shipped an incomplete `arXiv–2511.`)
+# and partial DOIs that would otherwise trigger spurious H5 / DOI mismatch
+# verdicts downstream.
+_ARXIV_PREFIX_RE = re.compile(r"^\s*arxiv\s*[:–—\-]\s*", re.IGNORECASE)
+_ARXIV_ID_RE = re.compile(
+    r"^(?:\d{4}\.\d{4,5}(?:v\d+)?|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})$"
+)
+_DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
 TITLE_STOP_PREFIXES = (
     "in proceedings",
     "in international conference",
@@ -1097,24 +1107,41 @@ def _run_llm_reparse_on_raw_bedrock(
     client = _build_bedrock_client(region=region, bearer_token=bearer_token)
 
     n_images = len(reference_page_images) if reference_page_images else 0
+    common_image_block = (
+        "OCR is wrong more often than you expect at character level. "
+        "Treat the OCR text as a STARTING HYPOTHESIS only — for every author "
+        "surname, every title word, and every venue acronym, locate the same "
+        "string in the image and verify CHARACTER BY CHARACTER. If even one "
+        "letter differs, output the spelling YOU SEE IN THE IMAGE.\n\n"
+        "Common OCR error patterns to watch for:\n"
+        "  - Phantom letters inserted in surnames: OCR 'Akocora' → image 'Akcora'.\n"
+        "  - Adjacent-letter swaps: OCR 'Thainyi' → image 'Tihanyi'.\n"
+        "  - Adjacent-letter swaps in titles: OCR 'Haignet' → image 'HiAgent'; "
+        "OCR 'Reacting' → image 'Recasting'; OCR 'Kamiagito' → image 'Kamigaito'.\n"
+        "  - Mis-capitalized acronyms: OCR 'Sw-bench' → image 'SWE-bench'; "
+        "OCR 'Codeelo' → image 'CodeElo'.\n"
+        "  - Missing diacritics: OCR 'Bugueno' → image 'Bugueño'.\n\n"
+        "ANTI-HALLUCINATION RULES (do not violate even once):\n"
+        "  - If a field is not visible in the image AND not present in the OCR "
+        "text, output empty string / [] / null. Do NOT fill it from your "
+        "training knowledge.\n"
+        "  - For arxiv_id and doi specifically: output ONLY what is printed on "
+        "the page. If you see 'arXiv–2511.' (truncated, no number after dot), "
+        "leave arxiv_id empty — do NOT guess the missing digits, do NOT invent "
+        "a plausible-looking ID. Same for DOIs.\n\n"
+    )
     image_instruction = ""
     if n_images == 1:
         image_instruction = (
-            "IMPORTANT: An image of the reference page is attached. "
-            "The OCR text below may contain character-level errors (e.g. dropped letters, "
-            "wrong capitalization like 'Sw-bench' instead of 'SWE-bench', or 'Codeelo' "
-            "instead of 'CodeElo'). Use the IMAGE as the ground truth for exact spelling "
-            "of titles, author names, and venue names. If the OCR text differs from what "
-            "you see in the image, trust the image.\n\n"
+            "IMPORTANT: An image of the reference page is attached.\n\n"
+            + common_image_block
         )
     elif n_images >= 2:
         image_instruction = (
             f"IMPORTANT: {n_images} images of reference pages are attached. "
-            "This reference entry SPANS ACROSS PAGES — the beginning is on the first "
-            "image and continues on the second. "
-            "The OCR text below may contain character-level errors (e.g. dropped letters, "
-            "wrong capitalization). Use the IMAGES as the ground truth for exact spelling. "
-            "If the OCR text differs from what you see in the images, trust the images.\n\n"
+            "This reference entry SPANS ACROSS PAGES — the beginning is on the "
+            "first image and continues on the second.\n\n"
+            + common_image_block
         )
 
     prompt = (
@@ -1264,6 +1291,27 @@ def _apply_llm_reparse_if_needed(
     new_doi = str(parsed.get("doi", "") or "").strip().rstrip(".,;")
     new_arxiv_id = str(parsed.get("arxiv_id", "") or "").strip(" .;")
     new_url = str(parsed.get("url", "") or "").strip().rstrip(".,);]")
+
+    # Identifier sanitization. The LLM occasionally returns half-truncated
+    # arxiv IDs (e.g. "arXiv:2511" or "2511" when the source BibTeX shipped
+    # an incomplete "arXiv–2511.") or malformed DOIs. Both confuse Phase 0:
+    # downstream connectors try to resolve the identifier, fail, and emit
+    # H5 ("identifier not reachable") for what is really an OK paper missing
+    # an arxiv ID. Strip "arXiv:" / "arxiv–" prefixes, then drop the field
+    # if it does not match the canonical ID shape.
+    rejected_ids: list[str] = []
+    if new_arxiv_id:
+        cleaned = _ARXIV_PREFIX_RE.sub("", new_arxiv_id).strip(" .;")
+        if cleaned and _ARXIV_ID_RE.match(cleaned):
+            new_arxiv_id = cleaned
+        else:
+            rejected_ids.append(f"arxiv_id={new_arxiv_id!r}")
+            new_arxiv_id = ""
+    if new_doi and not _DOI_RE.match(new_doi):
+        rejected_ids.append(f"doi={new_doi!r}")
+        new_doi = ""
+    if rejected_ids:
+        parsed_fields["llm_reparse_rejected_identifiers"] = rejected_ids
 
     # Avoid destructive overwrite when model yields a syntactically valid but empty answer.
     if not (
@@ -1571,3 +1619,96 @@ def parse_reference_entries(
                         print(f"      [reparse {_reparse_counter['done']}/{n_targets}] {future_map[fut]}", end="\r", flush=True)
             print(f"      [reparse] done ({n_targets} citations, workers={max_workers})                ", flush=True)
     return records
+
+
+def parse_reference_entries_streaming(
+    entries: list[str],
+    llm_reparse_config: Mapping[str, Any] | None = None,
+    reference_page_images: list[list[bytes]] | None = None,
+) -> tuple[list[CitationRecord], ThreadPoolExecutor | None, dict[str, "Future[None]"]]:
+    """Streaming counterpart to parse_reference_entries.
+
+    Returns:
+        records: heuristic-parsed list (in original order). Each record may be
+            mutated in-place when its reparse future completes.
+        reparse_pool: ThreadPoolExecutor running the reparse jobs (or None if
+            reparse is disabled / unnecessary). Caller is responsible for
+            shutdown(wait=True) once it has consumed the futures.
+        reparse_futures: {citation_id: Future}. Records whose citation_id is
+            NOT a key in this dict are already verify-ready; records that ARE
+            keyed must wait for their future to complete before verification.
+    """
+    records: list[CitationRecord] = []
+    total = len(entries)
+    for idx, entry in enumerate(entries, start=1):
+        print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
+        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}"))
+    print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
+
+    cfg = llm_reparse_config or {}
+    if isinstance(cfg, Mapping):
+        get_value = cfg.get
+    else:
+        get_value = lambda key, default=None: getattr(cfg, key, default)
+
+    enabled = bool(get_value("enabled", False))
+    provider = str(get_value("provider", "local") or "local").strip().lower()
+    model_path = str(get_value("model_path", "") or "").strip()
+    bedrock_cfg = get_value("bedrock", {}) or {}
+    if isinstance(bedrock_cfg, Mapping):
+        bedrock_get = bedrock_cfg.get
+    else:
+        bedrock_get = lambda key, default=None: getattr(bedrock_cfg, key, default)
+    bedrock_model_id = str(bedrock_get("model_id", "") or "").strip()
+    bedrock_region = str(bedrock_get("region", "") or "").strip() or "us-east-1"
+    bedrock_bearer_token = str(bedrock_get("bearer_token", "") or "").strip() or None
+    max_new_tokens = int(get_value("max_new_tokens", 32768) or 32768)
+    temperature = float(get_value("temperature", 0.0) or 0.0)
+    force_all_entries = bool(get_value("force_all_entries", False))
+    parallel_workers = int(get_value("parallel_workers", 1) or 1)
+    parallel_workers = max(1, parallel_workers)
+
+    _per_record_images: dict[str, list[bytes]] = {}
+    if provider == "bedrock" and reference_page_images:
+        for i, record in enumerate(records):
+            if i < len(reference_page_images) and reference_page_images[i]:
+                _per_record_images[record.citation_id] = reference_page_images[i]
+
+    can_run = bool(model_path) if provider != "bedrock" else bool(bedrock_model_id)
+    if not (enabled and can_run):
+        return records, None, {}
+
+    targets = [
+        record
+        for record in records
+        if force_all_entries or _citation_has_missing_core_fields(record)
+    ]
+    n_targets = len(targets)
+    if n_targets == 0:
+        return records, None, {}
+
+    n_with_images = sum(1 for r in targets if r.citation_id in _per_record_images)
+    img_tag = f" +image({n_with_images}/{n_targets})" if n_with_images else ""
+    max_workers = min(parallel_workers, n_targets)
+    print(
+        f"      [reparse] LLM reparsing {n_targets} citations "
+        f"(provider={provider}{img_tag}, workers={max_workers}, streaming→verify)...",
+        flush=True,
+    )
+
+    pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="reparse")
+    futures: dict[str, "Future[None]"] = {}
+    for record in targets:
+        futures[record.citation_id] = pool.submit(
+            _apply_llm_reparse_if_needed,
+            record=record,
+            provider=provider,
+            model_path=model_path,
+            bedrock_model_id=bedrock_model_id,
+            bedrock_region=bedrock_region,
+            bedrock_bearer_token=bedrock_bearer_token,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            reference_page_images=_per_record_images.get(record.citation_id),
+        )
+    return records, pool, futures

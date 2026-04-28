@@ -94,8 +94,16 @@ OCR_TAGGED_BLOCK_RE = re.compile(
 # detect column / page boundaries when deciding whether to merge consecutive
 # blocks.
 OCR_TAGGED_BLOCK_WITH_BBOX_RE = re.compile(
-    r"<\|ref\|>(?P<label>.*?)<\|/ref\|>\s*"
-    r"<\|det\|>\s*\[\[\s*(?P<x1>\d+)\s*,\s*(?P<y1>\d+)\s*,\s*(?P<x2>\d+)\s*,\s*(?P<y2>\d+)\s*\]\]\s*<\|/det\|>\s*"
+    # Two-stage fix vs DeepSeek-OCR cross-column blocks:
+    #   1. label is restricted to non-`<` chars so a failed match cannot
+    #      regex-backtrack the whole document into the label group.
+    #   2. <|det|> may carry multiple bboxes separated by ", " when OCR
+    #      groups a wrap-around region; we take the first bbox and tolerate
+    #      any number of trailing bboxes.
+    r"<\|ref\|>(?P<label>[^<]*?)<\|/ref\|>\s*"
+    r"<\|det\|>\s*\[\[\s*(?P<x1>\d+)\s*,\s*(?P<y1>\d+)\s*,\s*(?P<x2>\d+)\s*,\s*(?P<y2>\d+)\s*\]\]"
+    r"(?:\s*,\s*\[\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]\])*"
+    r"\s*<\|/det\|>\s*"
     r"(?P<content>.*?)(?=(?:\n?\s*<\|ref\|>|$))",
     re.DOTALL,
 )
@@ -1280,7 +1288,7 @@ def _render_pdf_reference_pages(
     start_page: int,
     end_page: int,
     output_dir: Path,
-    dpi: int = 200,
+    dpi: int = 250,
 ) -> list[Path]:
     try:
         import fitz

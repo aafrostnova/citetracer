@@ -12,9 +12,61 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import threading
+from io import BytesIO
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+
+import requests
+from requests.adapters import HTTPAdapter
+
+
+_thread_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    """Per-thread requests.Session with HTTP keep-alive and a generous pool.
+
+    requests.Session is not 100% thread-safe; a per-thread session is the
+    cleanest way to share connection pools without locking. Each thread's
+    session keeps its own adapter (pool_maxsize=20 per host) so concurrent
+    citations against the same host (e.g. crossref) reuse keep-alive
+    connections instead of re-handshaking TLS on every call.
+    """
+    sess = getattr(_thread_local, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)
+        sess.mount("http://", adapter)
+        sess.mount("https://", adapter)
+        _thread_local.session = sess
+    return sess
+
+
+def _raise_urllib_http_error(response: requests.Response, url: str) -> None:
+    """Raise urllib.error.HTTPError so existing retry classifiers keep working.
+
+    The base connector's _is_rate_limited / _retry_after_seconds inspect
+    HTTPError.code and HTTPError.headers.get('Retry-After'); translating
+    requests responses into the urllib type lets us swap transports without
+    touching retry logic.
+    """
+    raise HTTPError(
+        url=url,
+        code=response.status_code,
+        msg=response.reason or "",
+        hdrs=response.headers,
+        fp=BytesIO(response.content),
+    )
+
+
+def _translate_request_exception(exc: Exception, url: str) -> Exception:
+    """Map requests exceptions onto urllib types the retry layer understands."""
+    if isinstance(exc, requests.exceptions.Timeout):
+        return TimeoutError(str(exc))
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return URLError(str(exc))
+    return exc
 
 from packages.core.adjudicate import AdjudicationPolicy
 from packages.core.matching import build_candidate_match
@@ -68,6 +120,21 @@ class SourceHealth:
             return score
 
 
+def _connect_sqlite(db_path: str) -> sqlite3.Connection:
+    """Open a SQLite connection that tolerates concurrent writers.
+
+    Enables WAL journal mode (so readers do not block writers and multiple
+    connections can coexist) and a 30s busy_timeout (so transient locks
+    retry instead of raising "database is locked"). Required because the
+    pipelined verifier hits the connector cache from many threads at once.
+    """
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
+
+
 class SQLiteCache:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
@@ -75,7 +142,7 @@ class SQLiteCache:
 
     def _init_db(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS connector_cache (
@@ -89,7 +156,7 @@ class SQLiteCache:
 
     def get(self, cache_key: str) -> list[dict[str, Any]] | None:
         now = int(time.time())
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             row = conn.execute(
                 "SELECT payload, expires_at FROM connector_cache WHERE cache_key = ?",
                 (cache_key,),
@@ -105,7 +172,7 @@ class SQLiteCache:
     def set(self, cache_key: str, records: list[dict[str, Any]], ttl_s: int) -> None:
         expires_at = int(time.time()) + max(ttl_s, 1)
         payload = json.dumps(records)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO connector_cache(cache_key, payload, expires_at)
@@ -139,7 +206,7 @@ class VerifiedReferenceCache:
 
     def _init_db(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             # Detect legacy schema (ref_key PK, no full_key/loose_key columns).
             # If found, drop and recreate — legacy cache is inherently narrower
             # and values can be recomputed on next run.
@@ -197,7 +264,7 @@ class VerifiedReferenceCache:
         """Tier 1: exact field-for-field match on the full citation."""
         key = self._full_key(citation)
         now = int(time.time())
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             row = conn.execute(
                 "SELECT verdict_json, expires_at FROM verified_references WHERE full_key = ?",
                 (key,),
@@ -214,7 +281,7 @@ class VerifiedReferenceCache:
         """Tier 2: title+year match (any formatting). Caller should re-validate."""
         key = self._loose_key(citation)
         now = int(time.time())
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             row = conn.execute(
                 "SELECT verdict_json, expires_at FROM verified_references "
                 "WHERE loose_key = ? ORDER BY expires_at DESC LIMIT 1",
@@ -236,7 +303,7 @@ class VerifiedReferenceCache:
         loose_key = self._loose_key(citation)
         expires_at = int(time.time()) + (ttl_s or self.DEFAULT_TTL_S)
         payload = json.dumps(verdict_dict, ensure_ascii=False)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_sqlite(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO verified_references(full_key, loose_key, verdict_json, expires_at)
@@ -359,19 +426,25 @@ class BaseConnector:
     def _request_json(self, url: str, params: dict[str, Any], policy: RequestPolicy, headers: dict[str, str] | None = None) -> dict[str, Any]:
         query = urlencode({k: v for k, v in params.items() if v is not None and v != ""})
         target = f"{url}?{query}" if query else url
-        headers = headers or {}
-        request = Request(target, headers={"User-Agent": "citation-checker/1.0", **headers})
+        all_headers = {"User-Agent": "citation-checker/1.0", **(headers or {})}
         last_error: Exception | None = None
         max_attempts = max(policy.max_retries, policy.rate_limit_max_retries) + 1
         for attempt in range(max_attempts):
             try:
-                with urlopen(request, timeout=policy.timeout_s) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                response = _get_session().get(target, headers=all_headers, timeout=policy.timeout_s)
+                if response.status_code >= 400:
+                    _raise_urllib_http_error(response, target)
+                return response.json()
             except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = exc
                 if attempt >= self._max_retries_for(exc, policy):
                     break
                 self._sleep_for_retry(exc, attempt, policy, url=target, connector_name=self.name)
+            except requests.exceptions.RequestException as exc:
+                last_error = _translate_request_exception(exc, target)
+                if attempt >= self._max_retries_for(last_error, policy):
+                    break
+                self._sleep_for_retry(last_error, attempt, policy, url=target, connector_name=self.name)
         self._log_final_failure(target, last_error)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
@@ -382,24 +455,25 @@ class BaseConnector:
         policy: RequestPolicy,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        headers = headers or {}
-        request = Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"User-Agent": "citation-checker/1.0", "Content-Type": "application/json", **headers},
-            method="POST",
-        )
+        all_headers = {"User-Agent": "citation-checker/1.0", "Content-Type": "application/json", **(headers or {})}
         last_error: Exception | None = None
         max_attempts = max(policy.max_retries, policy.rate_limit_max_retries) + 1
         for attempt in range(max_attempts):
             try:
-                with urlopen(request, timeout=policy.timeout_s) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                response = _get_session().post(url, json=payload, headers=all_headers, timeout=policy.timeout_s)
+                if response.status_code >= 400:
+                    _raise_urllib_http_error(response, url)
+                return response.json()
             except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = exc
                 if attempt >= self._max_retries_for(exc, policy):
                     break
                 self._sleep_for_retry(exc, attempt, policy, url=url, connector_name=self.name)
+            except requests.exceptions.RequestException as exc:
+                last_error = _translate_request_exception(exc, url)
+                if attempt >= self._max_retries_for(last_error, policy):
+                    break
+                self._sleep_for_retry(last_error, attempt, policy, url=url, connector_name=self.name)
         self._log_final_failure(url, last_error)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 
@@ -412,20 +486,25 @@ class BaseConnector:
     ) -> str:
         query = urlencode({k: v for k, v in params.items() if v is not None and v != ""})
         target = f"{url}?{query}" if query else url
-        headers = headers or {}
-        request = Request(target, headers={"User-Agent": "citation-checker/1.0", **headers})
+        all_headers = {"User-Agent": "citation-checker/1.0", **(headers or {})}
         last_error: Exception | None = None
         max_attempts = max(policy.max_retries, policy.rate_limit_max_retries) + 1
         for attempt in range(max_attempts):
             try:
-                with urlopen(request, timeout=policy.timeout_s) as response:
-                    charset = response.headers.get_content_charset() or "utf-8"
-                    return response.read().decode(charset, errors="replace")
+                response = _get_session().get(target, headers=all_headers, timeout=policy.timeout_s)
+                if response.status_code >= 400:
+                    _raise_urllib_http_error(response, target)
+                return response.text
             except (HTTPError, URLError, TimeoutError) as exc:
                 last_error = exc
                 if attempt >= self._max_retries_for(exc, policy):
                     break
                 self._sleep_for_retry(exc, attempt, policy, url=target, connector_name=self.name)
+            except requests.exceptions.RequestException as exc:
+                last_error = _translate_request_exception(exc, target)
+                if attempt >= self._max_retries_for(last_error, policy):
+                    break
+                self._sleep_for_retry(last_error, attempt, policy, url=target, connector_name=self.name)
         self._log_final_failure(target, last_error)
         raise RuntimeError(f"{self.name} request failed: {last_error}")
 

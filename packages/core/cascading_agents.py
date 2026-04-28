@@ -90,7 +90,7 @@ class HallucinatedAgentProtocol(Protocol):
 # Rule-based hint computation
 # ---------------------------------------------------------------------------
 
-_WEB_CONNECTORS = {"google_search", "web_search"}
+_WEB_CONNECTORS = {"google_search", "web_search", "searxng_search"}
 
 
 def _enrich_web_candidate_via_url(
@@ -1207,10 +1207,25 @@ def _llm_classify_url_academic(url: str) -> bool:
             bearer_token=cfg.verification_llm.bedrock.bearer_token,
         )
         prompt = (
-            f"Is this URL an academic/scholarly resource? Answer JSON only.\n"
-            f"Academic = journal, conference proceedings, preprint server (arxiv, ssrn), "
-            f"university page, research lab report, or digital library (ACM, IEEE, Springer).\n"
-            f"Non-academic = blog, GitHub issue/repo, social media, news, company product page.\n\n"
+            f"Classify this URL as academic or non-academic. Reply with JSON only.\n\n"
+            f"Mark academic = TRUE for any of:\n"
+            f"  - Journal / conference / workshop / preprint hosts: arxiv.org, "
+            f"aclanthology.org, openreview.net, ieeexplore.ieee.org, dl.acm.org, "
+            f"link.springer.com, sciencedirect.com, nature.com, science.org, "
+            f"plos.org, biorxiv.org, ssrn.com, ojs.aaai.org, papers.nips.cc, "
+            f"proceedings.mlr.press, jmlr.org, semanticscholar.org\n"
+            f"  - DOI redirects: doi.org/*, dx.doi.org/*\n"
+            f"  - University domains (.edu, .ac.<cc>) for paper / thesis / tech report pages\n"
+            f"  - Research lab pages reporting peer-reviewed work\n\n"
+            f"Mark academic = FALSE only when the URL clearly points to:\n"
+            f"  - GitHub repo / Gitlab repo / Bitbucket\n"
+            f"  - Personal blog (medium.com, substack, wordpress, blog.*)\n"
+            f"  - Social media (x.com, twitter.com, mastodon, threads)\n"
+            f"  - Company marketing or product page (e.g., openai.com/blog, "
+            f"anthropic.com/news, mistral.ai, ai.meta.com/blog)\n"
+            f"  - News outlet (nytimes, theverge, theregister, etc.)\n"
+            f"  - Forum (lesswrong, alignmentforum, reddit, hackernews)\n\n"
+            f"If the URL is ambiguous or you cannot recognise the domain, default to TRUE (academic).\n\n"
             f"URL: {url}\n\n"
             f'Return: {{"academic": true/false, "reason": "..."}}'
         )
@@ -1254,11 +1269,33 @@ def _llm_classify_citation_academic(citation: CitationRecord) -> bool:
             bearer_token=cfg.verification_llm.bedrock.bearer_token,
         )
         prompt = (
-            f"Is this citation an academic/scholarly publication? Answer JSON only.\n"
-            f"Academic = peer-reviewed paper, conference paper, journal article, "
-            f"preprint, thesis, technical report from a research lab.\n"
-            f"Non-academic = blog post, product announcement, API documentation, "
-            f"news article, company press release, tool/software page.\n\n"
+            f"Classify this citation as academic or non-academic. Reply with JSON only.\n\n"
+            f"Look at the VENUE field first; it is the most reliable signal.\n\n"
+            f"Mark academic = TRUE when the venue contains any of these patterns "
+            f"(case-insensitive substring match):\n"
+            f"  - 'Proceedings', 'Journal', 'Conference', 'Symposium', 'Workshop', "
+            f"'Trans.', 'Transactions'\n"
+            f"  - Conference / journal acronyms: NeurIPS, ICML, ICLR, AAAI, EMNLP, "
+            f"NAACL, ACL, COLING, CVPR, ICCV, ECCV, KDD, SIGIR, WWW, UAI, COLT, "
+            f"AISTATS, JMLR, PMLR, TACL, IJCAI\n"
+            f"  - Publisher names: IEEE, ACM, Springer, Elsevier, Nature, Science, "
+            f"PLOS, Wiley, Oxford, Cambridge\n"
+            f"  - Preprint marker: 'arXiv', 'arxiv preprint', 'bioRxiv', 'SSRN'\n"
+            f"  - Thesis / report: 'PhD thesis', 'Master thesis', 'Tech report', "
+            f"'Technical Report'\n"
+            f"A garbled or fragmentary venue does not change the verdict — if any "
+            f"academic marker above appears, the citation is academic.\n\n"
+            f"Mark academic = FALSE only when the venue or raw_text clearly indicates:\n"
+            f"  - A blog (e.g., 'OpenAI blog', 'Anthropic blog', 'AI Alignment Forum', "
+            f"'Meta AI Research Blog', 'Mistral.ai', 'Substack', 'Medium')\n"
+            f"  - A GitHub / Gitlab / package repository\n"
+            f"  - Social media (Twitter / X post, tweet)\n"
+            f"  - News article from a non-academic outlet\n"
+            f"  - Company product page or API documentation\n\n"
+            f"If the venue is empty or you cannot decide, default to TRUE (academic).\n"
+            f"This is a hallucinated-citation benchmark — do NOT use 'fields look "
+            f"garbled / suspicious' as a signal; that is a separate hallucination "
+            f"check and is not your job here.\n\n"
             f"Title: {title}\n"
             f"Authors: {authors}\n"
             f"Venue: {venue}\n"
@@ -1443,20 +1480,48 @@ _NON_ACADEMIC_RAW_TEXT_KEYWORDS = {
 }
 
 
+_ACADEMIC_VENUE_KEYWORDS = {
+    "proceedings", "journal", "conference", "symposium", "workshop",
+    "trans.", "transactions",
+    "neurips", "icml", "iclr", "aaai", "emnlp", "naacl", "acl", "coling",
+    "cvpr", "iccv", "eccv", "kdd", "sigir", "www", "uai", "colt",
+    "aistats", "jmlr", "pmlr", "tacl", "ijcai",
+    "ieee", "acm", "springer", "elsevier", "nature", "science", "plos",
+    "wiley", "oxford", "cambridge",
+    "arxiv", "bioarxiv", "biorxiv", "ssrn",
+    "phd thesis", "master thesis", "tech report", "technical report",
+}
+
+
+def _venue_is_academic(venue: str) -> bool:
+    """Cheap rule: venue contains a strong academic marker (Proceedings /
+    Journal / Conference / Symposium / Workshop / Trans. / publisher name /
+    venue acronym). When this fires, skip the non-academic rule and the LLM
+    fallback — the citation is academic regardless of any 'software' /
+    'package' / 'tool' substrings that would otherwise trip false positives
+    on names like 'Journal of Statistical Software'."""
+    return any(kw in venue for kw in _ACADEMIC_VENUE_KEYWORDS)
+
+
 def is_non_academic_citation(citation: CitationRecord) -> bool:
     """Detect whether a citation refers to a non-academic source.
 
     Signals (checked in order):
-      1. URL domain in non-academic list (fast rule)
-      2. Venue contains non-academic keywords (fast rule)
-      3. raw_text mentions package/library/blog (fast rule)
-      4. LLM classification via URL (if rules didn't match)
+      1. Venue contains an academic marker (Proceedings / Journal / IEEE /
+         ACM / arXiv / NeurIPS / ICML / ...) → academic, short-circuit.
+      2. URL domain in non-academic list (fast rule).
+      3. Venue contains non-academic keywords (fast rule).
+      4. raw_text mentions package / library / blog (fast rule).
+      5. LLM classification via URL or citation metadata (if rules silent).
     """
+    venue = (citation.venue or "").lower().strip()
+    if venue and _venue_is_academic(venue):
+        return False  # academic short-circuit
+
     url = (citation.url or "").lower()
     if any(d in url for d in _NON_ACADEMIC_URL_DOMAINS):
         return True
 
-    venue = (citation.venue or "").lower().strip()
     if venue:
         if any(kw in venue for kw in _NON_ACADEMIC_VENUE_KEYWORDS):
             return True
@@ -2088,6 +2153,32 @@ def cascading_phase2_only(
             taxonomy_subtype=["P3"],
             needs_human_review=True,
         )
+
+    # Core-identity gate: if the best candidate is missing a core identity
+    # field that the reference provides (title / authors / venue / year /
+    # doi), the candidate cannot plausibly be the cited paper. Skip Phase 2a
+    # entirely and route to HallucinatedAgent / H-code, regardless of what
+    # upstream LLM agents may have hinted. P3 (peripheral unverifiable) is
+    # reserved for pages / volume / publisher / location only.
+    _CORE_IDENTITY_FIELDS_GATE = ("title", "authors", "venue", "year", "doi")
+    _gate_fs = (best.field_result.field_status if best and best.field_result else {}) or {}
+    _gate_missing = [
+        f for f in _CORE_IDENTITY_FIELDS_GATE
+        if _gate_fs.get(f, {}).get("status") == "candidate_missing"
+    ]
+    if _gate_missing and best.hint == "likely_potential":
+        all_evaluations.append({
+            "agent": "CoreFieldGate",
+            "verdict": "ESCALATED_TO_HALLUCINATED",
+            "taxonomy": [],
+            "reason": (
+                f"Best candidate is missing core identity field(s) the reference "
+                f"provides ({_gate_missing}); routing to HallucinatedAgent "
+                f"instead of PotentialAgent."
+            ),
+        })
+        best.hint = "likely_hallucinated"
+        best.issues = list(set(best.issues + [f"{f}_candidate_missing" for f in _gate_missing]))
 
     # Phase 2a: likely_potential → PotentialAgent
     if best.hint == "likely_potential":

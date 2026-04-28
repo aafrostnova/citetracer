@@ -15,7 +15,7 @@ import os
 import threading
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -29,7 +29,7 @@ from packages.core.models import citation_verdict_to_dict
 
 from .config import load_pdf_checker_config
 from .ingest.citation_marker_linker import estimate_link_quality, extract_inline_markers
-from .ingest.citation_parser import parse_reference_entries
+from .ingest.citation_parser import parse_reference_entries, parse_reference_entries_streaming
 from .ingest.pdf_text_extract import extract_pdf_pages
 from .ingest.reference_segmenter import segment_references_from_pages
 
@@ -128,9 +128,16 @@ def _build_llm_reparse_config(cfg) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _extract_and_parse(
-    pdf: Path, cfg, args: argparse.Namespace, verbose: bool,
-) -> tuple[list[CitationRecord], ExtractionQuality, dict[str, Any], list[str]]:
-    """Run steps 1-3: PDF → pages → reference entries → CitationRecord[]."""
+    pdf: Path, cfg, args: argparse.Namespace, verbose: bool, streaming: bool = False,
+):
+    """Run steps 1-3: PDF → pages → reference entries → CitationRecord[].
+
+    When streaming=True returns (records, reparse_pool, reparse_futures,
+    extraction_quality, extraction_metadata, pages); reparse_pool/futures may
+    be None/{} if no LLM reparse is needed.
+    When streaming=False returns the legacy tuple
+    (citations, extraction_quality, extraction_metadata, pages).
+    """
     _log(verbose, f"[1/7] Reading PDF pages: {pdf}")
     pages = extract_pdf_pages(pdf)
     _log(verbose, f"      Loaded {len(pages)} pages")
@@ -172,7 +179,12 @@ def _extract_and_parse(
             from apps.pdf_checker.ingest.reference_segmenter import _render_pdf_reference_pages
             import tempfile
             with tempfile.TemporaryDirectory() as tmpdir:
-                image_paths = _render_pdf_reference_pages(pdf, ref_start, ref_end, Path(tmpdir), dpi=150)
+                # Render at 250 DPI so the VLM has ~30 px per 9pt character —
+                # enough to distinguish 'i'/'a', 'g'/'i' (Haignet vs HiAgent,
+                # Thainyi vs Tihanyi) which 150 DPI loses. Bedrock Converse
+                # accepts up to 3.75 MB / image; at 250 DPI a Letter page is
+                # ~2125x2750 px and the PNG stays under 2 MB.
+                image_paths = _render_pdf_reference_pages(pdf, ref_start, ref_end, Path(tmpdir), dpi=250)
                 for img_path in image_paths:
                     # Parse page number from filename: "reference_page_12.png" → page_idx=11
                     import re as _re
@@ -182,6 +194,14 @@ def _extract_and_parse(
                         page_images[page_idx] = img_path.read_bytes()
             if page_images:
                 _log(verbose, f"      Rendered {len(page_images)} reference page image(s) for VLM reparse")
+        except ImportError as exc:
+            # pymupdf missing means VLM reparse silently degrades to text-only,
+            # which costs us OCR-error correction (Haignet→HiAgent etc).
+            # Refuse instead of silently producing worse output.
+            raise RuntimeError(
+                f"pymupdf is required for VLM-assisted reparse but is not installed: {exc}. "
+                f"Install with `pip install pymupdf`."
+            ) from exc
         except Exception as exc:
             _log(verbose, f"      Could not render reference pages: {exc}")
 
@@ -191,28 +211,61 @@ def _extract_and_parse(
     for pi in range(max(0, ref_start), min(ref_end + 1, len(pages))):
         ref_page_texts.append((pi, pages[pi]))
 
+    import re as _re_token
+    def _entry_tokens(text: str) -> set[str]:
+        return set(_re_token.findall(r"[A-Za-z]{4,}", text.lower()))
+
     per_entry_images: list[list[bytes]] = []
+    page_token_cache: list[tuple[int, str, set[str]]] = [
+        (pi, ptext, _entry_tokens(ptext)) for pi, ptext in ref_page_texts
+    ]
+
     for entry_text in reference_entries:
         entry_pages: list[int] = []
         # Use first 60 chars of entry as search key (enough to locate, handles line breaks)
         search_key = entry_text[:60].strip().lower()
-        for pi, ptext in ref_page_texts:
+        for pi, ptext, _ in page_token_cache:
             if search_key and search_key in ptext.lower():
                 entry_pages.append(pi)
         # If not found by prefix, check if entry spans consecutive pages
         if not entry_pages and len(entry_text) > 80:
             first_half = entry_text[:40].strip().lower()
             second_half = entry_text[-40:].strip().lower()
-            for pi, ptext in ref_page_texts:
+            for pi, ptext, _ in page_token_cache:
                 pl = ptext.lower()
                 if first_half in pl:
                     entry_pages.append(pi)
                 elif second_half in pl:
                     entry_pages.append(pi)
+        # Final fallback: token-overlap. Substring matching breaks when OCR
+        # has typos ("Haignet" vs "HiAgent") so the entry never finds its
+        # page; use word-set intersection to recover those cases.
+        if not entry_pages:
+            etokens = _entry_tokens(entry_text)
+            if len(etokens) >= 5:
+                for pi, _, ptokens in page_token_cache:
+                    overlap = len(etokens & ptokens) / max(len(etokens), 1)
+                    if overlap >= 0.4:
+                        entry_pages.append(pi)
         entry_pages = sorted(set(entry_pages))
         # Collect images for these pages
         imgs = [page_images[pi] for pi in entry_pages if pi in page_images]
         per_entry_images.append(imgs)
+
+    no_image_idxs = [i + 1 for i, imgs in enumerate(per_entry_images) if not imgs]
+    if no_image_idxs:
+        _log(verbose, f"      [WARN] {len(no_image_idxs)}/{len(reference_entries)} entries got no page image: pdf-ref indices {no_image_idxs[:15]}")
+
+    if streaming:
+        citations, reparse_pool, reparse_futures = parse_reference_entries_streaming(
+            reference_entries,
+            llm_reparse_config=llm_cfg,
+            reference_page_images=per_entry_images,
+        )
+        _log(verbose, f"      Parsed {len(citations)} citation records "
+                     f"({len(reparse_futures)} awaiting LLM reparse)")
+        extraction_metadata.update(llm_meta)
+        return citations, reparse_pool, reparse_futures, extraction_quality, extraction_metadata, pages
 
     citations = parse_reference_entries(
         reference_entries,
@@ -388,6 +441,41 @@ def _save_citations_artifact(
     return artifact_path
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _acquire_out_lock(out_path: Path) -> Path:
+    """Reserve out_path for this process; refuse if another live writer holds it.
+
+    Two concurrent runs writing the same --out raced and one overwrote the
+    other's complete report (Citeaudit run, 2026-04-28). The lockfile
+    <out>.lock holds the writer's PID; if another live PID is in there we
+    refuse so the user picks a different --out instead of silently losing work.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = out_path.with_suffix(out_path.suffix + ".lock")
+    if lock.exists():
+        try:
+            existing_pid = int(lock.read_text().strip())
+        except (ValueError, OSError):
+            existing_pid = -1
+        if existing_pid > 0 and _pid_alive(existing_pid):
+            raise RuntimeError(
+                f"Another pdf_checker process (pid={existing_pid}) is already "
+                f"writing to {out_path}. Pick a different --out path, or stop "
+                f"that process and remove {lock} if it is stale."
+            )
+    lock.write_text(str(os.getpid()))
+    return lock
+
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
@@ -400,6 +488,21 @@ def run_pdf_check(
     """Run the full PDF → verification pipeline."""
     input_pdf = Path(input_pdf)
     out_path = Path(out_path)
+    out_lock = _acquire_out_lock(out_path)
+    try:
+        return _run_pdf_check_inner(input_pdf, out_path, args)
+    finally:
+        try:
+            out_lock.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _run_pdf_check_inner(
+    input_pdf: Path,
+    out_path: Path,
+    args: argparse.Namespace | None,
+) -> dict:
     cfg = load_pdf_checker_config()
     verbose = _env_flag("CITATION_CHECKER_VERBOSE", "1")
 
@@ -408,8 +511,10 @@ def run_pdf_check(
             ["--input", str(input_pdf), "--out", str(out_path)]
         )
 
-    citations, extraction_quality, extraction_metadata, pages = _extract_and_parse(
-        input_pdf, cfg, args, verbose,
+    # Streaming mode: heuristic-parse returns immediately; LLM reparse runs in
+    # the background so we can pipeline reparse-completion → verify-submission.
+    citations, reparse_pool, reparse_futures, extraction_quality, extraction_metadata, pages = (
+        _extract_and_parse(input_pdf, cfg, args, verbose, streaming=True)
     )
 
     _log(verbose, "[4/7] Linking inline citation markers")
@@ -427,6 +532,15 @@ def run_pdf_check(
         _log(verbose, f"      Saved parsed citations to {artifact_path}")
 
     if args.extract_only:
+        # Wait for any in-flight reparse to mutate records before dumping.
+        if reparse_futures:
+            for fut in as_completed(list(reparse_futures.values())):
+                try:
+                    fut.result()
+                except Exception as exc:
+                    _log(verbose, f"      [reparse failed] {exc}")
+        if reparse_pool is not None:
+            reparse_pool.shutdown(wait=True)
         _log(verbose, "[skip] --extract-only set; skipping verification")
         return {
             "input_pdf": str(input_pdf),
@@ -457,17 +571,21 @@ def run_pdf_check(
 
     def _verify_one(idx_citation: tuple[int, Any]) -> tuple[int, Any]:
         idx, citation = idx_citation
-        _log(
-            verbose,
-            f"      [{idx}/{len(citations)}] {citation.citation_id} "
-            f"title={citation.title[:60]!r}",
-        )
         verdict = verifier.verify_citation(
             citation,
             extraction_quality=quality_map.get(citation.citation_id, ExtractionQuality.UNKNOWN),
             source_paper_title=paper_title,
         )
         with write_lock:
+            # Log start + verdict block atomically so concurrent threads do not
+            # interleave their output (prior layout printed start lines outside
+            # the lock, which made each verdict appear under a different
+            # citation's start line).
+            _log(
+                verbose,
+                f"      [{idx}/{len(citations)}] {citation.citation_id} "
+                f"title={citation.title[:60]!r}",
+            )
             verdicts_by_index[idx - 1] = verdict
             ordered = [verdicts_by_index[i] for i in sorted(verdicts_by_index)]
             report_dict = _build_report_dict(
@@ -490,12 +608,69 @@ def run_pdf_check(
         return idx, verdict
 
     if citation_workers == 1 or len(citations) <= 1:
-        # Serial path (also avoids ThreadPoolExecutor overhead for tiny inputs)
+        # Serial path: wait for any reparse, then verify in order.
+        if reparse_futures:
+            for fut in as_completed(list(reparse_futures.values())):
+                try:
+                    fut.result()
+                except Exception as exc:
+                    _log(verbose, f"      [reparse failed] {exc}")
         for pair in enumerate(citations, start=1):
             _verify_one(pair)
     else:
-        with ThreadPoolExecutor(max_workers=citation_workers) as pool:
-            list(pool.map(_verify_one, list(enumerate(citations, start=1))))
+        # Pipelined: kick off verify for any citation that doesn't need
+        # reparse immediately; submit the rest as their reparse futures fire.
+        verify_pool = ThreadPoolExecutor(max_workers=citation_workers, thread_name_prefix="verify")
+        verify_futures: list = []
+        submitted_idxs: set[int] = set()
+        try:
+            for idx, citation in enumerate(citations, start=1):
+                if citation.citation_id not in reparse_futures:
+                    verify_futures.append(verify_pool.submit(_verify_one, (idx, citation)))
+                    submitted_idxs.add(idx)
+
+            if reparse_futures:
+                fut_to_idx = {
+                    reparse_futures[c.citation_id]: i
+                    for i, c in enumerate(citations, start=1)
+                    if c.citation_id in reparse_futures
+                }
+                for rep_fut in as_completed(list(reparse_futures.values())):
+                    try:
+                        rep_fut.result()
+                    except Exception as exc:
+                        _log(verbose, f"      [reparse failed] {exc}")
+                    idx = fut_to_idx[rep_fut]
+                    verify_futures.append(
+                        verify_pool.submit(_verify_one, (idx, citations[idx - 1]))
+                    )
+                    submitted_idxs.add(idx)
+
+            # Defensive guard: ensure every citation got exactly one verify
+            # submission, even if a citation_id collision or any other race
+            # in the post-loop dispatch would have dropped one.
+            missing_idxs = set(range(1, len(citations) + 1)) - submitted_idxs
+            if missing_idxs:
+                _log(
+                    verbose,
+                    f"      [pipelining guard] never-submitted indices: "
+                    f"{sorted(missing_idxs)}; submitting now",
+                )
+                for idx in sorted(missing_idxs):
+                    verify_futures.append(
+                        verify_pool.submit(_verify_one, (idx, citations[idx - 1]))
+                    )
+                    submitted_idxs.add(idx)
+
+            for fut in as_completed(verify_futures):
+                try:
+                    fut.result()
+                except Exception as exc:
+                    _log(verbose, f"      [verify failed] {exc}")
+        finally:
+            verify_pool.shutdown(wait=True)
+            if reparse_pool is not None:
+                reparse_pool.shutdown(wait=True)
 
     partial_verdicts = [verdicts_by_index[i] for i in sorted(verdicts_by_index)]
 
@@ -677,26 +852,175 @@ def main() -> None:
     paper_workers = max(1, getattr(args, "paper_workers", 2))
     print(f"[run] Found {len(pdfs)} PDFs; running with paper_workers={paper_workers}", flush=True)
 
-    def _run_one(pdf: Path) -> tuple[Path, Exception | None]:
-        report_path = out_arg / f"{pdf.stem}_report"
-        try:
-            run_pdf_check(pdf, report_path, args=args)
-            return pdf, None
-        except Exception as exc:  # noqa: BLE001
-            return pdf, exc
+    import time as _time
 
+    def _run_one(pdf: Path) -> dict[str, Any]:
+        report_path = out_arg / f"{pdf.stem}_report.json"
+        t0 = _time.perf_counter()
+        try:
+            report = run_pdf_check(pdf, report_path, args=args)
+            return {
+                "pdf": pdf,
+                "report_path": report_path,
+                "report": report,
+                "runtime_s": _time.perf_counter() - t0,
+                "error": None,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "pdf": pdf,
+                "report_path": report_path,
+                "report": None,
+                "runtime_s": _time.perf_counter() - t0,
+                "error": str(exc),
+            }
+
+    results: list[dict[str, Any]] = []
     if paper_workers == 1:
         for pdf in pdfs:
-            _, err = _run_one(pdf)
-            if err:
-                print(f"[run] FAILED {pdf}: {err}", flush=True)
+            r = _run_one(pdf)
+            results.append(r)
+            tag = "FAILED" if r["error"] else "DONE  "
+            print(f"[run] {tag} {pdf} ({r['runtime_s']:.1f}s)" + (f": {r['error']}" if r["error"] else ""), flush=True)
     else:
         with ThreadPoolExecutor(max_workers=paper_workers) as pool:
-            for pdf, err in pool.map(_run_one, pdfs):
-                if err:
-                    print(f"[run] FAILED {pdf}: {err}", flush=True)
-                else:
-                    print(f"[run] DONE   {pdf}", flush=True)
+            for r in pool.map(_run_one, pdfs):
+                results.append(r)
+                tag = "FAILED" if r["error"] else "DONE  "
+                pdf = r["pdf"]
+                print(f"[run] {tag} {pdf} ({r['runtime_s']:.1f}s)" + (f": {r['error']}" if r["error"] else ""), flush=True)
+
+    _write_batch_summary(results, out_arg)
+
+
+def _write_batch_summary(results: list[dict[str, Any]], out_dir: Path) -> None:
+    """Emit cross-paper aggregate stats: summary.json + summary.csv + summary.md."""
+    import csv as _csv
+    from collections import Counter as _Counter
+
+    per_paper_rows: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    overall_verdict = _Counter()
+    overall_taxonomy = _Counter()
+    overall_runtime = 0.0
+    total_citations = 0
+    total_papers_ok = 0
+    total_human_review = 0
+
+    for r in results:
+        pdf = r["pdf"]
+        runtime = r["runtime_s"]
+        overall_runtime += runtime
+
+        if r["error"] is not None or r["report"] is None:
+            failed.append({"pdf": str(pdf), "error": r["error"], "runtime_s": round(runtime, 2)})
+            continue
+
+        report = r["report"]
+        cits = report.get("citations", []) or []
+        summary = report.get("summary", {}) or {}
+        risk = report.get("risk_score", 0.0)
+        needs_review = report.get("requires_human_review", False)
+
+        verdict_counts = _Counter(c.get("verdict", "") for c in cits)
+        taxonomy_counts = _Counter(t for c in cits for t in (c.get("taxonomy_subtype") or []))
+        overall_verdict.update(verdict_counts)
+        overall_taxonomy.update(taxonomy_counts)
+
+        total_citations += len(cits)
+        total_papers_ok += 1
+        if needs_review:
+            total_human_review += 1
+
+        per_paper_rows.append({
+            "paper_id": report.get("paper_id", pdf.stem),
+            "pdf": str(pdf),
+            "report_path": str(r["report_path"]),
+            "runtime_s": round(runtime, 2),
+            "n_citations": len(cits),
+            "n_valid": verdict_counts.get("VALID", 0),
+            "n_potential": verdict_counts.get("POTENTIAL_REFERENCE", 0),
+            "n_fake": verdict_counts.get("FAKE_REFERENCE", 0),
+            "risk_score": round(float(risk), 3),
+            "needs_human_review": bool(needs_review),
+            "taxonomy_histogram": dict(taxonomy_counts),
+        })
+
+    per_paper_rows.sort(key=lambda r: r["risk_score"], reverse=True)
+
+    summary_payload = {
+        "n_papers_processed": len(results),
+        "n_papers_ok": total_papers_ok,
+        "n_papers_failed": len(failed),
+        "total_citations": total_citations,
+        "total_runtime_s": round(overall_runtime, 1),
+        "papers_needing_human_review": total_human_review,
+        "verdict_totals": dict(overall_verdict),
+        "taxonomy_histogram": dict(overall_taxonomy.most_common()),
+        "papers": per_paper_rows,
+        "failed_papers": failed,
+    }
+    (out_dir / "summary.json").write_text(
+        json.dumps(summary_payload, indent=2, ensure_ascii=False), encoding="utf-8",
+    )
+
+    csv_path = out_dir / "summary.csv"
+    csv_fields = [
+        "paper_id", "n_citations", "n_valid", "n_potential", "n_fake",
+        "risk_score", "needs_human_review", "runtime_s", "report_path",
+    ]
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        w = _csv.DictWriter(f, fieldnames=csv_fields, extrasaction="ignore")
+        w.writeheader()
+        for row in per_paper_rows:
+            w.writerow(row)
+
+    md_lines = [
+        "# Batch Citation Check — Summary",
+        "",
+        f"- Papers processed: **{summary_payload['n_papers_processed']}** "
+        f"(ok: {total_papers_ok}, failed: {len(failed)})",
+        f"- Total citations: **{total_citations}**",
+        f"- Wall-clock: **{summary_payload['total_runtime_s']:.1f}s**",
+        f"- Papers flagged for human review: **{total_human_review}**",
+        "",
+        "## Verdict totals (across all papers)",
+        "",
+    ]
+    for k in ("VALID", "POTENTIAL_REFERENCE", "FAKE_REFERENCE"):
+        n = overall_verdict.get(k, 0)
+        pct = (100.0 * n / total_citations) if total_citations else 0.0
+        md_lines.append(f"- **{k}**: {n} ({pct:.1f}%)")
+    md_lines.append("")
+    md_lines.append("## Taxonomy histogram")
+    md_lines.append("")
+    md_lines.append("| code | count |")
+    md_lines.append("|------|------:|")
+    for code, n in overall_taxonomy.most_common():
+        md_lines.append(f"| {code} | {n} |")
+    md_lines.extend(["", "## Per-paper (sorted by risk_score desc)", "",
+                     "| paper_id | N | VALID | POT | FAKE | risk | review? | runtime (s) |",
+                     "|---|---:|---:|---:|---:|---:|:---:|---:|"])
+    for r in per_paper_rows:
+        md_lines.append(
+            f"| {r['paper_id']} | {r['n_citations']} | "
+            f"{r['n_valid']} | {r['n_potential']} | {r['n_fake']} | "
+            f"{r['risk_score']:.3f} | {'✓' if r['needs_human_review'] else ''} | "
+            f"{r['runtime_s']:.1f} |"
+        )
+    if failed:
+        md_lines.extend(["", "## Failed papers", "", "| pdf | error | runtime (s) |", "|---|---|---:|"])
+        for f in failed:
+            md_lines.append(f"| {f['pdf']} | `{(f['error'] or '')[:80]}` | {f['runtime_s']:.1f} |")
+    (out_dir / "summary.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    print(
+        f"[run] Batch summary: {total_papers_ok}/{len(results)} papers OK, "
+        f"{total_citations} citations, "
+        f"{overall_verdict.get('VALID',0)}/{overall_verdict.get('POTENTIAL_REFERENCE',0)}/{overall_verdict.get('FAKE_REFERENCE',0)} V/P/F. "
+        f"Wrote summary.json/csv/md to {out_dir}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
