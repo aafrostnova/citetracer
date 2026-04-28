@@ -137,6 +137,51 @@ _LOCAL_MODEL_CACHE: dict[str, tuple[Any, Any]] = {}
 _LOCAL_VLLM_MODEL_CACHE: dict[str, tuple[Any, Any, Any, Any, Any]] = {}
 
 
+def _cleanup_local_vllm_at_exit() -> None:
+    """Destroy cached vLLM engines + NCCL process group at Python exit.
+
+    Without this, vLLM leaves CUDA context + NCCL groups alive after the
+    program exits — `nvidia-smi` keeps showing GPU memory in use, and
+    PyTorch prints `destroy_process_group() was not called before
+    program exit, which can leak resources.`
+    """
+    if not _LOCAL_VLLM_MODEL_CACHE:
+        return
+    try:
+        for bundle in list(_LOCAL_VLLM_MODEL_CACHE.values()):
+            llm = bundle[0] if bundle else None
+            if llm is None:
+                continue
+            try:
+                # vllm 0.8.x: LLM has a llm_engine; engine has a stop()
+                # method on its model_executor. Best-effort cleanup —
+                # any failure here is silenced; we just want to free GPU.
+                eng = getattr(llm, "llm_engine", None)
+                if eng is not None:
+                    me = getattr(eng, "model_executor", None)
+                    if me is not None and hasattr(me, "shutdown"):
+                        me.shutdown()
+                del llm
+            except Exception:
+                pass
+        _LOCAL_VLLM_MODEL_CACHE.clear()
+    except Exception:
+        pass
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
+    except Exception:
+        pass
+
+
+import atexit as _atexit
+_atexit.register(_cleanup_local_vllm_at_exit)
+
+
 def normalize_space(text: str) -> str:
     text = text.replace("\u00a0", " ")
     text = re.sub(r"\s+", " ", text)
