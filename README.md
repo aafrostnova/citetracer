@@ -214,7 +214,7 @@ Pick one path below.
 #### Option A — All-Bedrock (no GPU)
 
 ```bash
-conda create -n citeaudit python=3.10 -y && conda activate citeaudit
+conda create -n ref_checker python=3.10 -y && conda activate ref_checker
 pip install -r requirements.txt
 ```
 
@@ -230,19 +230,19 @@ You can stop here. Skip directly to [§2 Configure](#2-configure).
 
 #### Option B — Local DeepSeek-OCR-2 with vLLM (recommended for batch)
 
-vLLM pins specific CUDA / torch versions, so DeepSeek-OCR-2 ships its
-own `setup.sh`. The cleanest path is to follow their environment
-exactly, then add this repo's deps on top.
+vLLM pins specific CUDA / torch versions. Use a single conda env named
+`ref_checker` for everything (this repo + DeepSeek-OCR-2's vLLM stack).
 
 ```bash
-# 1. Clone DeepSeek-OCR-2 and follow its environment setup
-git clone https://github.com/deepseek-ai/DeepSeek-OCR-2 ~/DeepSeek-OCR-2
-cd ~/DeepSeek-OCR-2
-# Run their suggested env setup (creates a conda env with torch + vllm + flash-attn)
-bash setup.sh    # adjust per their README; they install vllm 0.8.5 + torch 2.6 + flash-attn
-conda activate deepseek_ocr2   # or whatever name their script chose
+# 1. Create the env and install vLLM following the deepseek-ai/DeepSeek-OCR-2
+#    instructions (they pin vllm 0.8.5 + torch 2.6 + flash-attn).
+conda create -n ref_checker python=3.10 -y
+conda activate ref_checker
 
-# 2. Install this repo's extra deps in the SAME env
+# Reference: https://github.com/deepseek-ai/DeepSeek-OCR-2 (its setup.sh
+# or README documents the exact CUDA-matched torch + vllm wheels).
+
+# 2. Install this repo's deps in the SAME env
 cd /path/to/Citation_Hallucination_Detection
 pip install -r requirements.txt
 
@@ -279,7 +279,7 @@ Then in `config.json`:
   means the local OCR loader hit an error and silently fell back. The
   most common cause is `ModuleNotFoundError: No module named 'vllm'`
   because the script is running in a different conda env than the one
-  that has vllm. Activate the right env (`conda activate deepseek_ocr2`)
+  that has vllm. Activate the right env (`conda activate ref_checker`)
   and rerun. To force the loader to raise the underlying error instead
   of swallowing it, set `CITATION_CHECKER_LOCAL_OCR_DEBUG_RAISE=1`.
 - **`pip` complains** `vllm 0.8.5+cu118 requires transformers>=4.51.1, but
