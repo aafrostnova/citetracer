@@ -341,12 +341,68 @@ that Stage 3 LLM agents booted (i.e., your Bedrock credentials work).
 
 ### 3. Pre-fetch caches (optional)
 
+#### 3a. Build a local DBLP SQLite mirror (strongly recommended)
+
+The DBLP online API (`dblp_online`) is rate-limited and adds ~500 ms per
+query. A local SQLite mirror built from DBLP's XML dump is roughly 30×
+faster and never hits a rate limit. The repo ships `scripts/build_dblp_sqlite.py`
+that ingests the official XML release into the schema the
+`dblp_sqlite` connector expects (`papers / authors / paper_authors`).
+
 ```bash
+# 1. Download DBLP XML + DTD.
+mkdir -p data/dblp_raw && cd data/dblp_raw
+wget https://dblp.org/xml/dblp.xml.gz   # ~700 MB compressed, ~5 GB raw
+wget https://dblp.org/xml/dblp.dtd      # required by the XML parser
+cd ../..
+
+# 2. Build the SQLite mirror.
 mkdir -p data/cache
-# DBLP SQLite mirror: download from https://dblp.org/xml/ and run an
-# offline indexer, then point dblp_sqlite_path at it.
-# ACL Anthology: clone https://github.com/acl-org/acl-anthology.git into
-# data/cache/acl_anthology_repo (its data/ subdir becomes acl_anthology_data_dir).
+python scripts/build_dblp_sqlite.py \
+  --input  data/dblp_raw/dblp.xml.gz \
+  --output data/cache/dblp.sqlite \
+  --fast-mode \
+  --defer-indexes \
+  --commit-every 5000
+```
+
+| Flag | Meaning |
+|---|---|
+| `--fast-mode` | Disable journaling + sync during ingest for ~3-5× speedup. The output DB is fully consistent at the end; only crash-during-build is risky. |
+| `--defer-indexes` | Build the indexes in one shot after all rows are loaded, rather than maintaining them per-insert. |
+| `--commit-every 5000` | Transaction batch size; balances memory and speed. |
+| `--max-records 1000` | Smoke-test option — process only the first N publications to verify the pipeline before a full run. |
+
+Expected runtime: 30–60 minutes on commodity hardware; output `dblp.sqlite`
+ends up around 3–4 GB and contains ~7M publications.
+
+Then point `connectors.dblp_sqlite_path` at the file:
+
+```jsonc
+"connectors": {
+  "dblp_sqlite_path": "data/cache/dblp.sqlite",
+  "enabled_sources": ["dblp_sqlite", "url_direct", "dblp_online", ...]
+}
+```
+
+Smoke check after the build:
+
+```bash
+python -c "
+import sqlite3
+c = sqlite3.connect('data/cache/dblp.sqlite')
+print('papers:',  c.execute('SELECT COUNT(*) FROM papers').fetchone()[0])
+print('authors:', c.execute('SELECT COUNT(*) FROM authors').fetchone()[0])
+print(c.execute(\"SELECT title, year, venue FROM papers WHERE title LIKE 'Attention Is All You Need%' LIMIT 1\").fetchone())
+"
+```
+
+#### 3b. ACL Anthology mirror (optional)
+
+```bash
+git clone https://github.com/acl-org/acl-anthology.git data/cache/acl_anthology_repo
+# Then in config.json:
+#   "connectors.acl_anthology_data_dir": "data/cache/acl_anthology_repo/data"
 ```
 
 ## Models and hardware
