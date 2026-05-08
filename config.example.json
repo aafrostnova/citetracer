@@ -1,5 +1,5 @@
 {
-  "citation_parse_method": "ocr_llm_extract",
+  "citation_parse_method": "ocr_vlm_extract",
   "connectors": {
     "cache_path": "data/cache/connector_cache.sqlite",
     "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
@@ -25,7 +25,7 @@
     "ncbi_email": "",
     "openalex_api_key": "",
     "web_search_provider": "tavily",
-    "tavily_api_key": "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"
+    "tavily_api_key": ""
   },
   "entry_extraction": {
     "mode": "model",
@@ -37,28 +37,20 @@
     },
     "bedrock": {
       "region": "us-east-1",
-      "bearer_token": "ABSKQmVkcm9ja0FQSUtleS04dHNxLWF0LTgzMjAxNjAxNDQyNTorT3VwTFZTY1d4MUdZNk9MdHhVb1NXMUtxd2I4S2dPV1l2OER6RWZOVjY4WC9hcHlrRytyZEtEUEFqcz0="
+      "bearer_token": ""
     }
   },
-  "citation_reparse": {
-    "enabled": false,
-    "provider": "bedrock",
-    "max_new_tokens": 4048,
-    "temperature": 0.0,
-    "bedrock": {
-      "region": "us-east-1",
-      "model_id": "qwen.qwen3-vl-235b-a22b"
-    }
-  },
-  "ocr_llm_extract": {
+  "ocr_vlm_extract": {
     "enabled": true,
+    "provider": "bedrock",
     "max_new_tokens": 4048,
     "temperature": 0.0,
     "force_all_entries": true,
     "boundary_merge_mode": "llm",
     "bedrock": {
       "region": "us-east-1",
-      "model_id": "qwen.qwen3-vl-235b-a22b"
+      "model_id": "qwen.qwen3-vl-235b-a22b",
+      "bearer_token": ""
     }
   },
   "verification_llm": {
@@ -71,4 +63,3 @@
     }
   }
 }
-

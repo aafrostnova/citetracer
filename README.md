@@ -39,7 +39,9 @@ Optional: download `DeepSeek-OCR-2` to a local path and point
 `entry_extraction.local.model_path` at it if you want OCR to run on a
 local GPU instead of Bedrock.
 
-## Quick start: verify one paper end-to-end
+## Quick start
+
+### From a PDF
 
 ```bash
 mkdir -p artifacts/demo
@@ -49,14 +51,23 @@ python -m apps.pdf_checker.run \
   --paper-workers 1 --citation-workers 8 --connector-workers 6
 ```
 
-Output per paper:
+### From a BibTeX file
+
+```bash
+python -m apps.bib_checker.run \
+  --input path/to/refs.bib \
+  --out  artifacts/demo \
+  --paper-workers 1 --citation-workers 8 --connector-workers 6
+```
+
+Output per input file:
 
 - `<stem>_report.json` — structured per-citation verdicts
 - `<stem>_report.md`   — reviewer-friendly markdown report
-- `<stem>_report.timing.json` — per-phase latency
+- `<stem>_report.timing.json` — per-phase latency (PDF only)
 
-`--input` accepts a single PDF or a directory of PDFs. `--resume` skips
-papers whose `_report.md` already exists, useful for batch jobs.
+`--input` accepts a single file or a directory. `--resume` skips inputs
+whose `_report.md` already exists, useful for batch jobs.
 
 ## Verifier-only mode (skip PDF extraction)
 
@@ -106,13 +117,34 @@ python scripts/bench_full_pipeline_bib.py \
 The pipeline reads `config.json`. Every key can also be overridden by an
 environment variable of the same name prefixed with `CITATION_CHECKER_`.
 
-| Block                   | What it controls                                                                                                       |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `entry_extraction`      | OCR model for bibliography-region detection (default: DeepSeek-OCR via local vLLM)                                     |
-| `ocr_llm_extract`       | Parser Agent that re-extracts structured fields from each cropped citation block (default: Kimi K2.5 via Bedrock)      |
-| `verification_llm`      | Matcher Agent + Class-Specialist Judgers (default: Qwen3-VL-235B via Bedrock); `max_candidates` caps top-K per source  |
-| `connectors`            | Connector cache path, DBLP mirror paths, eight academic sources, web-search provider, all related API keys             |
-| `citation_parse_method` | `"ocr_llm_extract"` (default, recommended) or `"citation_reparse"`                                                     |
+| Block                   | What it controls                                                                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `entry_extraction`      | OCR model for bibliography-region detection                                                                                       |
+| `ocr_vlm_extract`       | Parser Agent (cropped-block VLM reparse). Pick `provider: "bedrock"` or `"local"` and fill the matching sub-block.                |
+| `verification_llm`      | Matcher Agent + Class-Specialist Judgers; `max_candidates` caps top-K per source                                                  |
+| `connectors`            | Connector cache path, DBLP mirror paths, eight academic sources, web-search provider, all related API keys                        |
+| `citation_parse_method` | Fixed at `"ocr_vlm_extract"` (the legacy `citation_reparse` path was removed)                                                     |
+
+### Supported LLM backends
+
+`ocr_vlm_extract` (Parser Agent) and `verification_llm` (Matcher Agent +
+Class-Specialist Judgers) both go through the same
+`packages.llm.client.build_chat_client(...)` factory, so the same provider
+list applies to both. `entry_extraction` (the OCR M_ocr step) keeps its
+own `local` provider for DeepSeek-OCR.
+
+| `provider`     | Used by                                  | Required env / config                                                                                                                                                                              |
+| -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bedrock`      | parser, verifier, OCR                    | `bedrock.bearer_token`, `bedrock.region`, `bedrock.model_id`. Tested IDs: `qwen.qwen3-vl-235b-a22b`, `moonshotai.kimi-k2.5`, `us.anthropic.claude-opus-4-7-20251101-v1:0`, `us.anthropic.claude-sonnet-4-5-v1:0`. |
+| `openai`       | parser, verifier                         | `OPENAI_API_KEY` env, `bedrock.model_id` (interpreted as OpenAI model name; multimodal models such as `gpt-4o` / `gpt-5` are supported because `OpenAIChatShim` translates image blocks to `image_url`). |
+| `azure_openai` | parser, verifier                         | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` env, `bedrock.model_id` (interpreted as deployment name, e.g. `gpt-5.4`).                                                                          |
+| `local`        | OCR `entry_extraction` only              | `entry_extraction.local.model_path` pointing at a multimodal HF checkpoint such as DeepSeek-OCR-2; uses the in-tree vLLM bundle in `apps/pdf_checker/ingest/reference_segmenter.py`.                |
+
+Parser Agent and Verifier are cloud-API only. The local-LLM path was
+removed because the local OCR vLLM bundle and a second local LLM tend to
+fight for GPU memory and have incompatible `transformers` / `vllm`
+version requirements. Per-block fields (`max_new_tokens`, `temperature`,
+`max_candidates`) take effect under every supported provider.
 
 CLI flags worth knowing (`python -m apps.pdf_checker.run --help` for the full list):
 
@@ -130,6 +162,7 @@ CLI flags worth knowing (`python -m apps.pdf_checker.run --help` for the full li
 
 ```
 apps/pdf_checker/         end-to-end PDF entry point (run.py, config.py, ingest/)
+apps/bib_checker/         BibTeX-only entry point (skips Stage 1, runs verifier directly)
 packages/connectors/      bibliographic connectors + cache + orchestrator
 packages/core/            verifier, cascading agents, field matcher, judges
 packages/llm/             provider-agnostic LLM client (bedrock / openai / azure / local vLLM)

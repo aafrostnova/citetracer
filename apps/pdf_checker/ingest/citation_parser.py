@@ -1158,7 +1158,7 @@ def _normalize_llm_reparse_result(payload: Mapping[str, Any]) -> dict[str, Any]:
 def _load_llm_reparse_bundle(model_path: str) -> tuple[Any, Any]:
     path = (model_path or "").strip()
     if not path:
-        raise RuntimeError("citation_reparse.model_path is empty.")
+        raise RuntimeError("ocr_vlm_extract.local.model_path is empty.")
 
     with _LLM_REPARSE_MODEL_CACHE_LOCK:
         cached = _LLM_REPARSE_MODEL_CACHE.get(path)
@@ -1367,8 +1367,9 @@ def _build_paper_style_hint(paper_style: str) -> str:
     return guide + "\n"
 
 
-def _run_llm_reparse_on_raw_bedrock(
+def _run_llm_reparse_on_raw_chat_client(
     raw_text: str,
+    provider: str,
     model_id: str,
     region: str,
     bearer_token: str | None,
@@ -1377,7 +1378,17 @@ def _run_llm_reparse_on_raw_bedrock(
     reference_page_images: list[bytes] | None = None,
     paper_style: str = "",
 ) -> dict[str, Any] | None:
-    client = _build_bedrock_client(region=region, bearer_token=bearer_token)
+    """Run the cropped-block VLM reparse against any cloud provider that
+    `packages.llm.client.build_chat_client` supports: ``bedrock``,
+    ``openai``, or ``azure_openai``. All three accept the same multimodal
+    message envelope thanks to the OpenAIChatShim image-block translation.
+    The local-vLLM path is handled by ``_run_llm_reparse_on_raw`` below."""
+    from packages.llm.client import build_chat_client
+    client = build_chat_client(
+        provider=provider,
+        region=region,
+        bearer_token=bearer_token,
+    )
 
     n_images = len(reference_page_images) if reference_page_images else 0
     common_image_block = (
@@ -1545,24 +1556,21 @@ def _apply_llm_reparse_if_needed(
     if paper_style:
         parsed_fields["llm_reparse_paper_style"] = paper_style
     try:
-        if provider == "bedrock":
-            parsed = _run_llm_reparse_on_raw_bedrock(
-                raw_text=record.raw_text,
-                model_id=bedrock_model_id,
-                region=bedrock_region,
-                bearer_token=bedrock_bearer_token,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                reference_page_images=reference_page_images,
-                paper_style=paper_style,
-            )
-        else:
-            parsed = _run_llm_reparse_on_raw(
-                raw_text=record.raw_text,
-                model_path=model_path,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-            )
+        # bedrock / openai / azure_openai all share the same chat-client
+        # interface via build_chat_client(); a single code path handles them.
+        # The legacy local-HF path was removed because the OCR vLLM bundle
+        # and a second local LLM tend to fight for GPU memory.
+        parsed = _run_llm_reparse_on_raw_chat_client(
+            raw_text=record.raw_text,
+            provider=provider,
+            model_id=bedrock_model_id,
+            region=bedrock_region,
+            bearer_token=bedrock_bearer_token,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            reference_page_images=reference_page_images,
+            paper_style=paper_style,
+        )
     except Exception as exc:
         parsed_fields["llm_reparse_error"] = str(exc)
         record.parsed_fields = parsed_fields

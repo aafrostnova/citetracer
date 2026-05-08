@@ -1,10 +1,8 @@
 """End-to-end PDF citation hallucination check pipeline.
 
-Combines the extraction modes from `pdf_extractor_demo.py` (heuristic config /
-ocr_llm_extract) with the verifier wiring from `citation_verification_demo.py`
-(cascading 3-agent + secondary verifier + optional source router).
-
-Replaces the old minimal `run_pdf_check` which used only rule-based adjudication.
+Combines the OCR + VLM force-reparse Parser Agent (ocr_vlm_extract) with the
+verifier wiring from citation_verification_demo.py (cascading multi-agent
+collector + secondary verifier + optional source router).
 """
 
 from __future__ import annotations
@@ -134,63 +132,60 @@ def _wrap_for_terminal(text: str, prefix: str = "", width: int = 200) -> str:
 def _build_llm_reparse_config(cfg) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the llm_reparse_config dict and metadata describing it.
 
-    Path is selected by `cfg.citation_parse_method`:
-      - "citation_reparse" (default) → use cfg.citation_reparse as-is
-      - "ocr_llm_extract"            → use cfg.ocr_llm_extract (force-all + bedrock)
+    The pipeline always runs the OCR+VLM force-reparse path. Provider is
+    one of ``bedrock`` / ``openai`` / ``azure_openai`` (cloud APIs only;
+    the legacy local-HF reparse path was removed for GPU-memory reasons).
     """
-    method = cfg.citation_parse_method
-
-    if method == "citation_reparse":
-        llm_cfg = asdict(cfg.citation_reparse)
-        meta = {
-            "pipeline_method": "citation_reparse",
-            "llm_reparse_enabled": bool(llm_cfg.get("enabled")),
-            "llm_reparse_provider": str(llm_cfg.get("provider", "")),
-        }
-        return llm_cfg, meta
-
-    # ocr_llm_extract — force-all Bedrock reparse on every entry
-    if not cfg.ocr_llm_extract.enabled:
+    if not cfg.ocr_vlm_extract.enabled:
         raise RuntimeError(
-            "citation_parse_method=ocr_llm_extract requires ocr_llm_extract.enabled=true "
-            "and a valid bedrock model_id in config.json."
+            "ocr_vlm_extract.enabled=true and a remote model_id are required."
         )
 
-    model_id = str(cfg.ocr_llm_extract.bedrock.model_id or "").strip()
-    region = str(cfg.ocr_llm_extract.bedrock.region or "").strip() or "us-east-1"
-    bearer_token = str(cfg.ocr_llm_extract.bedrock.bearer_token or "").strip() or None
+    provider = (cfg.ocr_vlm_extract.provider or "bedrock").strip().lower()
+    paper_style = str(
+        getattr(cfg.ocr_vlm_extract, "paper_style", "") or ""
+    ).strip().lower()
+
+    # provider in {"bedrock", "openai", "azure_openai"} — they all read the
+    # remote model_id from cfg.ocr_vlm_extract.bedrock.model_id (interpreted
+    # as deployment name for azure_openai, model name for openai). Auth for
+    # openai/azure_openai is taken from environment variables; bedrock auth
+    # uses cfg.ocr_vlm_extract.bedrock.bearer_token.
+    model_id = str(cfg.ocr_vlm_extract.bedrock.model_id or "").strip()
+    region = str(cfg.ocr_vlm_extract.bedrock.region or "").strip() or "us-east-1"
+    bearer_token = str(cfg.ocr_vlm_extract.bedrock.bearer_token or "").strip() or None
     if not model_id:
         raise RuntimeError(
-            "citation_parse_method=ocr_llm_extract requires "
-            "ocr_llm_extract.bedrock.model_id in config.json."
+            f"ocr_vlm_extract.provider={provider} requires "
+            "ocr_vlm_extract.bedrock.model_id in config.json "
+            "(used as deployment name for azure_openai, model name for openai)."
         )
 
     llm_cfg = {
         "enabled": True,
-        "provider": "bedrock",
+        "provider": provider,
         "model_path": "",
-        "max_new_tokens": int(cfg.ocr_llm_extract.max_new_tokens),
-        "temperature": float(cfg.ocr_llm_extract.temperature),
-        "force_all_entries": bool(cfg.ocr_llm_extract.force_all_entries),
+        "max_new_tokens": int(cfg.ocr_vlm_extract.max_new_tokens),
+        "temperature": float(cfg.ocr_vlm_extract.temperature),
+        "force_all_entries": bool(cfg.ocr_vlm_extract.force_all_entries),
         "parallel_workers": 8,
-        "paper_style": str(getattr(cfg.ocr_llm_extract, "paper_style", "") or "").strip().lower(),
+        "paper_style": paper_style,
         "bedrock": {
             "model_id": model_id,
             "region": region,
             "bearer_token": bearer_token,
         },
     }
-
     meta = {
-        "pipeline_method": "ocr_llm_extract",
-        "llm_reparse_provider_forced": "bedrock",
+        "pipeline_method": "ocr_vlm_extract",
+        "llm_reparse_provider": provider,
         "llm_reparse_model_id": model_id,
         "llm_reparse_region": region,
         "llm_reparse_force_all_entries": bool(llm_cfg["force_all_entries"]),
         "llm_reparse_max_new_tokens": int(llm_cfg["max_new_tokens"]),
         "llm_reparse_temperature": float(llm_cfg["temperature"]),
         "llm_reparse_parallel_workers": int(llm_cfg["parallel_workers"]),
-        "llm_reparse_paper_style": llm_cfg.get("paper_style", "") or "(generic)",
+        "llm_reparse_paper_style": paper_style or "(generic)",
     }
     return llm_cfg, meta
 
@@ -222,10 +217,10 @@ def _extract_and_parse(
         local_model_path=cfg.entry_extraction.local.model_path,
         local_inference_backend=cfg.entry_extraction.local.inference_backend,
         source_pdf_path=pdf,
-        boundary_merge_mode=cfg.ocr_llm_extract.boundary_merge_mode,
-        boundary_merge_model_id=cfg.ocr_llm_extract.bedrock.model_id,
-        boundary_merge_region=cfg.ocr_llm_extract.bedrock.region,
-        boundary_merge_bearer_token=cfg.ocr_llm_extract.bedrock.bearer_token,
+        boundary_merge_mode=cfg.ocr_vlm_extract.boundary_merge_mode,
+        boundary_merge_model_id=cfg.ocr_vlm_extract.bedrock.model_id,
+        boundary_merge_region=cfg.ocr_vlm_extract.bedrock.region,
+        boundary_merge_bearer_token=cfg.ocr_vlm_extract.bedrock.bearer_token,
     )
     _log(
         verbose,
@@ -542,11 +537,14 @@ def _build_verifier(cfg, args: argparse.Namespace, verbose: bool) -> CitationVer
         url_direct_connector=url_direct_conn,
     )
 
-    # Cascading 3-agent + extractor agent + author classifier (Bedrock)
+    # Cascading 3-agent + extractor agent + author classifier. Provider can be
+    # bedrock / openai / azure_openai / local — they all expose the same
+    # `.converse(...)` API via packages.llm.client.build_chat_client, so the
+    # agent classes accept any of them.
     valid_agent = potential_agent = hallucinated_agent = extractor_agent = None
     author_classifier = None
-    if cfg.verification_llm.enabled and cfg.verification_llm.provider == "bedrock":
-        from citation_verification_demo import _build_bedrock_client
+    if cfg.verification_llm.enabled:
+        from packages.llm.client import build_chat_client
         from packages.core.bedrock_agents import (
             BedrockFieldClassifier,
             BedrockHallucinatedAgent,
@@ -555,17 +553,19 @@ def _build_verifier(cfg, args: argparse.Namespace, verbose: bool) -> CitationVer
         )
         from packages.core.extractor_agent import BedrockExtractorAgent
 
-        bedrock_client = _build_bedrock_client(
+        provider = cfg.verification_llm.provider or "bedrock"
+        chat_client = build_chat_client(
+            provider=provider,
             region=cfg.verification_llm.bedrock.region,
             bearer_token=cfg.verification_llm.bedrock.bearer_token,
         )
         model_id = str(cfg.verification_llm.bedrock.model_id)
-        valid_agent = BedrockValidAgent(bedrock_client, model_id)
-        potential_agent = BedrockPotentialAgent(bedrock_client, model_id)
-        hallucinated_agent = BedrockHallucinatedAgent(bedrock_client, model_id)
-        extractor_agent = BedrockExtractorAgent(bedrock_client, model_id)
-        author_classifier = BedrockFieldClassifier(bedrock_client, model_id)
-        _log(verbose, f"      cascading 3-agent + field classifier (authors/venue/publisher) + extractor enabled (model={model_id})")
+        valid_agent = BedrockValidAgent(chat_client, model_id)
+        potential_agent = BedrockPotentialAgent(chat_client, model_id)
+        hallucinated_agent = BedrockHallucinatedAgent(chat_client, model_id)
+        extractor_agent = BedrockExtractorAgent(chat_client, model_id)
+        author_classifier = BedrockFieldClassifier(chat_client, model_id)
+        _log(verbose, f"      cascading 3-agent + field classifier + extractor enabled (provider={provider}, model={model_id})")
     else:
         _log(verbose, "      cascading agents disabled (no verification LLM)")
 
@@ -1122,9 +1122,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", required=True, help="Path to input PDF.")
     parser.add_argument("--out", required=True, help="Path to output JSON report.")
 
-    # NOTE: extraction method is now controlled entirely by config.json's
-    # `citation_parse_method` field ("citation_reparse" or "ocr_llm_extract"),
-    # not by CLI flags. To switch methods, edit config.json.
+    # NOTE: extraction method is fixed to ocr_vlm_extract; provider
+    # (bedrock vs local) is controlled by config.json's
+    # ocr_vlm_extract.provider field.
 
     # Connector overrides (mirrors citation_verification_demo.py)
     parser.add_argument(

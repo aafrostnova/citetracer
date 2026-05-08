@@ -56,25 +56,12 @@ class PDFEntryExtractionConfig:
 class PDFCheckerConfig:
     connectors: ConnectorRuntimeConfig
     entry_extraction: PDFEntryExtractionConfig
-    citation_reparse: "CitationReparseConfig"
     verification_llm: "VerificationLLMConfig"
-    ocr_llm_extract: "OCRLLMExtractConfig"
-    # Top-level switch: which citation parsing path to use in run.py.
-    #   "citation_reparse" — use config.citation_reparse as-is (only reparse
-    #                        entries with missing core fields).
-    #   "ocr_llm_extract"  — use config.ocr_llm_extract (force-reparse all
-    #                        entries via Bedrock).
-    citation_parse_method: str = "citation_reparse"
-
-
-@dataclass(frozen=True)
-class CitationReparseConfig:
-    enabled: bool
-    provider: str
-    model_path: str | None
-    max_new_tokens: int
-    temperature: float
-    bedrock: BedrockAuthConfig
+    ocr_vlm_extract: "OCRVLMExtractConfig"
+    # Pipeline always uses ocr_vlm_extract (force-reparse all entries through
+    # the cropped-block VLM Parser Agent). The legacy ``citation_reparse``
+    # path was removed.
+    citation_parse_method: str = "ocr_vlm_extract"
 
 
 @dataclass(frozen=True)
@@ -86,8 +73,11 @@ class VerificationLLMConfig:
 
 
 @dataclass(frozen=True)
-class OCRLLMExtractConfig:
+class OCRVLMExtractConfig:
+    """Parser Agent that runs a cropped-block VLM reparse on every detected
+    citation block. Cloud-API providers only (bedrock / openai / azure_openai)."""
     enabled: bool
+    provider: str  # "bedrock" | "openai" | "azure_openai"
     max_new_tokens: int
     temperature: float
     force_all_entries: bool
@@ -192,27 +182,33 @@ def _parse_boundary_merge_mode(value: Any) -> str:
     return "rule"
 
 
+# Parser Agent + Verifier go through cloud APIs only. The local-model
+# path is currently impractical because the OCR vLLM bundle and a second
+# local LLM tend to fight for GPU memory and have incompatible
+# transformers/vllm version requirements; dropping local here keeps the
+# release surface small. (M_ocr / entry_extraction still supports
+# `local` because DeepSeek-OCR only runs on-device.)
+_SUPPORTED_PROVIDERS = {"bedrock", "openai", "azure_openai"}
+
+
 def _parse_verification_provider(value: Any) -> str:
     provider = str(value).strip().lower()
-    if provider in {"bedrock"}:
+    if provider in _SUPPORTED_PROVIDERS:
         return provider
     return "bedrock"
 
 
-def _parse_reparse_provider(value: Any) -> str:
+def _parse_vlm_extract_provider(value: Any) -> str:
     provider = str(value).strip().lower()
-    if provider in {"local", "bedrock"}:
+    if provider in _SUPPORTED_PROVIDERS:
         return provider
-    return "local"
+    return "bedrock"
 
 
 def _parse_citation_parse_method(value: Any) -> str:
-    method = str(value or "").strip().lower()
-    if method in {"ocr_parse_llm_fix"}:  # backward-compat alias
-        return "ocr_llm_extract"
-    if method in {"citation_reparse", "ocr_llm_extract"}:
-        return method
-    return "citation_reparse"
+    # Only one path remains; the legacy "citation_reparse" knob was removed.
+    # Backward-compat: any non-empty value collapses to "ocr_vlm_extract".
+    return "ocr_vlm_extract"
 
 
 def _parse_web_search_provider(value: Any) -> str | None:
@@ -445,46 +441,12 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or "hf"
     )
 
-    reparse_enabled = _parse_bool(
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_ENABLED")
-        or _get_nested(payload, ["citation_reparse", "enabled"]),
-        default=False,
-    )
-    reparse_model_path = (
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_MODEL_PATH")
-        or _optional_payload_str(payload, ["citation_reparse", "model_path"])
-    )
-    reparse_provider = _parse_reparse_provider(
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_PROVIDER")
-        or _optional_payload_str(payload, ["citation_reparse", "provider"])
-        or "local"
-    )
-    reparse_max_new_tokens = _parse_positive_int(
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_MAX_NEW_TOKENS")
-        or _get_nested(payload, ["citation_reparse", "max_new_tokens"])
-        or 32768,
-        default=32768,
-    )
-    reparse_temperature = _parse_temperature(
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_TEMPERATURE")
-        or _get_nested(payload, ["citation_reparse", "temperature"])
-        or 0.0,
-        default=0.0,
-    )
-    reparse_bedrock_region = (
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_BEDROCK_REGION")
-        or _optional_payload_str(payload, ["citation_reparse", "bedrock", "region"])
-        or region
-    )
-    reparse_bedrock_model_id = (
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_BEDROCK_MODEL_ID")
-        or _optional_payload_str(payload, ["citation_reparse", "bedrock", "model_id"])
-    )
-    reparse_bedrock_bearer_token = (
-        _optional_str(env, "CITATION_CHECKER_LLM_REPARSE_BEDROCK_BEARER_TOKEN")
-        or _optional_payload_str(payload, ["citation_reparse", "bedrock", "bearer_token"])
-        or bearer_token
-    )
+    # ocr_vlm_extract default fallbacks (used by the renamed block below)
+    reparse_max_new_tokens = 32768
+    reparse_temperature = 0.0
+    reparse_bedrock_region = region
+    reparse_bedrock_model_id = None
+    reparse_bedrock_bearer_token = bearer_token
     verification_enabled = _parse_bool(
         _optional_str(env, "CITATION_CHECKER_VERIFICATION_LLM_ENABLED")
         or _get_nested(payload, ["verification_llm", "enabled"]),
@@ -515,92 +477,97 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
         or _optional_payload_str(payload, ["verification_llm", "bedrock", "bearer_token"])
         or bearer_token
     )
-    ocr_llm_extract_enabled = _parse_bool(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENABLED")
-        or _get_nested(payload, ["ocr_llm_extract", "enabled"]),
+    ocr_vlm_extract_enabled = _parse_bool(
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENABLED")
+        or _get_nested(payload, ["ocr_vlm_extract", "enabled"]),
         default=False,
     )
-    ocr_llm_extract_max_new_tokens = _parse_positive_int(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_MAX_NEW_TOKENS")
-        or _get_nested(payload, ["ocr_llm_extract", "max_new_tokens"])
+    ocr_vlm_extract_max_new_tokens = _parse_positive_int(
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_MAX_NEW_TOKENS")
+        or _get_nested(payload, ["ocr_vlm_extract", "max_new_tokens"])
         or reparse_max_new_tokens,
         default=reparse_max_new_tokens,
     )
-    ocr_llm_extract_temperature = _parse_temperature(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_TEMPERATURE")
-        or _get_nested(payload, ["ocr_llm_extract", "temperature"])
+    ocr_vlm_extract_temperature = _parse_temperature(
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_TEMPERATURE")
+        or _get_nested(payload, ["ocr_vlm_extract", "temperature"])
         or reparse_temperature,
         default=reparse_temperature,
     )
-    ocr_llm_extract_force_all_entries = _parse_bool(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_FORCE_ALL_ENTRIES")
-        or _get_nested(payload, ["ocr_llm_extract", "force_all_entries"]),
+    ocr_vlm_extract_force_all_entries = _parse_bool(
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_FORCE_ALL_ENTRIES")
+        or _get_nested(payload, ["ocr_vlm_extract", "force_all_entries"]),
         default=True,
     )
-    ocr_llm_extract_paper_style = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_PAPER_STYLE")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "paper_style"])
+    ocr_vlm_extract_paper_style = (
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_PAPER_STYLE")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "paper_style"])
         or ""
     )
-    ocr_llm_extract_region = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_BEDROCK_REGION")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "bedrock", "region"])
+    ocr_vlm_extract_region = (
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_BEDROCK_REGION")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "bedrock", "region"])
         or reparse_bedrock_region
     )
-    ocr_llm_extract_model_id = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_BEDROCK_MODEL_ID")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "bedrock", "model_id"])
+    ocr_vlm_extract_model_id = (
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_BEDROCK_MODEL_ID")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "bedrock", "model_id"])
         or reparse_bedrock_model_id
     )
-    ocr_llm_extract_bearer_token = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_BEDROCK_BEARER_TOKEN")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "bedrock", "bearer_token"])
+    ocr_vlm_extract_bearer_token = (
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_BEDROCK_BEARER_TOKEN")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "bedrock", "bearer_token"])
         or reparse_bedrock_bearer_token
     )
     ocr_entry_mode = _parse_entry_mode(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENTRY_MODE")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "mode"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENTRY_MODE")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "mode"])
         or _resolve_entry_mode(explicit_mode, bearer_token, local_model_path)
     )
     ocr_entry_provider = _parse_model_provider(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENTRY_PROVIDER")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "provider"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENTRY_PROVIDER")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "provider"])
         or _resolve_model_provider(explicit_provider, bearer_token, local_model_path)
     )
     ocr_entry_chunk_chars = _parse_chunk_chars(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENTRY_CHUNK_CHARS")
-        or _get_nested(payload, ["ocr_llm_extract", "entry_extraction", "chunk_chars"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENTRY_CHUNK_CHARS")
+        or _get_nested(payload, ["ocr_vlm_extract", "entry_extraction", "chunk_chars"])
         or chunk_chars_value
     )
     ocr_entry_local_model_path = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_LOCAL_MODEL_PATH")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "local", "model_path"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_LOCAL_MODEL_PATH")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "local", "model_path"])
         or local_model_path
     )
     ocr_entry_local_inference_backend = _parse_local_inference_backend(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_LOCAL_INFERENCE_BACKEND")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "local", "inference_backend"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_LOCAL_INFERENCE_BACKEND")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "local", "inference_backend"])
         or local_inference_backend
         or "hf"
     )
     ocr_entry_region = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENTRY_BEDROCK_REGION")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "bedrock", "region"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENTRY_BEDROCK_REGION")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "bedrock", "region"])
         or region
     )
     ocr_entry_model_id = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENTRY_BEDROCK_MODEL_ID")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "bedrock", "model_id"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENTRY_BEDROCK_MODEL_ID")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "bedrock", "model_id"])
         or _resolve_model_id(explicit_model_id, bearer_token)
     )
     ocr_entry_bearer_token = (
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_ENTRY_BEDROCK_BEARER_TOKEN")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "entry_extraction", "bedrock", "bearer_token"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_ENTRY_BEDROCK_BEARER_TOKEN")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "entry_extraction", "bedrock", "bearer_token"])
         or bearer_token
     )
     ocr_boundary_merge_mode = _parse_boundary_merge_mode(
-        _optional_str(env, "CITATION_CHECKER_OCR_LLM_EXTRACT_BOUNDARY_MERGE_MODE")
-        or _optional_payload_str(payload, ["ocr_llm_extract", "boundary_merge_mode"])
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_BOUNDARY_MERGE_MODE")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "boundary_merge_mode"])
+    )
+    ocr_vlm_extract_provider = _parse_vlm_extract_provider(
+        _optional_str(env, "CITATION_CHECKER_OCR_VLM_EXTRACT_PROVIDER")
+        or _optional_payload_str(payload, ["ocr_vlm_extract", "provider"])
+        or "bedrock"
     )
 
     return PDFCheckerConfig(
@@ -638,25 +605,6 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
                 inference_backend=local_inference_backend,
             ),
         ),
-        citation_reparse=CitationReparseConfig(
-            enabled=(
-                reparse_enabled
-                and (
-                    bool(reparse_model_path)
-                    if reparse_provider == "local"
-                    else bool(reparse_bedrock_model_id)
-                )
-            ),
-            provider=reparse_provider,
-            model_path=reparse_model_path,
-            max_new_tokens=reparse_max_new_tokens,
-            temperature=reparse_temperature,
-            bedrock=BedrockAuthConfig(
-                region=reparse_bedrock_region,
-                model_id=reparse_bedrock_model_id,
-                bearer_token=reparse_bedrock_bearer_token,
-            ),
-        ),
         verification_llm=VerificationLLMConfig(
             enabled=verification_enabled and bool(verification_model_id),
             provider=verification_provider,
@@ -668,11 +616,12 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
             ),
         ),
         citation_parse_method=citation_parse_method,
-        ocr_llm_extract=OCRLLMExtractConfig(
-            enabled=ocr_llm_extract_enabled and bool(ocr_llm_extract_model_id),
-            max_new_tokens=ocr_llm_extract_max_new_tokens,
-            temperature=ocr_llm_extract_temperature,
-            force_all_entries=ocr_llm_extract_force_all_entries,
+        ocr_vlm_extract=OCRVLMExtractConfig(
+            enabled=ocr_vlm_extract_enabled and bool(ocr_vlm_extract_model_id),
+            provider=ocr_vlm_extract_provider,
+            max_new_tokens=ocr_vlm_extract_max_new_tokens,
+            temperature=ocr_vlm_extract_temperature,
+            force_all_entries=ocr_vlm_extract_force_all_entries,
             entry_extraction=PDFEntryExtractionConfig(
                 mode=ocr_entry_mode,
                 provider=ocr_entry_provider,
@@ -688,11 +637,11 @@ def load_pdf_checker_config(env: Mapping[str, str] | None = None) -> PDFCheckerC
                 ),
             ),
             bedrock=BedrockAuthConfig(
-                region=ocr_llm_extract_region,
-                model_id=ocr_llm_extract_model_id,
-                bearer_token=ocr_llm_extract_bearer_token,
+                region=ocr_vlm_extract_region,
+                model_id=ocr_vlm_extract_model_id,
+                bearer_token=ocr_vlm_extract_bearer_token,
             ),
             boundary_merge_mode=ocr_boundary_merge_mode,
-            paper_style=ocr_llm_extract_paper_style.strip().lower(),
+            paper_style=ocr_vlm_extract_paper_style.strip().lower(),
         ),
     )
