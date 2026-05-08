@@ -93,7 +93,7 @@ are free without authentication; a few accept a key for higher quota.
 ### Web Search backends (`connectors.web_search_provider`)
 
 The Web Agent needs one general-web search backend to close the cascade
-for long-tail citations. The three options below are functionally
+for long-tail citations. The two options below are functionally
 interchangeable: each returns the top-5 results as
 `{url, title, snippet}` and the rest of the pipeline does not care which
 one produced them. Pick whichever you have credentials for.
@@ -102,7 +102,6 @@ one produced them. Pick whichever you have credentials for.
 | --------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `tavily`              | `tavily_api_key`                                       | Default. Tavily's own LLM-oriented index; snippets are markdown excerpts of the page body.  |
 | `serpapi`             | `serpapi_key`                                          | Wraps Google Search through SerpAPI; snippets are Google's native snippets.                 |
-| `google_cse`          | `google_api_key` + `google_cse_id`                     | Direct Google Custom Search Engine; cheaper at scale but rate-limited by Google.            |
 
 If you set `web_search_provider` to a value whose key is not configured,
 the Web Agent stage logs a warning and is skipped (the rest of the
