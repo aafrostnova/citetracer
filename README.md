@@ -28,16 +28,59 @@ cd Citation_Hallucination_Detection
 # 2) install (Python 3.10+)
 pip install -r requirements.txt
 
-# 3) configure
+# 3) configure (edit the keys described in "Configuration" below)
 cp config.example.json config.json
-# edit config.json: fill in API keys (Bedrock bearer token or OpenAI/Azure
-# key, plus Semantic Scholar / OpenAlex / NCBI / Tavily as needed) and the
-# DBLP sqlite path. See "Configuration" below for the full list.
 ```
 
 Optional: download `DeepSeek-OCR-2` to a local path and point
 `entry_extraction.local.model_path` at it if you want OCR to run on a
 local GPU instead of Bedrock.
+
+## Configuration
+
+The pipeline reads `config.json`. Every key can also be overridden by an
+environment variable of the same name prefixed with `CITATION_CHECKER_`.
+
+| Block                   | What it controls                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `entry_extraction`      | OCR model for bibliography-region detection (PDF only).                                                                   |
+| `ocr_vlm_extract`       | Parser Agent (cropped-block VLM reparse). Set `provider` to a cloud API and fill the matching sub-block.                  |
+| `verification_llm`      | Matcher Agent + Class-Specialist Judgers. `max_candidates` caps top-K candidates per source.                              |
+| `connectors`            | Connector cache path, DBLP mirror paths, eight academic sources, web-search provider, all related API keys.               |
+| `citation_parse_method` | Fixed at `"ocr_vlm_extract"`.                                                                                             |
+
+### Supported LLM backends
+
+`ocr_vlm_extract` (Parser Agent) and `verification_llm` (Matcher Agent +
+Class-Specialist Judgers) both go through the same
+`packages.llm.client.build_chat_client(...)` factory, so the same provider
+list applies to both. `entry_extraction` (the OCR M_ocr step) keeps its
+own `local` provider for DeepSeek-OCR.
+
+| `provider`     | Used by                                  | Required env / config                                                                                                                                                                              |
+| -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bedrock`      | parser, verifier, OCR                    | `bedrock.bearer_token`, `bedrock.region`, `bedrock.model_id`. Tested IDs: `qwen.qwen3-vl-235b-a22b`, `moonshotai.kimi-k2.5`, `us.anthropic.claude-opus-4-7-20251101-v1:0`, `us.anthropic.claude-sonnet-4-5-v1:0`. |
+| `openai`       | parser, verifier                         | `OPENAI_API_KEY` env, `bedrock.model_id` (interpreted as OpenAI model name; multimodal models such as `gpt-4o` / `gpt-5` are supported because `OpenAIChatShim` translates image blocks to `image_url`). |
+| `azure_openai` | parser, verifier                         | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` env, `bedrock.model_id` (interpreted as deployment name, e.g. `gpt-5.4`).                                                                          |
+| `local`        | OCR `entry_extraction` only              | `entry_extraction.local.model_path` pointing at a multimodal HF checkpoint such as DeepSeek-OCR-2; uses the in-tree vLLM bundle in `apps/pdf_checker/ingest/reference_segmenter.py`.                |
+
+Parser Agent and Verifier are cloud-API only. The local-LLM path was
+removed because the local OCR vLLM bundle and a second local LLM tend to
+fight for GPU memory and have incompatible `transformers` / `vllm`
+version requirements. Per-block fields (`max_new_tokens`, `temperature`,
+`max_candidates`) take effect under every supported provider.
+
+CLI flags worth knowing (`python -m apps.pdf_checker.run --help` for the full list):
+
+| flag                   | default | purpose                                                  |
+| ---------------------- | ------- | -------------------------------------------------------- |
+| `--paper-workers`      | 2       | parallel papers when `--input` is a directory            |
+| `--citation-workers`   | 4       | parallel citations within each paper                     |
+| `--connector-workers`  | 8       | parallel connector calls per citation                    |
+| `--offline-only`       | off     | skip every online connector (use local DBLP only)        |
+| `--extract-only`       | off     | run Stages 1-2 only and dump parsed citations            |
+| `--resume`             | off     | skip papers whose `_report.md` already exists            |
+| `--save-ocr-artifacts` | off     | persist OCR debug artifacts under `<out>/ocr_artifacts/` |
 
 ## Quick start
 
@@ -71,7 +114,7 @@ whose `_report.md` already exists, useful for batch jobs.
 
 ## Verifier-only mode (skip PDF extraction)
 
-If your input is structured BibTeX records or already-parsed citations,
+If your input is already-parsed citations,
 skip Stage 1 and run only the cascade plus judges. Inputs are JSON files
 with the schema produced by Stage 1 (`results/eval_*_rule_based.json`).
 
@@ -111,52 +154,6 @@ python scripts/bench_full_pipeline_bib.py \
   --workers 32 --per-subtype 15 --limit 200 \
   --out results/bench_full_bib_smoke
 ```
-
-## Configuration
-
-The pipeline reads `config.json`. Every key can also be overridden by an
-environment variable of the same name prefixed with `CITATION_CHECKER_`.
-
-| Block                   | What it controls                                                                                                                  |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `entry_extraction`      | OCR model for bibliography-region detection                                                                                       |
-| `ocr_vlm_extract`       | Parser Agent (cropped-block VLM reparse). Pick `provider: "bedrock"` or `"local"` and fill the matching sub-block.                |
-| `verification_llm`      | Matcher Agent + Class-Specialist Judgers; `max_candidates` caps top-K per source                                                  |
-| `connectors`            | Connector cache path, DBLP mirror paths, eight academic sources, web-search provider, all related API keys                        |
-| `citation_parse_method` | Fixed at `"ocr_vlm_extract"` (the legacy `citation_reparse` path was removed)                                                     |
-
-### Supported LLM backends
-
-`ocr_vlm_extract` (Parser Agent) and `verification_llm` (Matcher Agent +
-Class-Specialist Judgers) both go through the same
-`packages.llm.client.build_chat_client(...)` factory, so the same provider
-list applies to both. `entry_extraction` (the OCR M_ocr step) keeps its
-own `local` provider for DeepSeek-OCR.
-
-| `provider`     | Used by                                  | Required env / config                                                                                                                                                                              |
-| -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bedrock`      | parser, verifier, OCR                    | `bedrock.bearer_token`, `bedrock.region`, `bedrock.model_id`. Tested IDs: `qwen.qwen3-vl-235b-a22b`, `moonshotai.kimi-k2.5`, `us.anthropic.claude-opus-4-7-20251101-v1:0`, `us.anthropic.claude-sonnet-4-5-v1:0`. |
-| `openai`       | parser, verifier                         | `OPENAI_API_KEY` env, `bedrock.model_id` (interpreted as OpenAI model name; multimodal models such as `gpt-4o` / `gpt-5` are supported because `OpenAIChatShim` translates image blocks to `image_url`). |
-| `azure_openai` | parser, verifier                         | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` env, `bedrock.model_id` (interpreted as deployment name, e.g. `gpt-5.4`).                                                                          |
-| `local`        | OCR `entry_extraction` only              | `entry_extraction.local.model_path` pointing at a multimodal HF checkpoint such as DeepSeek-OCR-2; uses the in-tree vLLM bundle in `apps/pdf_checker/ingest/reference_segmenter.py`.                |
-
-Parser Agent and Verifier are cloud-API only. The local-LLM path was
-removed because the local OCR vLLM bundle and a second local LLM tend to
-fight for GPU memory and have incompatible `transformers` / `vllm`
-version requirements. Per-block fields (`max_new_tokens`, `temperature`,
-`max_candidates`) take effect under every supported provider.
-
-CLI flags worth knowing (`python -m apps.pdf_checker.run --help` for the full list):
-
-| flag                   | default | purpose                                                  |
-| ---------------------- | ------- | -------------------------------------------------------- |
-| `--paper-workers`      | 2       | parallel papers when `--input` is a directory            |
-| `--citation-workers`   | 4       | parallel citations within each paper                     |
-| `--connector-workers`  | 8       | parallel connector calls per citation                    |
-| `--offline-only`       | off     | skip every online connector (use local DBLP only)        |
-| `--extract-only`       | off     | run Stages 1-2 only and dump parsed citations            |
-| `--resume`             | off     | skip papers whose `_report.md` already exists            |
-| `--save-ocr-artifacts` | off     | persist OCR debug artifacts under `<out>/ocr_artifacts/` |
 
 ## Repository layout
 
