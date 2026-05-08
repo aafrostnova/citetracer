@@ -1,5 +1,8 @@
 {
+  "_documentation": "See README.md `Configuration` section for the full schema. The active provider for each LLM block is selected by its `provider` field; sibling keys prefixed with `_` are documentation-only and ignored by the loader.",
+
   "citation_parse_method": "ocr_vlm_extract",
+
   "connectors": {
     "cache_path": "data/cache/connector_cache.sqlite",
     "dblp_mirror_path": "data/cache/dblp_mirror.jsonl",
@@ -17,17 +20,23 @@
       "semantic_scholar",
       "web_search"
     ],
-    "_searxng_search_optional_note": "add 'searxng_search' to enabled_sources above to enable; uses searxng_base_url below",
-    "searxng_base_url": "http://127.0.0.1:8080",
-    "semantic_scholar_api_key": "",
+
+    "_web_search_provider_options": "tavily | serpapi (functionally interchangeable for the Web Agent)",
+    "web_search_provider": "tavily",
+    "tavily_api_key": "",
     "serpapi_key": "",
+
+    "_optional_keys": "All keys below are optional; the connector either works without them (free tier) or accepts the key for higher quota. Leave empty to skip.",
+    "semantic_scholar_api_key": "",
     "ncbi_api_key": "",
     "ncbi_email": "",
+    "openalex_mailto": "",
     "openalex_api_key": "",
-    "web_search_provider": "tavily",
-    "tavily_api_key": ""
+    "searxng_base_url": "http://127.0.0.1:8080"
   },
+
   "entry_extraction": {
+    "_doc": "OCR M_ocr step. Image-to-text is performed by the local DeepSeek-OCR vLLM bundle; the Bedrock branch only exists for already-extracted text-block segmentation and is rarely used.",
     "mode": "model",
     "provider": "local",
     "chunk_chars": 12000,
@@ -40,10 +49,18 @@
       "bearer_token": ""
     }
   },
+
   "ocr_vlm_extract": {
+    "_doc": "Parser Agent (cropped-block VLM reparse). Set `provider` to one of: bedrock | openai | azure_openai. The block below carries credentials for whichever provider is active.",
+    "_provider_examples": {
+      "bedrock":      {"provider": "bedrock",      "bedrock": {"region": "us-east-1", "model_id": "qwen.qwen3-vl-235b-a22b", "bearer_token": "<bearer-token>"}},
+      "openai":       {"provider": "openai",       "bedrock": {"model_id": "gpt-5"},   "_env": "OPENAI_API_KEY"},
+      "azure_openai": {"provider": "azure_openai", "bedrock": {"model_id": "<deployment-name e.g. gpt-5.4>"}, "_env": "AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT"}
+    },
+
     "enabled": true,
     "provider": "bedrock",
-    "max_new_tokens": 4048,
+    "max_new_tokens": 4096,
     "temperature": 0.0,
     "force_all_entries": true,
     "boundary_merge_mode": "llm",
@@ -53,13 +70,22 @@
       "bearer_token": ""
     }
   },
+
   "verification_llm": {
+    "_doc": "Matcher Agent + Class-Specialist Judgers. Same provider menu as ocr_vlm_extract: bedrock | openai | azure_openai. The two blocks are independent — you can mix providers across stages.",
+    "_provider_examples": {
+      "bedrock":      {"provider": "bedrock",      "bedrock": {"region": "us-east-1", "model_id": "qwen.qwen3-vl-235b-a22b", "bearer_token": "<bearer-token>"}},
+      "openai":       {"provider": "openai",       "bedrock": {"model_id": "gpt-5"},   "_env": "OPENAI_API_KEY"},
+      "azure_openai": {"provider": "azure_openai", "bedrock": {"model_id": "<deployment-name e.g. gpt-5.4>"}, "_env": "AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT"}
+    },
+
     "enabled": true,
     "provider": "bedrock",
     "max_candidates": 5,
     "bedrock": {
       "region": "us-east-1",
-      "model_id": "qwen.qwen3-vl-235b-a22b"
+      "model_id": "qwen.qwen3-vl-235b-a22b",
+      "bearer_token": ""
     }
   }
 }

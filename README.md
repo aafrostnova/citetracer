@@ -40,6 +40,9 @@ local GPU instead of Bedrock.
 
 The pipeline reads `config.json`. Every key can also be overridden by an
 environment variable of the same name prefixed with `CITATION_CHECKER_`.
+`config.example.json` ships with documentation comments (any key whose
+name starts with `_` is ignored by the loader, so feel free to leave them
+in or strip them out).
 
 | Block                   | What it controls                                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -48,6 +51,48 @@ environment variable of the same name prefixed with `CITATION_CHECKER_`.
 | `verification_llm`      | Matcher Agent + Class-Specialist Judgers. `max_candidates` caps top-K candidates per source.                              |
 | `connectors`            | Connector cache path, DBLP mirror paths, eight academic sources, web-search provider, all related API keys.               |
 | `citation_parse_method` | Fixed at `"ocr_vlm_extract"`.                                                                                             |
+
+### How to fill `config.json`
+
+After `cp config.example.json config.json`, edit four things in order:
+
+**1. Pick LLM providers for `ocr_vlm_extract` and `verification_llm`.**
+Each block has its own `provider` field. The two blocks are independent,
+so you may mix providers (e.g. Bedrock for the Parser, OpenAI for the
+Verifier).
+
+  - `bedrock`  → set `bedrock.region`, `bedrock.model_id` (e.g.
+    `"qwen.qwen3-vl-235b-a22b"`), and `bedrock.bearer_token`.
+  - `openai`  → set `bedrock.model_id` (e.g. `"gpt-5"`) and export
+    `OPENAI_API_KEY` in your shell.
+  - `azure_openai` → set `bedrock.model_id` to your Azure deployment
+    name (e.g. `"gpt-5.4"`) and export
+    `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT`.
+
+The `bedrock.model_id` field name is historical; for `openai` and
+`azure_openai` it is interpreted as the OpenAI model name or Azure
+deployment name respectively.
+
+**2. Configure `entry_extraction` if you will run on PDF input.**
+Point `entry_extraction.local.model_path` at a downloaded
+`DeepSeek-OCR-2` checkpoint. BibTeX-only users (`apps.bib_checker.run`)
+can leave this block alone.
+
+**3. Pick a Web Agent backend in `connectors.web_search_provider`.**
+Either `tavily` (set `tavily_api_key`) or `serpapi` (set `serpapi_key`).
+The two are functionally interchangeable.
+
+**4. Fill optional Scholar Connector keys for higher quotas.**
+Every Scholar Connector works without a key, but `semantic_scholar_api_key`
+and `ncbi_api_key` (+ `ncbi_email`) materially raise the rate-limit cap.
+`openalex_mailto` puts your traffic in the polite pool. Leave any field
+empty to skip.
+
+After editing, sanity-check the file is loadable:
+
+```bash
+python -c "from apps.pdf_checker.config import load_pdf_checker_config; cfg = load_pdf_checker_config(); print('OK', cfg.ocr_vlm_extract.provider, '/', cfg.verification_llm.provider)"
+```
 
 ### Supported LLM backends
 
