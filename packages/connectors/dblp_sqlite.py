@@ -64,6 +64,10 @@ class DblpSQLiteConnector(BaseConnector):
         return self._to_records(rows)
 
     def _query_exact(self, title: str) -> list[dict[str, Any]]:
+        # NOTE: SQLite's GROUP_CONCAT is an unordered aggregate; the inner
+        # ORDER BY only affects the row scan, not the concat order. Use the
+        # 3.44+ aggregate ordering form `string_agg(... ORDER BY ...)` so
+        # author order is preserved.
         sql = """
             SELECT
                 p.id,
@@ -72,11 +76,10 @@ class DblpSQLiteConnector(BaseConnector):
                 p.year,
                 p.url,
                 (
-                    SELECT GROUP_CONCAT(a.name, '|||')
+                    SELECT string_agg(a.name, '|||' ORDER BY pa.author_order)
                     FROM paper_authors pa
                     JOIN authors a ON a.id = pa.author_id
                     WHERE pa.paper_id = p.id
-                    ORDER BY pa.author_order
                 ) AS authors_blob
             FROM papers p
             WHERE p.title = ?
@@ -98,11 +101,10 @@ class DblpSQLiteConnector(BaseConnector):
                 p.year,
                 p.url,
                 (
-                    SELECT GROUP_CONCAT(a.name, '|||')
+                    SELECT string_agg(a.name, '|||' ORDER BY pa.author_order)
                     FROM paper_authors pa
                     JOIN authors a ON a.id = pa.author_id
                     WHERE pa.paper_id = p.id
-                    ORDER BY pa.author_order
                 ) AS authors_blob
             FROM papers p
             WHERE p.title GLOB ?

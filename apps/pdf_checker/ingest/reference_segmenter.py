@@ -136,6 +136,45 @@ NARRATIVE_REF_PREFIXES = (
 _LOCAL_MODEL_CACHE: dict[str, tuple[Any, Any]] = {}
 _LOCAL_VLLM_MODEL_CACHE: dict[str, tuple[Any, Any, Any, Any, Any]] = {}
 
+# Per-key lock for the vLLM bundle load. Without this, two paper-worker
+# threads that both call _load_local_vllm_bundle on a cold cache will both
+# enter the load path (TOCTOU race), each spawning a 60s+ vLLM init that
+# competes for GPU memory and either OOMs or wastes a redundant load. The
+# lock serialises the first load; subsequent calls hit the cache immediately.
+import threading as _vllm_threading
+_LOCAL_VLLM_LOAD_LOCKS: dict[str, _vllm_threading.Lock] = {}
+_LOCAL_VLLM_LOAD_LOCKS_GUARD = _vllm_threading.Lock()
+
+# Per-LLM inference lock. vLLM's LLM.generate() is NOT safe for concurrent
+# calls from multiple Python threads: two threads invoking generate() on
+# the same engine race in the scheduler, producing either internal scheduler
+# errors or corrupted/truncated outputs that fail downstream JSON parsing.
+# This lock serialises inference per-engine. Each generate() call may still
+# pass a batch of prompts internally (vLLM batches efficiently); we only
+# block the cross-thread case.
+_LOCAL_VLLM_INFER_LOCKS: dict[int, _vllm_threading.Lock] = {}
+_LOCAL_VLLM_INFER_LOCKS_GUARD = _vllm_threading.Lock()
+
+
+def _vllm_bundle_lock(cache_key: str) -> _vllm_threading.Lock:
+    with _LOCAL_VLLM_LOAD_LOCKS_GUARD:
+        lock = _LOCAL_VLLM_LOAD_LOCKS.get(cache_key)
+        if lock is None:
+            lock = _vllm_threading.Lock()
+            _LOCAL_VLLM_LOAD_LOCKS[cache_key] = lock
+        return lock
+
+
+def _vllm_inference_lock(llm: Any) -> _vllm_threading.Lock:
+    """Return the per-engine inference lock for ``llm`` (id-keyed)."""
+    key = id(llm)
+    with _LOCAL_VLLM_INFER_LOCKS_GUARD:
+        lock = _LOCAL_VLLM_INFER_LOCKS.get(key)
+        if lock is None:
+            lock = _vllm_threading.Lock()
+            _LOCAL_VLLM_INFER_LOCKS[key] = lock
+        return lock
+
 
 def _cleanup_local_vllm_at_exit() -> None:
     """Destroy cached vLLM engines + NCCL process group at Python exit.
@@ -724,9 +763,20 @@ def _merge_layout_fragments(
         if stats_sink is not None:
             stats_sink["boundary_pairs"] = stats_sink.get("boundary_pairs", 0) + 1
 
+        # Numbered-reference fast path: when prev starts with "[N]" (or
+        # "(N)" / "N."), the bibliography is in numbered style. In that
+        # style, a new entry MUST begin with the next "[N]" marker. Any
+        # cross-boundary fragment that lacks a fresh marker is therefore
+        # a continuation — merge confidently without further checks.
+        prev_text = out[-1]
+        prev_is_numbered = bool(ENTRY_PREFIX_RE.match(prev_text))
+        curr_starts_fresh = _is_obvious_fresh_entry(r["content"])
+
         should_merge = False
-        if llm_merge_kwargs:
-            if _is_obvious_fresh_entry(r["content"]):
+        if prev_is_numbered:
+            should_merge = not curr_starts_fresh
+        elif llm_merge_kwargs:
+            if curr_starts_fresh:
                 should_merge = False
             else:
                 if stats_sink is not None:
@@ -1016,15 +1066,10 @@ def _split_after_year_boundary(text: str) -> list[str]:
 
 
 def _build_bedrock_client(region: str, bearer_token: str | None = None):
-    try:
-        import boto3
-    except ImportError as exc:
-        raise RuntimeError("boto3 is not installed. Install boto3 to enable model entry extraction.") from exc
-
-    if bearer_token:
-        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = str(bearer_token)
-
-    return boto3.client(service_name="bedrock-runtime", region_name=region)
+    """Backwards-compatible: routes through packages.llm.client.build_chat_client
+    so LLM_PROVIDER=openai/azure_openai swap to those backends transparently."""
+    from packages.llm.client import build_chat_client
+    return build_chat_client(region=region, bearer_token=bearer_token)
 
 
 def _extract_text_from_converse_response(response: dict[str, Any]) -> str:
@@ -1234,10 +1279,28 @@ def _load_local_vllm_bundle(model_path: str) -> tuple[Any, Any, Any, Any, Any]:
 
     code_dir = _resolve_deepseek_ocr2_vllm_code_dir(model_path)
     cache_key = f"{model_path}::{code_dir}"
+
+    # Fast path: cache hit (no lock needed; dict reads are atomic in CPython).
     cached = _LOCAL_VLLM_MODEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
+    # Slow path: serialise the actual load behind a per-key lock so concurrent
+    # paper-worker threads do not double-load vLLM on a cold cache. Re-check
+    # the cache after acquiring the lock (double-checked locking) so the
+    # second-arriving thread returns the bundle the first one just installed.
+    load_lock = _vllm_bundle_lock(cache_key)
+    with load_lock:
+        cached = _LOCAL_VLLM_MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        return _load_local_vllm_bundle_unlocked(model_path, code_dir, cache_key)
+
+
+def _load_local_vllm_bundle_unlocked(
+    model_path: str, code_dir: Path, cache_key: str
+) -> tuple[Any, Any, Any, Any, Any]:
+    """Inner load path. Caller MUST hold the per-key lock for ``cache_key``."""
     try:
         import torch
     except ImportError as exc:
@@ -1340,6 +1403,97 @@ def _load_local_vllm_bundle(model_path: str) -> tuple[Any, Any, Any, Any, Any]:
     return bundle
 
 
+def _pad_png_to_multiple(image_path: Path, multiple: int = 768) -> None:
+    """Pad a saved PNG with white background so its width and height become
+    integer multiples of ``multiple``. DeepSeek-OCR-2's preprocessing
+    (process/image_process.py:79) asserts that the post-resize tile count
+    equals the expected ``blocks`` derived from its aspect-ratio table; for
+    pages whose original aspect ratio does not snap to a clean entry in
+    that table, the assertion fires and the whole local-OCR path falls back
+    to heuristic. Padding to a friendly aspect ratio sidesteps that case
+    without touching DeepSeek-OCR-2's vendored code.
+
+    Padding is bottom-right (origin stays at 0,0), so any bounding box the
+    model emits in the padded coordinate space is still aligned with the
+    same PNG when the downstream cropper reads it for per-entry crops.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return  # PIL missing → silently skip padding; caller still works
+    with Image.open(image_path) as img:
+        img = img.convert("RGB")
+        w, h = img.size
+        new_w = ((w + multiple - 1) // multiple) * multiple
+        new_h = ((h + multiple - 1) // multiple) * multiple
+        if (new_w, new_h) == (w, h):
+            return
+        canvas = Image.new("RGB", (new_w, new_h), (255, 255, 255))
+        canvas.paste(img, (0, 0))
+        canvas.save(image_path)
+
+
+_LINE_NUMBER_DIGIT_RE = re.compile(r"^\d{1,5}$")
+
+
+def redact_submission_line_numbers(page) -> int:
+    """Whiteout margin line numbers on a fitz page before rasterization.
+
+    ACM / IEEE submission templates with `\\linenumbers` emit a column of
+    standalone integers in the page margin. PyMuPDF sees each line number as
+    its own text line. We collect lines whose entire content is a 1-5 digit
+    integer, cluster them by left edge (5pt tolerance), and redact every line
+    in any cluster of >= 5 members. The cluster threshold avoids redacting
+    page numbers or stray numeric labels: a real line-number column has
+    dozens of entries per page.
+
+    Returns the number of redacted boxes.
+    """
+    import fitz
+
+    digit_lines: list[tuple[float, "fitz.Rect"]] = []
+    for block in page.get_text("dict").get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            text = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
+            if _LINE_NUMBER_DIGIT_RE.fullmatch(text):
+                rect = fitz.Rect(line["bbox"])
+                digit_lines.append((rect.x0, rect))
+
+    if not digit_lines:
+        return 0
+
+    digit_lines.sort(key=lambda pair: pair[0])
+    clusters: list[list["fitz.Rect"]] = []
+    current: list["fitz.Rect"] = []
+    cluster_x: float | None = None
+    for x0, rect in digit_lines:
+        if cluster_x is None or abs(x0 - cluster_x) <= 5.0:
+            current.append(rect)
+            if cluster_x is None:
+                cluster_x = x0
+        else:
+            clusters.append(current)
+            current = [rect]
+            cluster_x = x0
+    if current:
+        clusters.append(current)
+
+    n_redacted = 0
+    for cluster in clusters:
+        if len(cluster) < 5:
+            continue
+        for rect in cluster:
+            pad = fitz.Rect(rect.x0 - 1.5, rect.y0 - 1.5, rect.x1 + 1.5, rect.y1 + 1.5)
+            page.add_redact_annot(pad, fill=(1, 1, 1))
+            n_redacted += 1
+
+    if n_redacted:
+        page.apply_redactions()
+    return n_redacted
+
+
 def _render_pdf_reference_pages(
     pdf_path: str | Path,
     start_page: int,
@@ -1371,9 +1525,11 @@ def _render_pdf_reference_pages(
         image_paths: list[Path] = []
         for page_idx in range(first, last + 1):
             page = doc.load_page(page_idx)
+            redact_submission_line_numbers(page)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
             page_path = output_dir / f"reference_page_{page_idx + 1}.png"
             pix.save(str(page_path))
+            _pad_png_to_multiple(page_path, multiple=768)
             image_paths.append(page_path)
         return image_paths
     finally:
@@ -1506,7 +1662,8 @@ def _run_local_vllm_ocr_on_images(
                 }
             )
 
-    outputs = llm.generate(batch_inputs, sampling_params=sampling_params)
+    with _vllm_inference_lock(llm):
+        outputs = llm.generate(batch_inputs, sampling_params=sampling_params)
     texts: list[str] = []
     for output in outputs:
         if output.outputs:
@@ -2001,8 +2158,21 @@ def segment_references_from_pages(
                 metadata["entry_extraction_input"] = "reference_text_block"
                 numbered_mode = len(NUMBERED_REF_RE.findall(ref_block)) >= 3
         except Exception as exc:
+            import traceback as _tb
+            import sys as _sys
             metadata["entry_extraction_fallback"] = True
             metadata["entry_extraction_error"] = f"{type(exc).__name__}: {exc}"
+            try:
+                tb_lines = _tb.format_exception(type(exc), exc, exc.__traceback__)
+                tb_str = "".join(tb_lines)
+                metadata["entry_extraction_traceback"] = tb_str[-2000:]
+                # Also dump to stderr immediately for live debugging.
+                print(
+                    f"\n=== [ENTRY EXTRACTION FALLBACK] ===\n{tb_str}===\n",
+                    file=_sys.stderr, flush=True,
+                )
+            except Exception:
+                pass
 
     if not entries:
         entries, numbered_mode = split_reference_entries(ref_block)

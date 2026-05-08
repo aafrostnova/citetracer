@@ -5,7 +5,8 @@
 # =============================================================================
 pypdf>=4.0.0
 pymupdf>=1.24.0
-boto3>=1.34.0
+boto3>=1.42.0       # Bedrock Converse API (Stage 1 OCR / Stage 3 judge)
+botocore>=1.42.0
 requests>=2.32.0
 Pillow>=10.0.0
 einops

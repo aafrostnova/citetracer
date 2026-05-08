@@ -177,14 +177,12 @@ def _print_connector_health(orchestrator: Any, probe: CitationRecord) -> None:
 
 
 def _build_bedrock_client(region: str, bearer_token: str | None = None):
-    try:
-        import boto3
-    except ImportError as exc:
-        raise RuntimeError("boto3 is not installed. Install boto3 to enable verification_llm.") from exc
-
-    if bearer_token:
-        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = str(bearer_token)
-    return boto3.client(service_name="bedrock-runtime", region_name=region)
+    """Backwards-compatible name. Dispatches to whatever provider is selected
+    via LLM_PROVIDER (env var). Default still bedrock so existing flows are
+    unchanged. See packages.llm.client.build_chat_client for OpenAI / Azure
+    OpenAI variants."""
+    from packages.llm.client import build_chat_client
+    return build_chat_client(region=region, bearer_token=bearer_token)
 
 
 def _extract_text_from_converse_response(response: dict[str, Any]) -> str:

@@ -66,7 +66,10 @@ class CitationParserStyleTests(unittest.TestCase):
         )
         record = parse_reference_entry(entry, "pdf-ref:6")
         self.assertEqual(record.title, "Robust and efficient estimation by minimising a density power divergence")
-        self.assertEqual(record.venue, "Biometrika, 85(3):549-559, 1998")
+        # volume + pages now extracted into dedicated fields; venue keeps the rest.
+        self.assertEqual(record.venue, "Biometrika, 1998")
+        self.assertEqual(record.volume, "85")
+        self.assertEqual(record.pages, "549-559")
 
     def test_backfill_venue_when_title_is_venue_only(self) -> None:
         entry = "In International Conference on Learning Representations, 2021. URL https://openreview.net/forum?id=Ua6zuk0WRH."
@@ -87,8 +90,10 @@ class CitationParserStyleTests(unittest.TestCase):
         )
         self.assertEqual(
             record.venue,
-            "IEEE Transactions on Circuits and Systems for Video Technology, 32(10):6700-6713, 2022b",
+            "IEEE Transactions on Circuits and Systems for Video Technology, 2022b",
         )
+        self.assertEqual(record.volume, "32")
+        self.assertEqual(record.pages, "6700-6713")
 
     def test_recovers_boundary_for_long_author_list(self) -> None:
         entry = (
@@ -138,7 +143,9 @@ class CitationParserStyleTests(unittest.TestCase):
         )
         record = parse_reference_entry(entry, "pdf-ref:13")
         self.assertTrue(record.title.startswith("Challenges in representation learning"))
-        self.assertIn("Springer", record.venue)
+        # Springer is now extracted to the dedicated publisher field (no longer
+        # left in venue text alongside other journal/conference metadata).
+        self.assertEqual(record.publisher, "Springer")
 
     def test_split_embedded_journal_suffix_from_title(self) -> None:
         entry = (
@@ -147,7 +154,9 @@ class CitationParserStyleTests(unittest.TestCase):
         )
         record = parse_reference_entry(entry, "pdf-ref:14")
         self.assertEqual(record.title, "Sub-Gaussian mean estimators")
-        self.assertIn("44(6):2695-2725", record.venue)
+        self.assertEqual(record.venue, "Ann. Stat, 2016")
+        self.assertEqual(record.volume, "44")
+        self.assertEqual(record.pages, "2695-2725")
 
     def test_neurips_venue_not_taken_as_title(self) -> None:
         entry = (
@@ -157,14 +166,21 @@ class CitationParserStyleTests(unittest.TestCase):
         )
         record = parse_reference_entry(entry, "pdf-ref:15")
         self.assertEqual(record.title, "Unexpected Improvements to Expected Improvement for Bayesian Optimization")
-        self.assertEqual(record.venue, "Advances in Neural Information Processing Systems, 36:20577-20612, 2023")
+        self.assertEqual(record.venue, "Advances in Neural Information Processing Systems, 2023")
+        self.assertEqual(record.volume, "36")
+        self.assertEqual(record.pages, "20577-20612")
 
     def test_book_style_single_author_publisher_year(self) -> None:
         entry = "Heath, T. L. The thirteen books of Euclid's Elements. Dover Publications, Inc, 1956."
         record = parse_reference_entry(entry, "pdf-ref:16")
         self.assertEqual(record.authors, ["Heath, T. L"])
         self.assertEqual(record.title, "The thirteen books of Euclid's Elements")
-        self.assertEqual(record.venue, "Dover Publications, Inc, 1956")
+        # "Dover Publications, Inc" is not in our literal publisher list and
+        # the wildcard does not match "Publications", so it currently stays in
+        # venue. The corporate suffix "Inc" no longer gets mis-matched as a
+        # country name (the country regex requires ≥3 lowercase chars).
+        self.assertIn("Dover Publications", record.venue)
+        self.assertIn("1956", record.venue)
 
     def test_book_style_multi_author_publisher_year(self) -> None:
         entry = "Diakonikolas, I. and Kane, D. M. Algorithmic high-dimensional robust statistics. Cambridge university press, 2023."

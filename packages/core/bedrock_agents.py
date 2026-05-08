@@ -217,6 +217,22 @@ Examples where SURNAMES DIFFER (→ h2_error):
     "D. D. Johnson" ↔ "Daniel D. Johnson"     (D = 1 char, middle D. unchanged)
     "J. E. Santos"  ↔ "Javier E. Santos"      (J = 1 char, E. unchanged)
     "V. Manohar"    ↔ "Vimal Manohar"         (V = 1 char)
+    "Erik L Bolager"  ↔ "Erik Lien Bolager"   (middle initial L → Lien; first token "Erik" unchanged)
+    "Daniel D Johnson" ↔ "Daniel David Johnson" (middle initial D → David; "Daniel" unchanged)
+    "Mary J Smith"    ↔ "Mary Jane Smith"     (middle initial J → Jane; "Mary" unchanged)
+    "Sun, Y"        ↔ "Yu Sun"                (Y = 1 char; last-first notation, decompose to given=Y, surname=Sun → r2)
+    "Wohlberg, B"   ↔ "Brendt Wohlberg"       (B = 1 char; last-first notation → r2)
+    "Kamilov, U. S" ↔ "Ulugbek S. Kamilov"    (U = 1 char; middle "S" matches → r2)
+    "Afouras T"     ↔ "Triantafyllos Afouras" (T = 1 char; space-separated last-first → r2)
+
+  ### TOKEN-BY-TOKEN RULE for multi-token first names:
+    Split each side's first-name into tokens. Pair them positionally.
+    For each token-pair, apply the 1-char check independently. If every
+    differing pair is a 1-char initial expansion (regardless of position
+    within the first name), the overall verdict is r2_initial.
+    DO NOT count letters across the entire first-name string; count only
+    within each individual token. A 1-char middle-initial token is r2_initial
+    even when other tokens are full words.
 
   NOT r2_initial (shorter side is 2+ letters → use p1_variant):
     "Chao Xiao"     ↔ "Chaowei Xiao"   (Chao = 4 chars → p1 multi-letter trunc)
@@ -230,6 +246,12 @@ Examples where SURNAMES DIFFER (→ h2_error):
     - Do NOT mark "J. Liu" ↔ "Jiduan Liu" as p1_variant.
       "J." is exactly 1 character → r2_initial.
     - Do NOT mark "K. Alshammari" ↔ "Khaznah Alshammari" as p1_variant.
+    - Do NOT mark "Sun, Y" ↔ "Yu Sun" as p1_variant. The comma is just
+      "Surname, Given" notation. Decompose first → given="Y", surname="Sun".
+      Then 1-char rule applies → r2_initial.
+    - Do NOT mark "Afouras T" ↔ "Triantafyllos Afouras" as p1_variant.
+      Last-first space-separated notation → decompose to given="T",
+      surname="Afouras". 1-char initial → r2_initial.
     - When EVERY differing pair is 1-char-initial-expansion, the
       overall verdict MUST be r2_initial, not p1_variant.
 
@@ -240,7 +262,14 @@ Examples where SURNAMES DIFFER (→ h2_error):
       "Stef" ← "Stefanie", "Edw." ← "Edward", "Xiang" ← "Xiangyang"
     * Single-char typo / transliteration: "Ulle" ↔ "Ullie", "Den" ↔ "Deng",
       "Wei" ↔ "William"
-    * Last-first format + initial: "Afouras T" ↔ "Triantafyllos Afouras"
+    * NOTE on last-first / "Surname, Given" notation: this is just citation
+      formatting, not a name variant. Apply the decomposition rule above
+      first; the surface order does NOT influence p1 vs r2. After
+      decomposition, classify by the first-name comparison rules:
+        - "Sun, Y"     ↔ "Yu Sun"            → r2_initial (Y is 1 char)
+        - "Wohlberg, B" ↔ "Brendt Wohlberg"  → r2_initial (B is 1 char)
+        - "Afouras T"  ↔ "Triantafyllos Afouras" → r2_initial (T is 1 char)
+        - "Liu, Mike"  ↔ "Michael Liu"       → p1_variant (Mike is nickname)
     * MIDDLE-NAME VARIATIONS — any of these five subtypes (all → p1_variant):
         a. Middle initial dropped:    "Dmitry P. Vetrov"   ↔ "Dmitry Vetrov"
         b. Middle initial added:      "Dmitry Vetrov"      ↔ "Dmitry P. Vetrov"
@@ -412,16 +441,28 @@ VENUE — 3 categories
       Learning Research".
     * Year-tagged form: "EMNLP 2024" ↔ "EMNLP".
     * Preprint server synonyms: "Preprint" ↔ "arXiv" ↔ "CoRR".
+    * Sub-track of the same conference, expressed in shorthand. Citations
+      routinely abbreviate "Findings of the Association for Computational
+      Linguistics: EMNLP 2024" or "Proceedings of the 60th Annual Meeting
+      of the ACL: Student Research Workshop" as just the parent acronym
+      ("ACL" or "EMNLP"). Treat these as alias when the candidate side
+      clearly names the parent conference (ACL / EMNLP / NAACL / EACL /
+      AACL) and only adds a track / workshop / Findings qualifier.
+      Examples that are alias:
+        cit="ACL"   cand="Findings of the Association for Computational Linguistics: EMNLP 2024" → alias
+        cit="ACL"   cand="Findings of the Association for Computational Linguistics: ACL 2024" → alias
+        cit="ACL"   cand="Proceedings of the 60th Annual Meeting of the ACL: Student Research Workshop" → alias
+        cit="EMNLP" cand="Findings of the Association for Computational Linguistics: EMNLP 2023" → alias
+        cit="ACL"   cand="Proceedings of the 58th Annual Meeting of the ACL" → alias
 
 - **different**: Genuinely different conferences / journals. Do NOT invent
   mappings beyond the above patterns. In particular:
     * "ICLR" ≠ "ACL Proceedings"
-    * "EMNLP" ≠ "Findings of ACL" (different tracks — DIFFERENT)
-    * "EMNLP" ≠ "ACL" (two different conferences, same ACL-family society)
-    * "EMNLP" ≠ "Annual Meeting of ACL" / "Proceedings of ACL" (wrong conference)
-    * "ACL" ≠ "NAACL" ≠ "EACL" ≠ "AACL" (all distinct conferences)
-    * "ACL" ≠ "Findings of ACL" (main track ≠ Findings track)
-    * "KDD" ≠ "ACL Findings"
+    * "ACL" ≠ "NAACL" ≠ "EACL" ≠ "AACL" (all distinct conferences with
+      their own program committees)
+    * "EMNLP" ≠ "Annual Meeting of ACL" (when the candidate clearly names
+      ACL as the host conference, not EMNLP)
+    * "KDD" ≠ "ACL"
     * "NeurIPS" ≠ "ICML"
     * "CVPR" ≠ "ECCV"
     * "Nature" ≠ "EMNLP"
@@ -432,40 +473,26 @@ VENUE — 3 categories
 
 ### ★★★ VENUE ALIAS GUARD — DO NOT INVENT MAPPINGS ★★★
 A venue is alias ONLY if one side is a well-known acronym / abbreviation of
-the other side's FULL literal name. Two different ACL-family (or any-family)
-conferences that merely share a parent society are NOT aliases.
+the other side's FULL literal name, OR if the candidate side names the same
+parent conference as the citation acronym (with an optional track / workshop
+/ Findings qualifier). Two different conferences that merely share a parent
+society (ACL vs NAACL, ICML vs NeurIPS) are NOT aliases.
 
-ACL-family disambiguation — memorize these pairs as **different**:
+ACL-family disambiguation — quick reference:
 
-  A) "Proceedings of the N-th Annual Meeting of the ACL" vs "EMNLP"
-     → **different**. "Annual Meeting of ACL" expands to ACL (the main
-     conference), which is distinct from EMNLP. Do NOT say alias.
-     Example: cit="EMNLP", cand="Proceedings of the 58th Annual Meeting of
-     the Association for Computational Linguistics" → **different**.
+  A) cit="ACL"   cand="Proceedings of the 60th Annual Meeting of the ACL" → alias
+  B) cit="ACL"   cand="Findings of the Association for Computational Linguistics: ACL 2024" → alias
+  C) cit="ACL"   cand="Findings of the Association for Computational Linguistics: EMNLP 2024" → alias (Findings is a single cross-conference track that ACL-family citations routinely tag with whichever parent conference happened to host it; the citation acronym still resolves to the same publication track)
+  D) cit="ACL"   cand="Proceedings of the 60th Annual Meeting of the ACL: Student Research Workshop" → alias (workshop track of ACL is still ACL-family)
+  E) cit="EMNLP" cand="Findings of the Association for Computational Linguistics: EMNLP 2023" → alias
+  F) cit="ACL"   cand="NAACL 2024" → different (NAACL is a separate conference, not an ACL track)
+  G) cit="EMNLP" cand="Proceedings of the 58th Annual Meeting of the ACL" → different (host conference is ACL, not EMNLP)
 
-  B) "Proceedings of the N-th Annual Meeting of the ACL" vs "ACL"
-     → **alias** (this one IS valid — it literally expands ACL).
-
-  C) "Findings of the ACL: EMNLP YYYY" vs "ACL"
-     → **different**. Findings-of-ACL at EMNLP is a separate track/venue,
-     NOT the ACL main conference. Do NOT say alias.
-     Example: cit="ACL", cand="Findings of the Association for
-     Computational Linguistics: EMNLP 2024" → **different**.
-
-  D) "Findings of the ACL" vs "ACL"
-     → **different**. Findings is a separate track.
-
-  E) "Findings of the ACL: EMNLP YYYY" vs "EMNLP"
-     → **different** (Findings at EMNLP ≠ EMNLP main).
-
-  F) "Findings of the ACL: EMNLP YYYY" vs "Findings of ACL: EMNLP YYYY"
-     → **alias** (same venue, one side has extra "the").
-
-Decision rule: if one side contains "Findings" or "Annual Meeting" and the
-other side is just the bare acronym "ACL" / "EMNLP" / "NAACL", STOP and say
-**different** unless the literal expansion pair is B above.
-
-When in doubt, say **different** — a false alias masks H3 hallucinations.
+Decision rule: if the citation is a bare acronym (ACL / EMNLP / NAACL / EACL /
+AACL) and the candidate side names the SAME acronym anywhere in its title
+(possibly with "Findings of", "Workshop", "Student Research", "Proceedings of
+the N-th Annual Meeting of the" qualifiers), say **alias**. If the candidate
+side names a DIFFERENT acronym from that family, say **different**.
 
 ====================================================================
 PUBLISHER — 3 categories (same structure as venue)
@@ -847,7 +874,9 @@ NOTE on authors=reordered_match:
   * Multi-letter truncation: "Edw." vs "Edward", "Séb." vs "Sébastien" → P1 (more than 1 letter)
   * Transliteration: "Wei Zhang" vs "William Zhang" → P1
   * Spelling variant / typo in a name: "Ulle" vs "Ullie", "Liam" vs "Liang" → P1
-  * Last-first format with initials: "Afouras T" vs "Triantafyllos Afouras" → P1
+  * NOTE: last-first / "Surname, Given" notation alone is NOT P1. Decompose
+    first; if the only first-name difference is a 1-char initial, that pair
+    is r2_initial (e.g. "Sun, Y" ↔ "Yu Sun" → r2_initial, not P1).
 - hint="likely_hallucinated": Discrepancies are real errors:
   * Title word changed, wrong author count, wrong year by >1, fabricated DOI, venue mismatch.
 
@@ -895,8 +924,9 @@ Patterns that are ALWAYS likely_potential (P1), never likely_hallucinated:
   3. Single character typo:    "Ulle"   ↔ "Ullie"    (one-character off)
                               "Liam"   ↔ "Liang"
                               "Ily"    ↔ "Ilya"      (one-character off)
-  4. Last-first format w/ initial: "Afouras T" ↔ "Triantafyllos Afouras"
-                              "Manoj S."  ↔ "S. Manoj"   (initial + surname reorder)
+  4. (REMOVED — last-first + 1-char initial is r2_initial, not p1_variant.
+      Decompose using "Surname, Given" rule; the 1-char rule then applies to
+      the first-name pair just like any other r2 case.)
   5. Full vs initial + middle: "Masa Egi"  ↔ "M. Egi"    (still → R2 if Masa → M single-letter)
                                but "Masa Egi" ↔ "Masashi Egi" → P1 (Masa is truncation of Masashi)
   6. Transliteration:          "Wei"  ↔ "William"
@@ -1451,9 +1481,42 @@ class BedrockHallucinatedAgent:
         else:
             label = VerdictLabel.FAKE_REFERENCE
 
+        taxonomy = _parse_taxonomy(parsed.get("taxonomy", []))
+
+        # Safety net: if FieldClassifier already said authors == p1_variant
+        # (same people, soft name variant), the LLM should NOT emit H2. Drop
+        # any H2 the LLM still emitted; if H2 was the only code, downgrade
+        # the verdict to POTENTIAL.
+        author_info = fs.get("authors") if isinstance(fs, dict) else None
+        author_variant = (
+            author_info.get("author_variant_type")
+            if isinstance(author_info, dict) else None
+        )
+        if author_variant == "p1_variant" and "H2" in taxonomy:
+            taxonomy = [t for t in taxonomy if t != "H2"]
+            if not taxonomy:
+                label = VerdictLabel.POTENTIAL_REFERENCE
+                taxonomy = ["P1"]
+
+        # Surname-typo safety net (RELAXED MODE ONLY): if LLM emits H2 but
+        # the only author difference is a tiny surname OCR typo (≤2 chars,
+        # given names match, not partial_overlap / reordered_match), drop
+        # H2 and restore the verdict to VALID R1. This catches OCR errors
+        # like "Schreck" vs "Schrek" or "Bugarra" vs "Bugrara".
+        from .adjudicate import _RELAXED_FIELDS as _relaxed
+        if _relaxed and "H2" in taxonomy:
+            from .cascading_agents import _h2_is_minor_surname_typo
+            ref_authors = list(citation.authors or [])
+            cand_authors = list(candidate.authors or [])
+            if _h2_is_minor_surname_typo(ref_authors, cand_authors, fs):
+                taxonomy = [t for t in taxonomy if t != "H2"]
+                if not taxonomy:
+                    label = VerdictLabel.VALID
+                    taxonomy = ["R1"]
+
         return DownstreamAgentResult(
             label=label,
-            taxonomy=_parse_taxonomy(parsed.get("taxonomy", [])),
+            taxonomy=taxonomy,
             reason=str(parsed.get("reason", "") or "").strip(),
             raw_llm_response=parsed,
         )

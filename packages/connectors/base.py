@@ -84,6 +84,16 @@ class RequestPolicy:
     rate_limit_max_retries: int = 4       # 5 attempts total (initial + 4 retries)
     rate_limit_backoff_base_s: float = 2.0 # 2s, 4s, 8s, 16s exponential
     rate_limit_backoff_max_s: float = 20.0 # cap per-sleep (caps Retry-After too)
+    # When the server returns a 429 with a Retry-After hint that exceeds
+    # this many seconds, give up immediately instead of sleeping the
+    # capped delay and retrying. ADS in particular returns Retry-After
+    # values measured in HOURS (e.g. 17000s = 4.8h); retrying every 20s
+    # for 5 attempts costs ~100s wallclock and is guaranteed to keep
+    # getting 429. Fail-fast lets the caller move on to the next
+    # connector. Set the env var CITATION_CHECKER_RATE_LIMIT_FAIL_FAST_S
+    # to 0 to restore the legacy "always retry" behaviour, or to a
+    # different value (e.g. 60) to be more patient.
+    rate_limit_fail_fast_threshold_s: float = 30.0
     health_recover_step: float = 0.03
     health_decay_step: float = 0.15
 
@@ -409,7 +419,23 @@ class BaseConnector:
 
     @staticmethod
     def _max_retries_for(exc: Exception, policy: RequestPolicy) -> int:
-        return policy.rate_limit_max_retries if BaseConnector._is_rate_limited(exc) else policy.max_retries
+        if not BaseConnector._is_rate_limited(exc):
+            return policy.max_retries
+        # Fail-fast: when the server's Retry-After hint says we'd be
+        # waiting longer than fail_fast_threshold even after our capped
+        # sleep, retrying is pointless — every attempt comes back 429.
+        # Drop max retries to 0 so the caller fails immediately and we
+        # try the next connector.
+        import os as _os
+        threshold = float(_os.getenv(
+            "CITATION_CHECKER_RATE_LIMIT_FAIL_FAST_S",
+            str(policy.rate_limit_fail_fast_threshold_s),
+        ))
+        if threshold > 0:
+            server_hint = BaseConnector._retry_after_seconds(exc)
+            if server_hint is not None and server_hint > threshold:
+                return 0
+        return policy.rate_limit_max_retries
 
     def _log_final_failure(self, url: str, exc: Exception) -> None:
         """Print a stderr line when all retries are exhausted — especially

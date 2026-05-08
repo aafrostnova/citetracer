@@ -97,14 +97,11 @@ _QWEN3_THINK_END_TOKEN_ID = 151668
 
 
 def _build_bedrock_client(region: str, bearer_token: str | None = None):
-    try:
-        import boto3
-    except ImportError as exc:
-        raise RuntimeError("boto3 is not installed. Install boto3 to enable bedrock citation_reparse.") from exc
-
-    if bearer_token:
-        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = str(bearer_token)
-    return boto3.client(service_name="bedrock-runtime", region_name=region)
+    """Backwards-compatible: routes through packages.llm.client.build_chat_client
+    so LLM_PROVIDER=openai/azure_openai swap to those backends without touching
+    the converse() callsites further down."""
+    from packages.llm.client import build_chat_client
+    return build_chat_client(region=region, bearer_token=bearer_token)
 
 
 def _extract_text_from_converse_response(response: dict[str, Any]) -> str:
@@ -763,11 +760,45 @@ def _backfill_venue_from_title_and_raw(title: str, raw_text: str) -> tuple[str, 
     return title_clean, "", ""
 
 
-_PAGES_RE = re.compile(r",?\s*pages?\s+([\d]+\s*[-–]+\s*[\d]+)", re.IGNORECASE)
+# Page-range regexes, in priority order.
+#  - With explicit "pages"/"pp." prefix.
+#  - "X(Y), AAA-BBB" — IEEE/ACM journal shorthand: vol(issue), page-range.
+#  - "X:AAA-BBB" — JMLR-style "20:1-67".
+#  - Bare "AAA-BBB" near the end of the string (last segment).
+_PAGES_PREFIXED_RE = re.compile(
+    r",?\s*(?:pages?|pp\.?)\s+([\d]+\s*[-–—]+\s*[\d]+)",
+    re.IGNORECASE,
+)
+_PAGES_VOL_ISSUE_RE = re.compile(
+    r"\b\d+\s*\(\s*\d+\s*\)\s*[,:]\s*([\d]+\s*[-–—]+\s*[\d]+)"
+)
+_PAGES_COLON_RE = re.compile(
+    r"\b\d{1,4}\s*:\s*([\d]+\s*[-–—]+\s*[\d]+)"
+)
+_PAGES_BARE_RE = re.compile(
+    r"(?:^|[,;.\s])([\d]{1,5}\s*[-–—]+\s*[\d]{1,5})\s*[.,]?\s*$"
+)
+# Volume regexes, in priority order.
+#  - "volume X" / "vol. X" / "Vol X".
+#  - "X(Y)" with vol(issue) shorthand — capture X.
+#  - JMLR-style "X:" before a page range — capture X.
+_VOLUME_EXPLICIT_RE = re.compile(
+    r"\b(?:volume|vol\.?)\s*(\d+)\b",
+    re.IGNORECASE,
+)
+_VOLUME_PAREN_RE = re.compile(r"\b(\d+)\s*\(\s*\d+\s*\)\s*[,:]\s*\d+\s*[-–—]+\s*\d+")
+_VOLUME_COLON_RE = re.compile(r"\b(\d{1,4})\s*:\s*\d+\s*[-–—]+\s*\d+")
+
 _PUBLISHER_PATTERNS = [
     "Association for Computational Linguistics",
+    "Springer-Verlag",
+    "Springer Nature",
+    "Springer International Publishing",
     "Springer",
+    "IEEE Computer Society",
+    "IEEE Press",
     "IEEE",
+    "ACM Press",
     "ACM",
     "PMLR",
     "Elsevier",
@@ -776,60 +807,155 @@ _PUBLISHER_PATTERNS = [
     "AAAI Press",
     "Cambridge University Press",
     "Oxford University Press",
+    "Wiley-Blackwell",
     "Wiley",
     "World Scientific",
     "IOS Press",
+    "Nature Publishing Group",
+    "Taylor & Francis",
+    "SAGE Publications",
+    "OpenReview.net",
+    "Curran Associates",
+    "JMLR.org",
+    "Association for the Advancement of Artificial Intelligence (AAAI)",
+    "Association for the Advancement of Artificial Intelligence",
 ]
-_CITY_COUNTRY = r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)"
+# Wildcard patterns — matched after the literal list to catch
+# "X University Press", "X Publishing", "X Publishers", etc.
+_PUBLISHER_WILDCARD_RES = [
+    re.compile(r"\b([A-Z][A-Za-z&]*(?:\s+[A-Z][A-Za-z&]*){0,3}\s+University\s+Press)\b"),
+    re.compile(r"\b([A-Z][A-Za-z&]*(?:\s+[A-Z][A-Za-z&]*){0,3}\s+Publishing(?:\s+Co\.?)?)\b"),
+    re.compile(r"\b([A-Z][A-Za-z&]*(?:\s+[A-Z][A-Za-z&]*){0,3}\s+Publishers?)\b"),
+]
+# Country names are typically capitalized words ("United Kingdom", "France",
+# "Iran") or 2–5 letter all-caps acronyms ("USA", "UK", "PRC"). The word form
+# requires ≥3 lowercase chars after the leading capital so corporate suffixes
+# like "Inc" / "Ltd" / "Co" don't get mis-matched as country names by
+# constructions like "Dover Publications, Inc, 1956".
+_COUNTRY = r"(?:[A-Z][a-z]{3,}(?:\s+[A-Z][a-z]+)*|[A-Z]{2,5})"
+_CITY_COUNTRY = r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*" + _COUNTRY
+_CITY_REGION_COUNTRY = (
+    r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*"   # City
+    r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*"   # Region/State word form
+    + _COUNTRY                                # Country (word or acronym)
+)
 _CITY_STATE = r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z]{2}"
+# Anchor on `,` OR `.` OR start-of-string so we can still match a location
+# even after the publisher splice removed the leading comma.
 _LOCATION_RE = re.compile(
-    r",\s*("
-    r"(?:(?:Online|Virtual)\s+and\s+" + _CITY_COUNTRY + r")"  # Online and City, Country
-    r"|(?:Online|Virtual)"                                      # Online / Virtual
-    r"|(?:" + _CITY_COUNTRY + r")"                              # City, Country
-    r"|(?:" + _CITY_STATE + r")"                                # City, STATE
+    r"(?:^|[,.])\s*("
+    r"(?:(?:Online|Virtual)\s+and\s+" + _CITY_REGION_COUNTRY + r")"  # Online and City, Region, Country
+    r"|(?:(?:Online|Virtual)\s+and\s+" + _CITY_COUNTRY + r")"        # Online and City, Country
+    r"|(?:" + _CITY_REGION_COUNTRY + r")"                            # City, Region, Country
+    r"|(?:Online|Virtual)"                                            # Online / Virtual
+    r"|(?:" + _CITY_COUNTRY + r")"                                    # City, Country
+    r"|(?:" + _CITY_STATE + r")"                                      # City, STATE
     r")\s*[.,]?"
 )
 
 
-def _split_venue_fields(venue: str) -> tuple[str, str, str, str]:
-    """Split a raw venue string into (venue, pages, publisher, location)."""
+def _normalize_pages(pages: str) -> str:
+    """Collapse internal whitespace; convert en/em dashes to hyphen."""
+    s = re.sub(r"\s+", "", pages or "")
+    s = re.sub(r"[-–—]+", "-", s)
+    return s
+
+
+def _find_pages(text: str) -> tuple[str, int, int] | None:
+    """Try the three pages patterns in priority order; return (pages, start, end)."""
+    if not text:
+        return None
+    for rx in (_PAGES_PREFIXED_RE, _PAGES_VOL_ISSUE_RE, _PAGES_COLON_RE, _PAGES_BARE_RE):
+        m = rx.search(text)
+        if m:
+            return _normalize_pages(m.group(1)), m.start(), m.end()
+    return None
+
+
+def _find_volume(text: str) -> str:
+    if not text:
+        return ""
+    for rx in (_VOLUME_EXPLICIT_RE, _VOLUME_PAREN_RE, _VOLUME_COLON_RE):
+        m = rx.search(text)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _find_publisher(text: str) -> tuple[str, int, int]:
+    """Find a publisher name in `text`. Literal patterns first (longest first),
+    then wildcard regexes for "X University Press" / "X Publishing".
+
+    For each pattern we scan ALL occurrences and pick the first one that is
+    standalone (preceded by ", " / ". " / ";"), so a venue that EMBEDS a
+    publisher name (e.g. "ACL Findings ... Association for Computational
+    Linguistics") still finds the trailing standalone publisher mention.
+
+    Returns (publisher, start, end). Empty publisher means none found.
+    The (start, end) span is the literal occurrence in `text` so the caller
+    can strip the EXACT standalone occurrence (not the embedded one)."""
+    if not text:
+        return "", -1, -1
+    for pub in _PUBLISHER_PATTERNS:
+        start = 0
+        while True:
+            idx = text.find(pub, start)
+            if idx < 0:
+                break
+            start = idx + 1
+            if idx == 0:
+                continue
+            before_char = text[idx - 1] if idx > 0 else ""
+            before_2 = text[max(0, idx - 2):idx]
+            is_standalone = before_2 in (". ", ", ") or before_char in (".", ",", ";")
+            if not is_standalone:
+                continue
+            return pub, idx, idx + len(pub)
+    for rx in _PUBLISHER_WILDCARD_RES:
+        m = rx.search(text)
+        if m:
+            return m.group(1), m.start(1), m.end(1)
+    return "", -1, -1
+
+
+def _split_venue_fields(venue: str) -> tuple[str, str, str, str, str]:
+    """Split a raw venue string into (venue, pages, publisher, location, volume)."""
     if not venue:
-        return "", "", "", ""
+        return "", "", "", "", ""
 
     remaining = venue
     pages = ""
+    volume = ""
     publisher = ""
     location = ""
 
+    # Extract volume FIRST. The "X(Y), AAA-BBB" and "X:AAA-BBB" shorthands
+    # encode both volume and pages — if pages strips them first, volume is
+    # gone. _find_volume only reads the patterns; it never mutates `remaining`.
+    volume = _find_volume(remaining)
+
     # Extract pages
-    pages_match = _PAGES_RE.search(remaining)
-    if pages_match:
-        pages = pages_match.group(1).strip()
-        remaining = remaining[:pages_match.start()] + remaining[pages_match.end():]
+    pgr = _find_pages(remaining)
+    if pgr:
+        pages, ps, pe = pgr
+        remaining = remaining[:ps] + remaining[pe:]
+
+    # Strip "volume X" / "vol. X" tokens (parenthetical / colon shorthands
+    # were already removed when we stripped pages).
+    if volume:
+        remaining = _VOLUME_EXPLICIT_RE.sub("", remaining, count=1)
 
     # Extract publisher (known patterns) — only if it appears as a standalone
-    # trailing/separated part, not embedded in the venue name itself.
-    for pub in _PUBLISHER_PATTERNS:
-        idx = remaining.find(pub)
-        if idx < 0:
-            continue
-        if idx == 0:
-            continue
-        # Check that publisher is at a sentence/clause boundary (preceded by ". " or ", " or start)
-        before_char = remaining[idx - 1] if idx > 0 else ""
-        before_2 = remaining[max(0, idx - 2):idx]
-        before = remaining[:idx].rstrip(", .")
-        is_standalone = before_2 in (". ", ", ") or before_char in (".", ",", ";")
-        if is_standalone:
-            # Keep publisher names inside venue strings for journal/proceedings-style citations
-            # such as "IEEE Transactions ..." or "... Springer, 2013".
-            if before and _looks_like_venue_text(before):
-                continue
-            publisher = pub
-            after = remaining[idx + len(pub):].lstrip(", .")
-            remaining = (before + " " + after).strip() if after else before
-            break
+    # trailing/separated part, not embedded in the venue name itself. We use
+    # the position returned by _find_publisher (NOT a fresh str.find) so we
+    # strip the standalone occurrence, not an embedded one. Note: we keep the
+    # leading comma in the `after` slice so a trailing "Publisher, City, State,
+    # Country" still has the comma anchor that _LOCATION_RE needs.
+    publisher, ps, pe = _find_publisher(remaining)
+    if publisher and ps >= 0:
+        before = remaining[:ps].rstrip(", .")
+        after = remaining[pe:].lstrip(" .")  # keep leading "," for location anchor
+        remaining = (before + " " + after).strip() if after else before
 
     # Extract location
     loc_match = _LOCATION_RE.search(remaining)
@@ -837,10 +963,57 @@ def _split_venue_fields(venue: str) -> tuple[str, str, str, str]:
         location = loc_match.group(1).strip(" .,")
         remaining = remaining[:loc_match.start()] + remaining[loc_match.end():]
 
-    # Clean up remaining venue
-    remaining = re.sub(r"\s+", " ", remaining).strip(" ,;.")
+    # Clean up remaining venue: collapse whitespace, then dedupe successive
+    # commas / semicolons that the various strip steps may have left behind
+    # (e.g. "Ann. Stat, , 2016" after volume + pages were pulled out).
+    remaining = re.sub(r"\s+", " ", remaining)
+    remaining = re.sub(r"(?:[,;]\s*){2,}", ", ", remaining)
+    remaining = re.sub(r"\s*,\s*$", "", remaining)
+    remaining = remaining.strip(" ,;.")
 
-    return remaining, pages, publisher, location
+    return remaining, pages, publisher, location, volume
+
+
+def _backfill_meta_fields_from_raw(
+    raw_text: str,
+    title: str,
+    venue: str,
+    pages: str,
+    publisher: str,
+    location: str,
+    volume: str,
+) -> tuple[str, str, str, str]:
+    """For pages/volume/publisher/location not yet found in venue, scan the
+    rest of raw_text (everything after the title and venue). Citations like
+    "Authors. 2024. Title. Venue. pp. 12-34. Springer." put metadata in
+    trailing sentences that the venue string never captured."""
+    if not raw_text:
+        return pages, publisher, location, volume
+
+    # Build the search corpus = raw_text minus the title and venue substrings,
+    # so we don't accidentally re-extract things that were already part of
+    # title/venue text.
+    corpus = raw_text
+    for blob in (title, venue):
+        if blob and blob in corpus:
+            corpus = corpus.replace(blob, " ", 1)
+
+    if not pages:
+        pgr = _find_pages(corpus)
+        if pgr:
+            pages = pgr[0]
+    if not volume:
+        volume = _find_volume(corpus)
+    if not publisher:
+        pub_name, _, _ = _find_publisher(corpus)
+        if pub_name:
+            publisher = pub_name
+    # Note: we deliberately do NOT backfill `location` from raw_text. The
+    # _LOCATION_RE pattern (City, Country) collides with author-list commas
+    # (e.g. "Author One, Author Two") and produces false positives. Location
+    # extraction stays scoped to the parsed venue string.
+
+    return pages, publisher, location, volume
 
 
 def _extract_url(raw_text: str) -> str:
@@ -850,12 +1023,33 @@ def _extract_url(raw_text: str) -> str:
     return match.group(0).rstrip(".,);]")
 
 
+_PARENS_YEAR_RE = re.compile(r"\((19|20)\d{2}\)")
+
+
 def _extract_year(raw_text: str, paper_style: str = "") -> int | None:
+    # Parens-year preference: APA / numbered styles always parenthesize the
+    # publication year ("Foo (2024). Title..."), so when a parenthesized year
+    # is present, prefer it over title-embedded numerals like "Healthy China
+    # 2030". This must run on raw_text BEFORE the URL/DOI scrubbing so the
+    # original parens are preserved.
+    parens_match = _PARENS_YEAR_RE.search(raw_text or "")
+    if parens_match:
+        try:
+            y = int(parens_match.group(0)[1:5])
+        except (TypeError, ValueError):
+            y = None
+        if y is not None and 1800 <= y <= 2035:
+            return y
+
     cleaned = raw_text
     cleaned = re.sub(r"https?://\S+", " ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bdoi\s*:\s*\S+", " ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"10\.\d{4,9}/\S+", " ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"arxiv\s*:\s*\d{4}\.\d{4,5}(?:v\d+)?", " ", cleaned, flags=re.IGNORECASE)
+    # Page-range scrub: "1964-1978" / "20-25" page or date spans contain
+    # year-shaped digits that YEAR_RE would otherwise capture as the trailing
+    # publication year. Wipe these spans before scanning for years.
+    cleaned = re.sub(r"\b\d{1,5}\s*[-–—]+\s*\d{1,5}\b", " ", cleaned)
 
     candidates: list[int] = []
     for match in YEAR_RE.finditer(cleaned):
@@ -1187,20 +1381,34 @@ def _run_llm_reparse_on_raw_bedrock(
 
     n_images = len(reference_page_images) if reference_page_images else 0
     common_image_block = (
-        "OCR is wrong more often than you expect at character level. "
-        "Treat the OCR text as a STARTING HYPOTHESIS only — for every author "
-        "surname, every title word, and every venue acronym, locate the same "
-        "string in the image and verify CHARACTER BY CHARACTER. If even one "
-        "letter differs, output the spelling YOU SEE IN THE IMAGE.\n\n"
-        "Common OCR error patterns to watch for:\n"
-        "  - Phantom letters inserted in surnames: OCR 'Akocora' → image 'Akcora'.\n"
-        "  - Adjacent-letter swaps: OCR 'Thainyi' → image 'Tihanyi'.\n"
-        "  - Adjacent-letter swaps in titles: OCR 'Haignet' → image 'HiAgent'; "
-        "OCR 'Reacting' → image 'Recasting'; OCR 'Kamiagito' → image 'Kamigaito'.\n"
+        "★★★ THE OCR TEXT IS NOISY AND HAS PROBABLY MIS-READ AT LEAST ONE "
+        "AUTHOR NAME OR TITLE WORD. ★★★\n\n"
+        "Mandatory verification procedure for AUTHORS and TITLE:\n"
+        "  1. For each author in the OCR text, locate the same name in the image.\n"
+        "  2. Read every character in the image left-to-right.\n"
+        "  3. If the image shows even ONE different letter (extra letter, missing "
+        "letter, wrong letter, swapped letters, dropped diacritic), you MUST "
+        "output the spelling AS IT APPEARS IN THE IMAGE, not as it appears in "
+        "the OCR text.\n"
+        "  4. Apply the same procedure to TITLE words.\n\n"
+        "Concrete OCR errors that must be fixed when seen:\n"
+        "  - Extra letter:      OCR 'Schreck' (7 chars), image 'Schrek' (6 chars).\n"
+        "  - Phantom letter:    OCR 'Polychroniadou' read as 'Golyprohniadou'.\n"
+        "  - Missing letter:    OCR 'Polychroniadou' loses an internal 'i'.\n"
+        "  - Adjacent swap:     OCR 'Thainyi' → image 'Tihanyi'; "
+        "OCR 'Akocora' → image 'Akcora'; OCR 'Haignet' → image 'HiAgent'.\n"
         "  - Mis-capitalized acronyms: OCR 'Sw-bench' → image 'SWE-bench'; "
         "OCR 'Codeelo' → image 'CodeElo'.\n"
-        "  - Missing diacritics: OCR 'Bugueno' → image 'Bugueño'.\n\n"
+        "  - Dropped diacritics: OCR 'Bugueno' → image 'Bugueño'.\n\n"
+        "Do NOT trust the OCR spelling just because it 'looks plausible'. "
+        "The IMAGE is ground truth; the OCR text is a flawed hypothesis.\n\n"
         "ANTI-HALLUCINATION RULES (do not violate even once):\n"
+        "  - SCOPE GUARD: If you cannot locate the OCR text's title or first "
+        "author surname ANYWHERE in the image, this means the crop covers a "
+        "DIFFERENT reference than the OCR text describes. In that case, output "
+        "the OCR-derived values as best you can parse them — do NOT substitute "
+        "fields from any other reference visible in the image, and do NOT "
+        "invent a new reference from your training knowledge.\n"
         "  - If a field is not visible in the image AND not present in the OCR "
         "text, output empty string / [] / null. Do NOT fill it from your "
         "training knowledge.\n"
@@ -1574,8 +1782,12 @@ def parse_reference_entry(entry: str, citation_id: str, paper_style: str = "") -
         if venue_backfilled:
             venue = venue_backfilled
 
-    # Split venue into clean venue + pages + publisher + location.
-    venue, pages, publisher, location = _split_venue_fields(venue)
+    # Split venue into clean venue + pages + publisher + location + volume.
+    venue, pages, publisher, location, volume = _split_venue_fields(venue)
+    # Backfill anything still missing by scanning the raw_text after title+venue.
+    pages, publisher, location, volume = _backfill_meta_fields_from_raw(
+        normalized, title, venue, pages, publisher, location, volume,
+    )
 
     return CitationRecord(
         citation_id=citation_id,
@@ -1587,6 +1799,7 @@ def parse_reference_entry(entry: str, citation_id: str, paper_style: str = "") -
         doi=doi,
         arxiv_id=arxiv_id,
         url=url,
+        volume=volume,
         pages=pages,
         publisher=publisher,
         location=location,
@@ -1599,6 +1812,101 @@ def parse_reference_entry(entry: str, citation_id: str, paper_style: str = "") -
             "venue_backfill_source": venue_backfill_source,
         },
     )
+
+
+# Heuristic parse must complete in seconds for typical entries (it's pure
+# regex + string ops). Pathological reference strings — long, with many
+# punctuation marks — can trigger catastrophic backtracking in
+# nested-lazy patterns (APA_RE / HARVARD_RE / COLON_STYLE_RE), wedging a
+# single entry for hours and freezing the whole paper-worker. We wrap
+# every call in a thread with a hard timeout. On timeout we return a
+# minimal record carrying only the raw_text; downstream LLM reparse
+# treats it as "missing core fields" and rebuilds the structured form
+# from scratch.
+_HEURISTIC_PARSE_TIMEOUT_S = float(
+    __import__("os").getenv("CITATION_CHECKER_HEURISTIC_PARSE_TIMEOUT_S", "10.0")
+)
+
+
+def _entry_is_pathological(entry: str) -> tuple[bool, str]:
+    """Pre-flight check: return (True, reason) for entries that are very
+    likely to wedge the parse_reference_entry regex chain in catastrophic
+    backtracking. Triggered ONLY on extreme OCR garbage — clean refs
+    (200-600 chars with normal spacing) sail through.
+
+    The thread-timeout wrapper around parse_reference_entry cannot rescue
+    such entries because Python's `re` module holds the GIL for the
+    entire match, so the watchdog thread starves. The only safe action
+    is to bypass the regex entirely and let the downstream LLM reparse
+    rebuild structured fields from the raw OCR text.
+    """
+    n = len(entry)
+    if n > 1500:
+        return True, f"length={n}>1500"
+    # Look for any whitespace-free run > 50 chars — typical OCR artifact
+    # where words got merged ("SCIENCE&TECHNOLOGYORGANIZATIONCENTREFOR").
+    for token in entry.split():
+        if len(token) > 50:
+            return True, f"no-space run len={len(token)}"
+    # Compact-dot density: > 8 dots in any 100-char window suggests a
+    # name-initial / abbreviation cluster that lazy regex chokes on.
+    for start in range(0, max(1, n - 100), 50):
+        if entry.count(".", start, start + 100) > 8:
+            return True, f"dot-density>8 in window {start}..{start+100}"
+    return False, ""
+
+
+def _parse_one_with_timeout(
+    entry: str, citation_id: str, paper_style: str = "",
+) -> CitationRecord:
+    """Parse one reference entry, bypassing the regex on pathological OCR.
+
+    Two-layer protection:
+      1. Pre-flight ``_entry_is_pathological`` — synchronous, sub-millisecond.
+         Catches the OCR garbage that would otherwise wedge the regex.
+         (Thread-based timeout cannot rescue catastrophic re.match because
+         Python's re module holds the GIL for the full match, so the
+         watchdog thread can never wake to print and return.)
+      2. Thread timeout wrapper — last-resort safety net for entries that
+         pass pre-flight but still take too long. Falls back to the same
+         stub record. Useless for true catastrophic backtracking (GIL
+         starvation), but catches mild-cost runaway cases where the regex
+         occasionally yields the GIL via Python-level callbacks.
+    """
+    bad, reason = _entry_is_pathological(entry)
+    if bad:
+        print(
+            f"      [WARN] heuristic parse SKIPPED for {citation_id} "
+            f"(pathological: {reason}) — falling back to LLM reparse",
+            flush=True,
+        )
+        return CitationRecord(citation_id=citation_id, raw_text=entry[:4000])
+
+    import threading as _t
+    result_holder: list = [None]
+    exc_holder: list = [None]
+
+    def _worker() -> None:
+        try:
+            result_holder[0] = parse_reference_entry(
+                entry, citation_id, paper_style=paper_style,
+            )
+        except Exception as exc:  # noqa: BLE001
+            exc_holder[0] = exc
+
+    th = _t.Thread(target=_worker, daemon=True, name=f"parse-{citation_id}")
+    th.start()
+    th.join(timeout=_HEURISTIC_PARSE_TIMEOUT_S)
+    if th.is_alive():
+        print(
+            f"      [WARN] heuristic parse timeout on {citation_id} "
+            f"(entry len={len(entry)}) — falling back to LLM reparse",
+            flush=True,
+        )
+        return CitationRecord(citation_id=citation_id, raw_text=entry[:4000])
+    if exc_holder[0] is not None:
+        raise exc_holder[0]
+    return result_holder[0]
 
 
 def parse_reference_entries(
@@ -1626,7 +1934,11 @@ def parse_reference_entries(
     total = len(entries)
     for idx, entry in enumerate(entries, start=1):
         print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
-        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}", paper_style=_paper_style_for_heuristic))
+        records.append(
+            _parse_one_with_timeout(
+                entry, f"pdf-ref:{idx}", paper_style=_paper_style_for_heuristic,
+            )
+        )
     print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
 
     enabled = bool(get_value("enabled", False))
@@ -1740,7 +2052,11 @@ def parse_reference_entries_streaming(
     total = len(entries)
     for idx, entry in enumerate(entries, start=1):
         print(f"      [parse {idx}/{total}] heuristic parsing...", end="\r", flush=True)
-        records.append(parse_reference_entry(entry, f"pdf-ref:{idx}", paper_style=_paper_style_for_heuristic))
+        records.append(
+            _parse_one_with_timeout(
+                entry, f"pdf-ref:{idx}", paper_style=_paper_style_for_heuristic,
+            )
+        )
     print(f"      [parse] heuristic parsing done ({total} entries)           ", flush=True)
 
     enabled = bool(get_value("enabled", False))

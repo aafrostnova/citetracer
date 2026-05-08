@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -9,6 +10,23 @@ from packages.core.models import CitationRecord
 from packages.core.normalize import extract_identifier
 
 from .base import BaseConnector, RequestPolicy
+
+
+def _query_field_mode() -> str:
+    """Decide which fields to send in a web search query.
+
+    Returns one of:
+      'extreme'  — title + authors only (CITATION_CHECKER_EXTREME_RELAXED=1)
+      'relaxed'  — title + authors + venue + year
+                   (CITATION_CHECKER_RELAXED_FIELDS=1)
+      'full'     — original behaviour: prefer raw_text; fall back to all fields
+    """
+    truthy = {"1", "true", "yes", "on"}
+    if os.getenv("CITATION_CHECKER_EXTREME_RELAXED", "0").strip().lower() in truthy:
+        return "extreme"
+    if os.getenv("CITATION_CHECKER_RELAXED_FIELDS", "0").strip().lower() in truthy:
+        return "relaxed"
+    return "full"
 
 
 class WebSearchConnector(BaseConnector):
@@ -214,28 +232,37 @@ def _build_normalized_search_record(
 
 
 def _build_query(citation: CitationRecord) -> str:
-    # Prefer raw_text (original unstructured reference string) as the query —
-    # it's exactly what appeared in the paper, so search engines match it best.
-    # Fall back to structured fields if raw_text is unavailable.
-    raw = (citation.raw_text or "").strip()
-    if raw and len(raw) > 20:
-        return raw[:500]  # cap length to avoid overly long queries
-
+    # Mode-aware query:
+    #   - 'extreme'  → title + authors only (matches the extreme-relaxed
+    #                  verifier which only checks those two fields).
+    #   - 'relaxed'  → title + authors + venue + year (matches the relaxed
+    #                  verifier which masks all other fields).
+    #   - 'full'     → original behaviour: prefer raw_text; fall back to all
+    #                  structured fields.
+    mode = _query_field_mode()
     title = (citation.title or "").strip()
     all_authors = _extract_all_authors(citation.authors)
     venue = (citation.venue or "").strip()
     year = str(citation.year).strip() if citation.year is not None else ""
 
-    parts: list[str] = []
-    if title:
-        parts.append(title)
-    if all_authors:
-        parts.append(all_authors)
-    if venue:
-        parts.append(venue)
-    if year:
-        parts.append(year)
+    if mode == "extreme":
+        parts = [p for p in (title, all_authors) if p]
+        if parts:
+            return " ".join(parts)
+        return (citation.doi or "").strip()
 
+    if mode == "relaxed":
+        parts = [p for p in (title, all_authors, venue, year) if p]
+        if parts:
+            return " ".join(parts)
+        return (citation.doi or "").strip()
+
+    # 'full' (default): raw_text wins when available.
+    raw = (citation.raw_text or "").strip()
+    if raw and len(raw) > 20:
+        return raw[:500]
+
+    parts = [p for p in (title, all_authors, venue, year) if p]
     if parts:
         return " ".join(parts)
     return (citation.doi or "").strip()

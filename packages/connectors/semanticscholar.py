@@ -1,10 +1,37 @@
 from __future__ import annotations
 
+import os
+import threading
+import time
 from typing import Any
 
 from packages.core.models import CitationRecord
 
 from .base import BaseConnector, RequestPolicy
+
+
+# Semantic Scholar's free tier (with or without API key) caps individual
+# clients at roughly 1 request per second; bursts beyond that get 429ed
+# regardless of how many threads we run. Without coordination across our
+# 200+ concurrent paper / citation workers we melt down into synchronized
+# exponential-backoff retry waves and the whole pool stalls. The class-level
+# token-bucket below serializes all SemanticScholarConnector.search calls
+# across the process so the API sees a steady ~1 req/s, not a burst of 320.
+# Tunable via SEMANTIC_SCHOLAR_MIN_INTERVAL_S env var (default 1.05s).
+_S2_LOCK = threading.Lock()
+_S2_LAST_CALL_TS: list[float] = [0.0]  # mutable holder
+_S2_MIN_INTERVAL_S = float(os.getenv("SEMANTIC_SCHOLAR_MIN_INTERVAL_S", "1.05"))
+
+
+def _s2_throttle() -> None:
+    """Block until at least _S2_MIN_INTERVAL_S has passed since the last
+    Semantic Scholar request started by ANY thread in this process."""
+    with _S2_LOCK:
+        now = time.monotonic()
+        wait = _S2_LAST_CALL_TS[0] + _S2_MIN_INTERVAL_S - now
+        if wait > 0:
+            time.sleep(wait)
+        _S2_LAST_CALL_TS[0] = time.monotonic()
 
 
 class SemanticScholarConnector(BaseConnector):
@@ -21,6 +48,7 @@ class SemanticScholarConnector(BaseConnector):
         headers = {}
         if self.api_key:
             headers["x-api-key"] = self.api_key
+        _s2_throttle()
         payload = self._request_json(
             "https://api.semanticscholar.org/graph/v1/paper/search",
             {
@@ -71,6 +99,7 @@ class SemanticScholarConnector(BaseConnector):
         headers = {}
         if self.api_key:
             headers["x-api-key"] = self.api_key
+        _s2_throttle()
         try:
             payload = self._request_json(
                 f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",

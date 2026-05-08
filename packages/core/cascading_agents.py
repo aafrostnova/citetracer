@@ -554,6 +554,82 @@ def _has_multi_letter_truncation(
     return False, ""
 
 
+def _h2_is_minor_surname_typo(
+    citation_authors: list[str],
+    candidate_authors: list[str],
+    field_status: dict | None = None,
+    threshold: int = 2,
+) -> bool:
+    """True iff the H2 verdict can plausibly be downgraded back to VALID R1
+    because the only author difference is a tiny surname OCR typo.
+
+    Conditions (ALL must hold):
+      1. Authors field status is NOT 'partial_overlap' or 'reordered_match'
+         (those indicate genuinely different/swapped people, not a typo).
+      2. Both author lists are non-empty and the same length (post-et-al strip).
+      3. For every position-aligned (ref, cand) pair, the surname edit
+         distance is <= `threshold` characters AND given names match.
+    """
+    if field_status is not None:
+        a = field_status.get("authors") or {}
+        if isinstance(a, dict):
+            st = a.get("status")
+            if st in ("partial_overlap", "reordered_match"):
+                return False
+
+    import re as _re_h2
+
+    def _et_al(s: str) -> bool:
+        return bool(_re_h2.fullmatch(
+            r"\s*(?:et\s*al\.?|and\s+others|others)\s*",
+            s or "", _re_h2.IGNORECASE,
+        ))
+
+    def _split_name(name: str) -> tuple[str, str]:
+        """Return (given, surname) lowercase. Handle 'Surname, Given' form."""
+        n = (name or "").strip()
+        if not n:
+            return "", ""
+        if "," in n:
+            parts = [p.strip() for p in n.split(",", 1)]
+            if len(parts) == 2 and parts[0] and parts[1]:
+                return parts[1].lower(), parts[0].lower()
+        toks = _re_h2.split(r"\s+", n)
+        toks = [t for t in toks if t]
+        if not toks:
+            return "", ""
+        if len(toks) == 1:
+            return "", toks[0].lower()
+        return " ".join(toks[:-1]).lower(), toks[-1].lower()
+
+    # Use the local Levenshtein from adjudicate to avoid circular imports.
+    from .adjudicate import _edit_distance
+
+    ref = [a for a in (citation_authors or []) if a and not _et_al(a)]
+    cand = [a for a in (candidate_authors or []) if a and not _et_al(a)]
+    if not ref or not cand or len(ref) != len(cand):
+        return False
+
+    any_typo = False
+    for r, c in zip(ref, cand):
+        rg, rs = _split_name(r)
+        cg, cs = _split_name(c)
+        if not rs or not cs:
+            return False
+        # Surname edit distance must be small
+        sdist = _edit_distance(rs, cs, cap=threshold + 1)
+        if sdist > threshold:
+            return False
+        # Given names must be byte-equal after lowercasing (no nickname / variant tolerance)
+        if rg != cg:
+            return False
+        if sdist > 0:
+            any_typo = True
+    # Require at least one pair to actually have a non-zero typo (otherwise
+    # the verdict would already be R1 and this function shouldn't matter).
+    return any_typo
+
+
 def _has_reference_field_missing_from_all(
     citation: CitationRecord,
     candidates: list[CandidateMatch],
@@ -1301,6 +1377,7 @@ def _llm_classify_citation_academic(citation: CitationRecord) -> bool:
     authors = ", ".join(citation.authors or [])
     venue = (citation.venue or "").strip()
     year = citation.year
+    raw_text = (getattr(citation, "raw_text", None) or "").strip()
     if not title:
         return True  # can't classify without title, assume academic
     try:
@@ -1336,7 +1413,14 @@ def _llm_classify_citation_academic(citation: CitationRecord) -> bool:
             f"  - A GitHub / Gitlab / package repository\n"
             f"  - Social media (Twitter / X post, tweet)\n"
             f"  - News article from a non-academic outlet\n"
-            f"  - Company product page or API documentation\n\n"
+            f"  - Company product page or API documentation\n"
+            f"  - **Web-citation markers in raw_text** (very reliable signal):\n"
+            f"      * 'Retrieved <date> from <url>' / 'Retrieved from <url>'\n"
+            f"      * 'Accessed <date>' / 'Accessed: <date>' / 'Last accessed <date>'\n"
+            f"      * '[Online]. Available: <url>'\n"
+            f"      * Any 'visited on'/'viewed on' + date + URL pattern.\n"
+            f"    These are APA/Chicago/CSE/IEEE style markers used for webpages,\n"
+            f"    not academic papers — when present, return academic=FALSE.\n\n"
             f"If the venue is empty or you cannot decide, default to TRUE (academic).\n"
             f"This is a hallucinated-citation benchmark — do NOT use 'fields look "
             f"garbled / suspicious' as a signal; that is a separate hallucination "
@@ -1344,7 +1428,8 @@ def _llm_classify_citation_academic(citation: CitationRecord) -> bool:
             f"Title: {title}\n"
             f"Authors: {authors}\n"
             f"Venue: {venue}\n"
-            f"Year: {year}\n\n"
+            f"Year: {year}\n"
+            f"Raw text: {raw_text[:500]}\n\n"
             f'Return: {{"academic": true/false, "reason": "..."}}'
         )
         response = client.converse(
@@ -1507,6 +1592,22 @@ _NON_ACADEMIC_URL_DOMAINS = {
     "medium.com", "substack.com",
     "twitter.com", "x.com",
     "alignmentforum.org", "lesswrong.com",
+    "linkedin.com",
+    "youtube.com", "youtu.be",
+    "stackoverflow.com", "stackexchange.com",
+    "reddit.com",
+    "kaggle.com",
+    "wikipedia.org",
+    "openai.com/blog", "anthropic.com/news", "ai.meta.com/blog",
+    # Music / video / streaming — the connector occasionally matches
+    # citation titles to song / podcast metadata via web_search.
+    "spotify.com", "open.spotify.com",
+    "music.apple.com", "podcasts.apple.com",
+    "soundcloud.com",
+    "vimeo.com",
+    # Crypto / DeFi product pages (citation often points at protocol homepages)
+    "makerdao.com", "uniswap.org", "aave.com", "curve.fi",
+    "ethereum.org", "bitcoin.org", "solana.com",
 }
 
 _NON_ACADEMIC_VENUE_KEYWORDS = {
@@ -1516,6 +1617,9 @@ _NON_ACADEMIC_VENUE_KEYWORDS = {
     "documentation", "docs",
     "medium", "substack",
     "openai blog", "anthropic blog",
+    "spotify", "soundcloud", "youtube", "vimeo",
+    "linkedin", "reddit", "stackoverflow", "stack overflow",
+    "wikipedia", "wiki",
 }
 
 _NON_ACADEMIC_RAW_TEXT_KEYWORDS = {
@@ -1523,6 +1627,81 @@ _NON_ACADEMIC_RAW_TEXT_KEYWORDS = {
     "github repository", "gitlab repository",
     "blog post", "tweet",
 }
+
+
+# Web-citation patterns: APA/Chicago/CSE-style "retrieved <date> from <url>"
+# or "accessed <date>" indicate the citation points at a webpage / online
+# resource, not an academic paper. These are reliable enough to short-circuit
+# directly to non-academic without further checks.
+import re as _re_web
+_NON_ACADEMIC_RAW_TEXT_PATTERNS = [
+    # "retrieved <date> from <url>" / "retrieved from <url>"
+    _re_web.compile(r"\bretrieved\b[^.\n]*\bfrom\b", _re_web.IGNORECASE),
+    # "accessed <date>" / "accessed: <date>" / "accessed on <date>"
+    _re_web.compile(
+        r"\baccessed\b\s*(?::|on)?\s*"
+        r"(?:\d{1,2}[-/.\s]\d{1,2}[-/.\s]\d{2,4}|"     # 12/03/2024
+        r"\d{4}[-/.\s]\d{1,2}[-/.\s]\d{1,2}|"           # 2024-12-03
+        r"(?:january|february|march|april|may|june|july|august|"
+        r"september|october|november|december|jan\.?|feb\.?|mar\.?|apr\.?|"
+        r"may\.?|jun\.?|jul\.?|aug\.?|sep\.?|oct\.?|nov\.?|dec\.?)\b"  # March 2024 / Mar. 2024
+        r")",
+        _re_web.IGNORECASE,
+    ),
+    # "last accessed" variant (common in LaTeX bibs)
+    _re_web.compile(r"\blast\s+accessed\b", _re_web.IGNORECASE),
+    # "online" + URL pattern (e.g., "[Online]. Available: https://...")
+    _re_web.compile(r"\[\s*online\s*\].{0,40}?\bavailable\b", _re_web.IGNORECASE),
+]
+
+
+def _matches_web_citation_pattern(raw_text: str) -> bool:
+    """True if raw_text contains a web-citation marker (retrieved-from /
+    accessed-date / [Online] Available)."""
+    if not raw_text:
+        return False
+    return any(p.search(raw_text) for p in _NON_ACADEMIC_RAW_TEXT_PATTERNS)
+
+
+# Brand / organization names that, when used as the SOLE author of a
+# citation, signal a corporate blog / product page / model card etc., not
+# an academic paper. e.g. citation = ['Huggingface'] (brand) means it is
+# pointing at huggingface.co content, not a peer-reviewed paper.
+_BRAND_AUTHOR_NAMES = {
+    "huggingface", "hugging face",
+    "openai", "anthropic", "google", "deepmind", "google deepmind",
+    "meta", "meta ai", "microsoft", "microsoft research", "ibm", "amazon",
+    "nvidia", "apple", "tesla",
+    "github", "gitlab",
+}
+
+
+def _authors_are_brand_only(authors: list[str]) -> bool:
+    """True iff every listed author is a brand/org name (not a person)."""
+    if not authors:
+        return False
+    cleaned = [str(a or "").strip().lower() for a in authors if str(a or "").strip()]
+    if not cleaned:
+        return False
+    return all(a in _BRAND_AUTHOR_NAMES for a in cleaned)
+
+
+def _is_title_only_citation(citation: "CitationRecord") -> bool:
+    """True if the citation has ONLY a title (and maybe a year), with empty
+    authors / venue / url / doi / arxiv_id. Such citations are almost
+    always pointing at a product / protocol / website / brand page rather
+    than an academic paper. e.g.:
+        title='MakerDAO' authors=[] venue='' url='' year=2025
+    """
+    title = (citation.title or "").strip()
+    if not title:
+        return False
+    has_authors = bool([a for a in (citation.authors or []) if str(a or "").strip()])
+    has_venue = bool((citation.venue or "").strip())
+    has_url = bool((citation.url or "").strip())
+    has_doi = bool((citation.doi or "").strip())
+    has_arxiv = bool((citation.arxiv_id or "").strip())
+    return not (has_authors or has_venue or has_url or has_doi or has_arxiv)
 
 
 _ACADEMIC_VENUE_KEYWORDS = {
@@ -1548,10 +1727,21 @@ def _venue_is_academic(venue: str) -> bool:
     return any(kw in venue for kw in _ACADEMIC_VENUE_KEYWORDS)
 
 
+_ACADEMIC_IDENTIFIER_RES = (
+    re.compile(r"\barxiv\s*:\s*\d{4}\.\d{4,5}", re.IGNORECASE),
+    re.compile(r"\barxiv\.org/(?:abs|pdf)/\d{4}\.\d{4,5}", re.IGNORECASE),
+    re.compile(r"\b10\.\d{4,9}/[\w./\-]+"),
+)
+
+
 def is_non_academic_citation(citation: CitationRecord) -> bool:
     """Detect whether a citation refers to a non-academic source.
 
     Signals (checked in order):
+      0. raw_text contains a valid arXiv ID or DOI → academic, short-circuit
+         (overrides "[Online]. Available: ..." IEEE-format markers and similar
+         web-citation patterns that would otherwise mis-flag IEEE-style arXiv
+         references as non-academic).
       1. Venue contains an academic marker (Proceedings / Journal / IEEE /
          ACM / arXiv / NeurIPS / ICML / ...) → academic, short-circuit.
       2. URL domain in non-academic list (fast rule).
@@ -1559,6 +1749,10 @@ def is_non_academic_citation(citation: CitationRecord) -> bool:
       4. raw_text mentions package / library / blog (fast rule).
       5. LLM classification via URL or citation metadata (if rules silent).
     """
+    raw = getattr(citation, "raw_text", None) or ""
+    if raw and any(rx.search(raw) for rx in _ACADEMIC_IDENTIFIER_RES):
+        return False  # academic short-circuit via identifier presence
+
     venue = (citation.venue or "").lower().strip()
     if venue and _venue_is_academic(venue):
         return False  # academic short-circuit
@@ -1571,14 +1765,31 @@ def is_non_academic_citation(citation: CitationRecord) -> bool:
         if any(kw in venue for kw in _NON_ACADEMIC_VENUE_KEYWORDS):
             return True
 
-    raw = getattr(citation, "raw_text", None) or ""
     raw_lower = raw.lower()
     if raw_lower:
         if any(kw in raw_lower for kw in _NON_ACADEMIC_RAW_TEXT_KEYWORDS):
             return True
+        # Web-citation patterns: "retrieved <date> from <url>" / "accessed
+        # <date>" / "[Online]. Available: ..." — APA/Chicago/CSE style
+        # markers for online resources, not academic papers.
+        if _matches_web_citation_pattern(raw):
+            return True
+
+    # Brand-only author rule: when the citation lists a company / lab name as
+    # the sole author (and venue gave no academic signal above), it is almost
+    # always pointing at a corporate blog / product page / model card.
+    if _authors_are_brand_only(list(citation.authors or [])):
+        return True
+
+    # Title-only rule: when the citation has ONLY a title (no authors, venue,
+    # url, doi, arxiv_id), it is almost always a product / protocol / website
+    # reference (e.g. "MakerDAO", "Bitcoin", "Uniswap") rather than a paper.
+    if _is_title_only_citation(citation):
+        return True
 
     # Fallback: LLM classification.
-    # If URL exists, classify by URL. Otherwise classify by title/authors/venue.
+    # If URL exists, classify by URL. Otherwise classify by title/authors/venue
+    # (and raw_text — see _llm_classify_citation_academic for the prompt).
     citation_url = (citation.url or "").strip()
     if citation_url:
         if not _llm_classify_url_academic(citation_url):
@@ -1602,7 +1813,24 @@ def downgrade_non_academic_fake(
     """
     if verdict.verdict != VerdictLabel.FAKE_REFERENCE:
         return verdict
-    if not is_non_academic_citation(citation):
+
+    # Also check the matched candidate's URL/venue: when the verifier's best
+    # match landed on a LinkedIn / GitHub / blog page even though the citation
+    # itself had no URL, the citation is effectively pointing at non-academic
+    # content (the candidate is the closest thing the connectors found, and
+    # it's a blog).
+    cand_non_academic = False
+    mc = verdict.matched_candidate or {}
+    cand_url = (mc.get("url") or "").lower()
+    cand_venue = (mc.get("venue") or "").lower()
+    if any(d in cand_url for d in _NON_ACADEMIC_URL_DOMAINS):
+        cand_non_academic = True
+    elif cand_venue and any(kw in cand_venue for kw in _NON_ACADEMIC_VENUE_KEYWORDS):
+        cand_non_academic = True
+    elif cand_venue in {"linkedin", "youtube", "reddit", "stackoverflow"}:
+        cand_non_academic = True
+
+    if not (is_non_academic_citation(citation) or cand_non_academic):
         return verdict
     return CitationVerdict(
         citation_id=verdict.citation_id,
@@ -1992,10 +2220,25 @@ def cascading_phase2_only(
                 contradicted_fields_across_candidates.add(fname)
 
     covered_fields = matched_fields_across_candidates - contradicted_fields_across_candidates
-    all_fields_covered = (
-        bool(ref_fields_with_value)
-        and ref_fields_with_value.issubset(covered_fields)
-    )
+    # Default rule: every reference field with value must be covered.
+    # Relaxed rule: title OR authors covered is enough for the title/authors
+    # group; year and venue still must be individually covered if present.
+    from .adjudicate import _RELAXED_FIELDS as _relaxed
+    if _relaxed:
+        ta_in_ref = ref_fields_with_value & {"title", "authors"}
+        ta_covered = bool(ta_in_ref) and bool(ta_in_ref & covered_fields)
+        gating = ref_fields_with_value & {"year", "venue"}
+        gating_covered = gating.issubset(covered_fields)
+        all_fields_covered = (
+            bool(ref_fields_with_value)
+            and (ta_covered or not ta_in_ref)
+            and gating_covered
+        )
+    else:
+        all_fields_covered = (
+            bool(ref_fields_with_value)
+            and ref_fields_with_value.issubset(covered_fields)
+        )
 
     best = select_best_candidate(all_valid_results)
     if best is None:
@@ -2066,15 +2309,50 @@ def cascading_phase2_only(
         for f in ("title", "authors", "year")
     )
     if _cross_h_codes and _early_core_match and not all_fields_covered:
+        # Surname-typo safety net for H2 (RELAXED MODE ONLY): if the only
+        # contradicted field is authors AND the diff is just a small surname
+        # OCR typo, downgrade to VALID R1 instead of emitting H2.
+        from .adjudicate import _RELAXED_FIELDS as _relaxed
+        if _relaxed and _cross_h_codes == ["H2"] and "authors" in _unverified_mismatch:
+            best_fs_authors = (best_field_result.field_status if best_field_result else {}).get("authors") or {}
+            if _h2_is_minor_surname_typo(
+                list(citation.authors or []),
+                list((best_candidate.authors if best_candidate else []) or []),
+                {"authors": best_fs_authors},
+            ):
+                # Suppress the H2 cross-candidate gate; let the normal flow
+                # produce a VALID verdict.
+                _cross_h_codes = []
+
+    if _cross_h_codes and _early_core_match and not all_fields_covered:
+        # Collect ref vs cand evidence per unverified field so the reason is
+        # actionable instead of just "field X contradicted".
+        _details: list[str] = []
+        for _f in sorted(_unverified_mismatch):
+            _ref_val = ""
+            _per_conn: list[str] = []
+            for _ev in all_evaluations:
+                _info = (_ev.get("comparison", {}) or {}).get("field_status", {}).get(_f, {})
+                if not isinstance(_info, dict):
+                    continue
+                if _info.get("status") == "mismatch":
+                    if not _ref_val:
+                        _ref_val = str(_info.get("reference", ""))[:80]
+                    _conn = _ev.get("connector", "?")
+                    _cand = str(_info.get("candidate", ""))[:80]
+                    _per_conn.append(f"{_conn}={_cand!r}")
+            if _per_conn:
+                _details.append(f"{_f}: citation={_ref_val!r} ≠ {', '.join(_per_conn)}")
+            else:
+                _details.append(f"{_f}: contradicted (no per-connector detail)")
+        _detail_str = "; ".join(_details)
         all_evaluations.append({
             "agent": "CrossCandidateHardEvidence",
             "verdict": "FAKE_REFERENCE",
             "taxonomy": _cross_h_codes,
             "reason": (
-                f"Cross-candidate hard evidence: field(s) "
-                f"{sorted(_unverified_mismatch)} contradicted by at least one "
-                f"qualifying candidate but never confirmed. Upgraded from "
-                f"potential soft path to FAKE."
+                f"Cross-candidate hard evidence: {_detail_str}. "
+                f"Upgraded from potential soft path to FAKE."
             ),
         })
         return CitationVerdict(
@@ -2083,9 +2361,7 @@ def cascading_phase2_only(
             evidence_sources=evidence_sources,
             conflicts=list(_unverified_mismatch),
             adjudication_reason=(
-                f"CrossCandidate: field(s) {sorted(_unverified_mismatch)} "
-                f"contradicted by qualifying candidates but never confirmed "
-                f"by any. Taxonomy: {_cross_h_codes}."
+                f"CrossCandidate ({','.join(_cross_h_codes)}): {_detail_str}."
             ),
             matched_candidate=candidate_match_to_dict(best_candidate),
             reference_snapshot=best_comparison.get("reference", {}),
@@ -2439,15 +2715,33 @@ def cascading_phase2_only(
         and best
         and _core_fields_match
     ):
+        # Build per-field ref vs cand evidence so the reason is actionable.
+        details_2: list[str] = []
+        for f in sorted(unverified_mismatch_fields):
+            ref_val_2 = ""
+            per_conn_2: list[str] = []
+            for ev in all_evaluations:
+                info = (ev.get("comparison", {}) or {}).get("field_status", {}).get(f, {})
+                if not isinstance(info, dict):
+                    continue
+                if info.get("status") == "mismatch":
+                    if not ref_val_2:
+                        ref_val_2 = str(info.get("reference", ""))[:80]
+                    conn = ev.get("connector", "?")
+                    cand_val = str(info.get("candidate", ""))[:80]
+                    per_conn_2.append(f"{conn}={cand_val!r}")
+            if per_conn_2:
+                details_2.append(f"{f}: citation={ref_val_2!r} ≠ {', '.join(per_conn_2)}")
+            else:
+                details_2.append(f"{f}: contradicted (no per-connector detail)")
+        detail_str_2 = "; ".join(details_2)
         all_evaluations.append({
             "agent": "CrossCandidateHardEvidence",
             "verdict": "FAKE_REFERENCE",
             "taxonomy": cross_candidate_h_codes,
             "reason": (
-                f"Cross-candidate hard evidence: reference field(s) "
-                f"{sorted(unverified_mismatch_fields)} were contradicted "
-                f"by at least one qualifying candidate and never confirmed "
-                f"by any. Upgraded from P3 to FAKE."
+                f"Cross-candidate hard evidence: {detail_str_2}. "
+                f"Upgraded from P3 to FAKE."
             ),
         })
         return CitationVerdict(
@@ -2456,9 +2750,7 @@ def cascading_phase2_only(
             evidence_sources=evidence_sources,
             conflicts=_clean_conflicts(best.issues if best else []),
             adjudication_reason=(
-                f"CrossCandidate: field(s) {sorted(unverified_mismatch_fields)} "
-                f"contradicted by qualifying candidates but never confirmed. "
-                f"Taxonomy: {cross_candidate_h_codes}."
+                f"CrossCandidate ({','.join(cross_candidate_h_codes)}): {detail_str_2}."
             ),
             matched_candidate=candidate_match_to_dict(best_candidate),
             reference_snapshot=best_comparison.get("reference", {}),

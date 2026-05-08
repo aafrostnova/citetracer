@@ -238,12 +238,65 @@ def candidate_match_to_dict(candidate: CandidateMatch) -> dict[str, Any]:
     return asdict(candidate)
 
 
+_WEB_SEARCH_NOISE_FIELDS = (
+    "snippet",
+    "search_result_text",
+    "search_result_json",
+    "raw_content",
+)
+
+
+def _strip_web_search_noise(payload: dict[str, Any]) -> None:
+    """In-place removal of bulky text fields from web_search candidates inside
+    a verdict payload before serialization. The fields are needed by the LLM
+    agents during cascade processing (ExtractorAgent / ValidAgent read
+    snippet + search_result_text), but they bloat report.json by 5-50x.
+    Strip them only at the report-write boundary.
+    """
+    for ev in payload.get("candidate_evaluations") or []:
+        if not isinstance(ev, dict):
+            continue
+        connector = ev.get("connector") or ""
+        if connector not in {"web_search", "google_search"}:
+            continue
+        cand = ev.get("candidate")
+        if isinstance(cand, dict):
+            for f in _WEB_SEARCH_NOISE_FIELDS:
+                cand.pop(f, None)
+        # Same fields can show up in the inner raw_record dict.
+        raw = (cand or {}).get("raw_record") if isinstance(cand, dict) else None
+        if isinstance(raw, dict):
+            for f in _WEB_SEARCH_NOISE_FIELDS:
+                raw.pop(f, None)
+    # matched_candidate may also be a web_search candidate dict.
+    mc = payload.get("matched_candidate")
+    if isinstance(mc, dict) and mc.get("connector") in {"web_search", "google_search"}:
+        for f in _WEB_SEARCH_NOISE_FIELDS:
+            mc.pop(f, None)
+        # Inner raw_record dict carries the full Tavily/SerpAPI page (often
+        # tens of KB of HTML / markdown). Strip its noise fields too.
+        mc_raw = mc.get("raw_record")
+        if isinstance(mc_raw, dict):
+            for f in _WEB_SEARCH_NOISE_FIELDS:
+                mc_raw.pop(f, None)
+
+
 def citation_verdict_to_dict(verdict: CitationVerdict) -> dict[str, Any]:
     payload = asdict(verdict)
     payload["verdict"] = canonical_verdict_label(verdict.verdict).value
     payload["extraction_quality"] = verdict.extraction_quality.value
     if verdict.matched_candidate is not None:
         payload["matched_candidate"] = verdict.matched_candidate
+    reference = payload.pop("reference_snapshot", None) or \
+                (payload.get("comparison") or {}).get("reference") or None
+    _strip_web_search_noise(payload)
+    if reference:
+        ordered: dict[str, Any] = {}
+        for k, v in payload.items():
+            if k == "matched_candidate":
+                ordered["reference"] = reference
+            ordered[k] = v
+        payload = ordered
     return payload
 
 

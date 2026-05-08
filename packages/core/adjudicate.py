@@ -1,8 +1,54 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 from typing import Protocol
+
+
+# Test mode: when CITATION_CHECKER_RELAXED_FIELDS=1, the verifier masks out
+# all reference fields except title/authors/year/venue at the citation input
+# stage. Downstream comparison logic stays untouched: it just sees an empty
+# reference for the masked fields, so no mismatch can fire on those.
+# In relaxed mode we also (1) accept title/author mismatches as match if
+# normalized strings differ by <=_RELAXED_CHAR_TOLERANCE chars, and
+# (2) loosen R4 coverage so that title OR authors being matched is enough
+# (year/venue still gate normally).
+_RELAXED_FIELDS = os.getenv("CITATION_CHECKER_RELAXED_FIELDS", "0").strip() in {"1", "true", "yes", "on"}
+_RELAXED_CHAR_TOLERANCE = 3
+
+
+def _edit_distance(a: str, b: str, cap: int = 8) -> int:
+    """Levenshtein distance, capped (returns cap+1 if exceeded). O(len(a)*len(b))."""
+    if a == b:
+        return 0
+    la, lb = len(a), len(b)
+    if abs(la - lb) > cap:
+        return cap + 1
+    if la == 0:
+        return lb
+    if lb == 0:
+        return la
+    prev = list(range(lb + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i] + [0] * lb
+        row_min = curr[0]
+        for j, cb in enumerate(b, 1):
+            ins = curr[j - 1] + 1
+            dele = prev[j] + 1
+            sub = prev[j - 1] + (0 if ca == cb else 1)
+            curr[j] = min(ins, dele, sub)
+            if curr[j] < row_min:
+                row_min = curr[j]
+        if row_min > cap:
+            return cap + 1
+        prev = curr
+    return prev[-1]
+
+
+def _within_relaxed_tolerance(a: str, b: str) -> bool:
+    """True if normalized strings differ by <= _RELAXED_CHAR_TOLERANCE chars."""
+    return _edit_distance(a or "", b or "", cap=_RELAXED_CHAR_TOLERANCE) <= _RELAXED_CHAR_TOLERANCE
 
 from .models import (
     CandidateMatch,
@@ -77,57 +123,61 @@ def _classify_taxonomy(
     candidate_connector: str,
     has_et_al: bool,
     has_candidates: bool,
-) -> str:
-    """Classify the verdict into a taxonomy subtype (R1-R4, P1-P3, H1-H6)."""
+) -> list[str]:
+    """Classify the verdict into one or more taxonomy subtypes (R1-R4, P1-P3,
+    H1-H6). Returns a list because a single FAKE verdict can be backed by
+    multiple field errors at once (e.g. an H4 mutation that also breaks venue
+    is both H4 and H3). The list is ordered by code id so callers and
+    evaluators get a stable canonical ordering.
+    """
     if verdict == VerdictLabel.VALID:
-        # Check if authors used et al.
         if has_et_al:
-            return "R3"
-        # Check for format variants (title/authors match but with normalization)
-        return "R1"  # Default to exact match (R2 is hard to distinguish from R1 at this level)
+            return ["R3"]
+        return ["R1"]
 
     if verdict == VerdictLabel.POTENTIAL_REFERENCE:
         author_status = field_status.get("authors", {}).get("status", "")
-        if author_status in ("partial_overlap",):
-            return "P1"  # Author name variant
-        # Check if it's a non-academic unstable source (P2)
         url_status = field_status.get("url", {}).get("status", "")
-        if candidate_connector in {"google_search", "web_search"} and url_status == "mismatch":
-            return "P2"  # Non-academic source unstable (deleted/moved)
-        return "P1"  # Default potential
+        if (candidate_connector in {"google_search", "web_search"}
+                and url_status == "mismatch"):
+            return ["P2"]
+        if author_status == "partial_overlap":
+            return ["P1"]
+        return ["P1"]
 
     if verdict == VerdictLabel.FAKE_REFERENCE:
         if not has_candidates:
-            return "H1"  # No candidates → title unverifiable
+            return ["H1"]
         title_status = field_status.get("title", {}).get("status", "")
         author_status = field_status.get("authors", {}).get("status", "")
         venue_status = field_status.get("venue", {}).get("status", "")
         year_status = field_status.get("year", {}).get("status", "")
         doi_status = field_status.get("doi", {}).get("status", "")
+        pages_status = field_status.get("pages", {}).get("status", "")
+        volume_status = field_status.get("volume", {}).get("status", "")
+        publisher_status = field_status.get("publisher", {}).get("status", "")
+        location_status = field_status.get("location", {}).get("status", "")
 
-        # Title issues
+        codes: list[str] = []
         if title_status == "mismatch":
-            return "H1"  # Title error
-
-        # Author issues
+            codes.append("H1")
         if author_status in ("count_mismatch", "mismatch"):
-            return "H2"  # Author error
-
-        # DOI issues
-        if doi_status == "mismatch":
-            return "H5"  # DOI/identifier error
-
-        # Venue/year issues
-        if venue_status == "mismatch" and year_status == "mismatch":
-            return "H3"  # Venue error (with year)
+            codes.append("H2")
         if venue_status == "mismatch":
-            return "H3"  # Venue error
+            codes.append("H3")
         if year_status == "mismatch":
-            return "H4"  # Year error
+            codes.append("H4")
+        if doi_status == "mismatch":
+            codes.append("H5")
+        if (pages_status == "mismatch"
+                or volume_status == "mismatch"
+                or publisher_status == "mismatch"
+                or location_status == "mismatch"):
+            codes.append("H6")
 
-        return "H1"  # Default fallback
+        return codes or ["H1"]
 
-    return ""  # INSUFFICIENT_EVIDENCE
+    return []
 
 
 def _norm_text(value: Any) -> str:
@@ -245,7 +295,14 @@ def _compare_scalar(reference: Any, candidate: Any, normalizer) -> dict[str, Any
     if _is_missing(reference) and _is_missing(candidate):
         status = "both_missing"
     elif _is_missing(reference):
-        status = "reference_missing"
+        # Reference made no claim about this field, so there is no
+        # disagreement to flag. Treat as match. (Was "reference_missing"
+        # historically, but downstream LLM agents kept flagging H3/H4/H5/H6
+        # off this status against the field_status rules; the masked-field
+        # extreme/relaxed modes also rely on this.) candidate_missing is
+        # still a real signal — citation makes a claim, candidate cannot
+        # verify — so that path stays.
+        status = "match"
     elif _is_missing(candidate):
         status = "candidate_missing"
     else:
@@ -264,7 +321,8 @@ def _compare_venue(reference: Any, candidate: Any) -> dict[str, Any]:
     if _is_missing(reference) and _is_missing(candidate):
         status = "both_missing"
     elif _is_missing(reference):
-        status = "reference_missing"
+        # Reference made no claim → no disagreement to flag, treat as match.
+        status = "match"
     elif _is_missing(candidate):
         status = "candidate_missing"
     else:
@@ -303,7 +361,8 @@ def _compare_year(reference: Any, candidate: Any, candidate_version_years: list[
     if _is_missing(reference) and _is_missing(candidate) and not version_years:
         status = "both_missing"
     elif _is_missing(reference):
-        status = "reference_missing"
+        # Reference made no year claim → no disagreement, treat as match.
+        status = "match"
     elif _is_missing(candidate) and not version_years:
         status = "candidate_missing"
     else:
@@ -358,7 +417,8 @@ def _compare_authors(reference: list[str], candidate: list[str]) -> dict[str, An
     if not ref_norm and not cand_norm:
         status = "both_missing"
     elif not ref_norm:
-        status = "reference_missing"
+        # Reference made no author claim → no disagreement, treat as match.
+        status = "match"
     elif not cand_norm:
         status = "candidate_missing"
     elif ref_norm == cand_norm:
@@ -489,6 +549,34 @@ def _build_comparison(
         "arxiv_id": _compare_scalar(reference["arxiv_id"], candidate_core["arxiv_id"], _norm_arxiv_id),
         "url": _compare_scalar(reference["url"], candidate_core["url"], _norm_url),
     }
+
+    # Relaxed mode: if title or authors look "almost equal" (<=3 char edit
+    # distance after normalization), upgrade mismatch → match. Only applies
+    # to title/authors; year/venue still gate strictly.
+    if _RELAXED_FIELDS:
+        t_info = field_status["title"]
+        if t_info.get("status") == "mismatch":
+            ref_t = _norm_title(t_info.get("reference"))
+            cand_t = _norm_title(t_info.get("candidate"))
+            if ref_t and cand_t and _within_relaxed_tolerance(ref_t, cand_t):
+                t_info["status"] = "match"
+                t_info["relaxed_match"] = True
+        a_info = field_status["authors"]
+        if a_info.get("status") == "mismatch":
+            ref_a = _to_author_list(a_info.get("reference"))
+            cand_a = _to_author_list(a_info.get("candidate"))
+            ref_actual = [n for n in ref_a if not _is_et_al_marker(n)]
+            if ref_actual and cand_a and len(ref_actual) <= len(cand_a):
+                # Position-wise: every ref author within tolerance of corresponding cand author.
+                ok = all(
+                    _within_relaxed_tolerance(
+                        _norm_text(ref_actual[i]), _norm_text(cand_a[i])
+                    )
+                    for i in range(len(ref_actual))
+                )
+                if ok:
+                    a_info["status"] = "match"
+                    a_info["relaxed_match"] = True
 
     # Recompute conflicts from field_status (authoritative) instead of sticking
     # with the stale quick-match conflicts from build_candidate_match().
@@ -784,14 +872,25 @@ def adjudicate(
             }
         )
 
-        # Use LLM taxonomy if available, else fall back to rule-based
-        taxonomy = llm_taxonomy if llm_note and llm_taxonomy else _classify_taxonomy(
-            verdict=verdict,
-            field_status=comparison["field_status"],
-            candidate_connector=candidate.connector,
-            has_et_al=comparison["field_status"].get("authors", {}).get("has_et_al", False),
-            has_candidates=True,
-        )
+        # Prefer LLM taxonomy when present; otherwise fall back to the
+        # rule-based classifier, which now returns ALL detected codes (e.g.
+        # ["H3", "H4"] when both venue and year are wrong) instead of a
+        # single priority winner.
+        if llm_note and llm_taxonomy:
+            # llm_taxonomy is a comma- or space-separated string from the
+            # LLM (e.g. "H3" or "H3,H4"); split into a list.
+            taxonomy_list = [
+                t.strip() for t in llm_taxonomy.replace(",", " ").split()
+                if t.strip()
+            ]
+        else:
+            taxonomy_list = _classify_taxonomy(
+                verdict=verdict,
+                field_status=comparison["field_status"],
+                candidate_connector=candidate.connector,
+                has_et_al=comparison["field_status"].get("authors", {}).get("has_et_al", False),
+                has_candidates=True,
+            )
 
         current = CitationVerdict(
             citation_id=citation.citation_id,
@@ -804,7 +903,7 @@ def adjudicate(
             comparison=comparison,
             candidate_evaluations=list(candidate_evaluations),
             llm_recheck_reason=llm_note,
-            taxonomy_subtype=[taxonomy] if taxonomy else [],
+            taxonomy_subtype=taxonomy_list,
             needs_human_review=(verdict != VerdictLabel.VALID),
             extraction_quality=extraction_quality,
             secondary_evidence=sec_evidence,

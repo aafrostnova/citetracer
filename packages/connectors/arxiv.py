@@ -27,12 +27,16 @@ class ArxivConnector(BaseConnector):
         params = self._build_params(citation)
         if not params:
             return []
+        # arXiv is demoted in the cascade and self-throttles via min_interval_s,
+        # so failed attempts are very expensive. Cap both ordinary and 429
+        # retries at 1, i.e. at most 2 attempts (1 initial + 1 retry) per call.
         arxiv_policy = RequestPolicy(
             timeout_s=max(policy.timeout_s, self._search_timeout_s),
-            max_retries=policy.max_retries,
+            max_retries=min(policy.max_retries, 1),
             backoff_base_s=policy.backoff_base_s,
             health_recover_step=policy.health_recover_step,
             health_decay_step=policy.health_decay_step,
+            rate_limit_max_retries=1,
         )
         body = self._request_feed(params=params, policy=arxiv_policy)
         records = self._parse_feed(body)

@@ -277,33 +277,6 @@ def _is_word_truncation_of(short: str, long: str) -> bool:
     return True
 
 
-_VENUE_TRACK_QUALIFIERS = (
-    "findings",
-    "workshop",
-    "tutorial",
-    "demo",
-    "demonstration",
-    "student research workshop",
-    "srw",
-    "short paper",
-    "doctoral consortium",
-    "industry track",
-    "companion",
-)
-
-
-def _has_track_qualifier_asymmetry(a: str, b: str) -> bool:
-    """True when one venue mentions a track qualifier (Findings, Workshop, …)
-    that the other does not. The main conference and its tracks are NOT
-    equivalent: "ACL" vs "Findings of ACL" are different venues.
-    """
-    la, lb = a.lower(), b.lower()
-    for q in _VENUE_TRACK_QUALIFIERS:
-        if (q in la) != (q in lb):
-            return True
-    return False
-
-
 def venues_equivalent_heuristic(a: str, b: str) -> bool:
     """Return True if a and b are equivalent venues via general heuristics.
 
@@ -312,13 +285,13 @@ def venues_equivalent_heuristic(a: str, b: str) -> bool:
       2. Acronym ↔ full form (e.g. JMLR vs Journal of Machine Learning Research).
       3. Word truncation ↔ full form (e.g. J. Mach. Learn. Res. vs Journal ...).
 
-    Guard: if one side references a sub-track (Findings, Workshop, Tutorial, …)
-    and the other does not, they are NOT equivalent, regardless of shared
-    society/acronym.
+    Sub-track qualifiers (Findings, Workshop, Student Research, Tutorial,
+    Demo, ...) on one side but not the other are tolerated: citations
+    routinely abbreviate "Findings of ACL: EMNLP 2024" or "ACL Student
+    Research Workshop" as just "ACL", and the rule should match those
+    against the candidate's longer form rather than fail them as H3.
     """
     if not a or not b:
-        return False
-    if _has_track_qualifier_asymmetry(a, b):
         return False
     na = normalize_venue(a)
     nb = normalize_venue(b)

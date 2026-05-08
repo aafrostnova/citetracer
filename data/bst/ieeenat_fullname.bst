@@ -272,32 +272,28 @@ FUNCTION {format.editors}
 FUNCTION {format.isbn}
 { isbn empty$
     { "" }
-%    { new.block "ISBN " isbn * }
-    { "" }
+    { new.block "ISBN " isbn * }
   if$
 }
 
 FUNCTION {format.issn}
 { issn empty$
     { "" }
-%    { new.block "ISSN " issn * }
-    { "" }
+    { new.block "ISSN " issn * }
   if$
 }
 
 FUNCTION {format.url}
 { url empty$
     { "" }
-%    { new.block "URL \url{" url * "}" * }
-    { "" }
+    { new.block "URL \url{" url * "}" * }
   if$
 }
 
 FUNCTION {format.doi}
 { doi empty$
     { "" }
-%    { new.block "\doi{" doi * "}" * }
-    { "" }
+    { new.block "\doi{" doi * "}" * }
   if$
 }
 
@@ -425,13 +421,12 @@ FUNCTION {format.date}
        pop$ "" }
     'skip$
   if$
-%% CR: Leave out months.
-%  month empty$
-%    'skip$
-%    { month
-%      " " * swap$ *
-%    }
-%  if$
+  month empty$
+    'skip$
+    { month
+      " " * swap$ *
+    }
+  if$
   extra.label *
 }
 
@@ -457,24 +452,20 @@ FUNCTION {either.or.check}
 FUNCTION {format.bvolume}
 { volume empty$
     { "" }
-%% CR: Don't show "volume 1234 of LNCS" etc.
-%    { "volume" volume tie.or.space.connect
-%      series empty$
-%        'skip$
-%        { " of " * series emphasize * }
-%      if$
-%      "volume and number" number either.or.check
-%    }
-    { "" }
+    { "volume" volume tie.or.space.connect
+      series empty$
+        'skip$
+        { " of " * series emphasize * }
+      if$
+      "volume and number" number either.or.check
+    }
   if$
 }
 
 FUNCTION {format.number.series}
 { volume empty$
     { number empty$
-%% CR: Leave out series information.
-%        { series field.or.null }
-        { "" }
+        { series field.or.null }
         { output.state mid.sentence =
             { "number" }
             { "Number" }
@@ -603,13 +594,11 @@ FUNCTION {format.chapter.pages}
 FUNCTION {format.in.ed.booktitle}
 { booktitle empty$
     { "" }
-%% CR: Leave out editors even if the information is available.
-%    { editor empty$
-%        { "In " booktitle emphasize * }
-%        { "In " format.editors * ", " * booktitle emphasize * }
-%      if$
-%    }
-    { "In " booktitle emphasize * }
+    { editor empty$
+        { "In " booktitle emphasize * }
+        { "In " format.editors * ", " * booktitle emphasize * }
+      if$
+    }
   if$
 }
 

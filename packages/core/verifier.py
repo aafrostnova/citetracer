@@ -28,6 +28,76 @@ from .report import build_summary, compute_risk_score
 # These are deferred to Phase 1b after structured connectors exhaust.
 _WEB_CONNECTOR_NAMES = {"web_search", "google_search"}
 
+# Threshold for keeping a web_search record as a candidate. Records whose
+# title is wholly different from the citation title are discarded so the
+# verdict cannot escalate to FAKE based on noise from Tavily / similar
+# keyword-based hits. Override via env var when needed.
+import os as _os_filter
+_WEBSEARCH_TITLE_MIN_SIM = float(
+    _os_filter.getenv("CITATION_CHECKER_WEBSEARCH_TITLE_THRESHOLD", "0.8")
+)
+
+
+def _web_search_record_titles_match(citation_title: str, candidate_title: str) -> bool:
+    """Decide whether a web_search candidate is plausibly the same paper.
+
+    Pass when:
+      - normalized titles are equal
+      - one normalized title is a substring of the other (truncation case)
+      - SequenceMatcher similarity >= threshold
+
+    Reject (extra strict) when both titles contain a colon and the part
+    BEFORE the colon (the paper's distinctive name, e.g. "Trace2TAP" vs
+    "AutoTap") is wholly different. This catches the "shared keyword phrase
+    but different paper" failure mode that bare similarity misses.
+    """
+    if not candidate_title or not citation_title:
+        return True  # cannot decide; let downstream judge it.
+    nt_cite = normalize_title(citation_title)
+    nt_cand = normalize_title(candidate_title)
+    if not nt_cite or not nt_cand:
+        return True
+    if nt_cite == nt_cand:
+        return True
+    if nt_cite in nt_cand or nt_cand in nt_cite:
+        return True
+    # Colon-prefix paper-name guard: if both titles have a colon, require
+    # the lead names to share enough surface form. "Trace2TAP" vs "AutoTap"
+    # have similarity ≈ 0.4, which fails this guard regardless of how much
+    # of the subtitle matches.
+    if ":" in citation_title and ":" in candidate_title:
+        cite_lead = citation_title.split(":", 1)[0].strip()
+        cand_lead = candidate_title.split(":", 1)[0].strip()
+        if cite_lead and cand_lead:
+            lead_sim = similarity(cite_lead, cand_lead)
+            if lead_sim < 0.55:
+                return False
+            # Lead name is essentially identical (same distinctive paper name);
+            # subtitle drift is normal across DBs/citations, keep regardless of
+            # the global similarity threshold.
+            if lead_sim >= 0.9:
+                return True
+    return similarity(citation_title, candidate_title) >= _WEBSEARCH_TITLE_MIN_SIM
+
+
+def _filter_websearch_records_by_title(
+    citation: CitationRecord, records: list[dict]
+) -> list[dict]:
+    """Drop web_search records whose title clearly does not match the
+    citation. Returns the kept subset; preserves order."""
+    cite_title = (citation.title or "").strip()
+    if not cite_title:
+        return list(records)
+    return [
+        r for r in records
+        if _web_search_record_titles_match(cite_title, str(r.get("title") or ""))
+    ]
+
+# Connectors demoted out of the parallel structured tier (currently empty —
+# arxiv used to live here because of its global lock + min_interval_s = 3.0,
+# but is now back in the parallel pool).
+_DEMOTED_CONNECTOR_NAMES: set[str] = set()
+
 
 @dataclass
 class VerifyConfig:
@@ -66,6 +136,12 @@ class CitationVerifier:
         self.extractor_agent = extractor_agent
         self.author_classifier = author_classifier
         self.verified_ref_cache = verified_ref_cache
+        # Phase-level timing log: append-only list of per-citation traces.
+        # Each entry: {citation_id, total_ms, cache_hit, phase_0_ms, phase_1a_ms,
+        # phase_15_ms, phase_1b_ms, phase_2_ms, exit_at, verdict}
+        import threading as _threading
+        self._timing_log: list[dict] = []
+        self._timing_lock = _threading.Lock()
 
     _CACHEABLE_TAXONOMY = {"R1", "R3"}
 
@@ -286,6 +362,15 @@ class CitationVerifier:
                 records = []
                 error = str(exc)
 
+        # Drop web_search records whose title clearly is not the same paper.
+        # Without this guard, Tavily's keyword-based hits (e.g. "AutoTap" for
+        # a "Trace2TAP" query) would be passed to the HallucinatedAgent and
+        # produce a FAKE verdict on a totally different paper. After dropping,
+        # if no records remain the citation falls through to its
+        # INSUFFICIENT_EVIDENCE / POTENTIAL bucket naturally.
+        if records and conn_name in _WEB_CONNECTOR_NAMES:
+            records = _filter_websearch_records_by_title(citation, records)
+
         latency_ms = (_time.perf_counter() - started) * 1000
         trace = EvidenceTrace(
             connector=conn_name,
@@ -360,7 +445,11 @@ class CitationVerifier:
         url_type_triggered: str,
         extraction_quality: ExtractionQuality,
         source_paper_title: str,
+        _trace: dict | None = None,
     ) -> CitationVerdict:
+        import time as _time
+        if _trace is None:
+            _trace = {}
         """Parallel per-connector verify with early VALID short-circuit.
 
         Flow:
@@ -408,9 +497,12 @@ class CitationVerifier:
         structured = [
             c for c in self.orchestrator.connectors
             if c.name not in _WEB_CONNECTOR_NAMES
+            and c.name not in _DEMOTED_CONNECTOR_NAMES
         ]
+        demoted = [c for c in self.orchestrator.connectors if c.name in _DEMOTED_CONNECTOR_NAMES]
         web = [c for c in self.orchestrator.connectors if c.name in _WEB_CONNECTOR_NAMES]
 
+        _t_p1a = _time.perf_counter()
         if structured:
             max_workers = min(self.orchestrator.max_workers, len(structured)) or 1
             pool = ThreadPoolExecutor(max_workers=max_workers)
@@ -442,10 +534,40 @@ class CitationVerifier:
                 # connector retries (e.g. 429 backoff on openalex). cancel_futures
                 # stops not-yet-started ones; running ones are orphaned.
                 pool.shutdown(wait=False, cancel_futures=True)
+            _trace["phase_1a_ms"] = (_time.perf_counter() - _t_p1a) * 1000
             if early_verdict is not None:
+                _trace["exit_at"] = "phase_1a_VALID"
                 return _patch_and_return_valid(early_verdict)
+        else:
+            _trace["phase_1a_ms"] = (_time.perf_counter() - _t_p1a) * 1000
+
+        # --- Phase 1.5: demoted structured connectors (sequential) ---
+        # These connectors (e.g. arXiv) self-throttle aggressively, so running
+        # them in parallel with the rest of Phase 1a serializes the whole pool
+        # behind their lock. Run them only after Phase 1a returned no VALID.
+        _t_p15 = _time.perf_counter()
+        for dem_conn in demoted:
+            unit = self._run_connector_unit(
+                citation=citation,
+                connector=dem_conn,
+                records_override=None,
+                url_match_status=url_match_status,
+                url_issues=url_issues,
+                url_type_triggered=url_type_triggered,
+                tavily_api_key=tavily_key,
+            )
+            all_evidence.append(unit["trace"])
+            if unit["kind"] == "VALID":
+                _trace["phase_15_ms"] = (_time.perf_counter() - _t_p15) * 1000
+                _trace["exit_at"] = "phase_15_VALID"
+                return _patch_and_return_valid(unit["verdict"])
+            all_candidates.extend(unit["candidates"])
+            all_evaluations.extend(unit["evaluations"])
+            all_valid_results.extend(unit["valid_results"])
+        _trace["phase_15_ms"] = (_time.perf_counter() - _t_p15) * 1000
 
         # --- Phase 1b: web_search fallback (sequential) ---
+        _t_p1b = _time.perf_counter()
         for web_conn in web:
             unit = self._run_connector_unit(
                 citation=citation,
@@ -458,12 +580,16 @@ class CitationVerifier:
             )
             all_evidence.append(unit["trace"])
             if unit["kind"] == "VALID":
+                _trace["phase_1b_ms"] = (_time.perf_counter() - _t_p1b) * 1000
+                _trace["exit_at"] = "phase_1b_VALID"
                 return _patch_and_return_valid(unit["verdict"])
             all_candidates.extend(unit["candidates"])
             all_evaluations.extend(unit["evaluations"])
             all_valid_results.extend(unit["valid_results"])
+        _trace["phase_1b_ms"] = (_time.perf_counter() - _t_p1b) * 1000
 
         # --- Phase 2: cascading on accumulated non-VALID candidates ---
+        _t_p2 = _time.perf_counter()
         evidence_sources = sorted({
             t.connector for t in all_evidence if t.error is None
         })
@@ -472,6 +598,8 @@ class CitationVerifier:
         if not all_candidates:
             source_errors = [t for t in all_evidence if t.error]
             if source_errors and len(source_errors) == len(all_evidence):
+                _trace["phase_2_ms"] = (_time.perf_counter() - _t_p2) * 1000
+                _trace["exit_at"] = "no_candidates_INSUFFICIENT"
                 return CitationVerdict(
                     citation_id=citation.citation_id,
                     verdict=VerdictLabel.INSUFFICIENT_EVIDENCE,
@@ -482,7 +610,7 @@ class CitationVerifier:
                     needs_human_review=True,
                 )
 
-        return cascading_phase2_only(
+        _r = cascading_phase2_only(
             citation=citation,
             candidates=all_candidates,
             all_valid_results=all_valid_results,
@@ -495,6 +623,9 @@ class CitationVerifier:
             url_issues=url_issues,
             url_type_triggered=url_type_triggered,
         )
+        _trace["phase_2_ms"] = (_time.perf_counter() - _t_p2) * 1000
+        _trace["exit_at"] = "phase_2_end"
+        return _r
 
     def verify_citation(
         self,
@@ -502,6 +633,53 @@ class CitationVerifier:
         extraction_quality: ExtractionQuality | None = None,
         source_paper_title: str = "",
     ):
+        import time as _time
+        # Extreme-relaxed mode: same cascading logic as strict mode, but
+        # mask EVERY reference field except title + authors. Downstream agents
+        # see "reference didn't provide this" for venue/year/doi/etc., so they
+        # only judge title + authors mismatch (H1/H2 + their P-counterparts).
+        # Web search query also auto-narrows to title+authors via
+        # CITATION_CHECKER_EXTREME_RELAXED env var (see google_search.py).
+        from .extreme_relaxed import is_enabled as _extreme_enabled
+        from .adjudicate import _RELAXED_FIELDS as _relaxed
+        if _extreme_enabled():
+            from dataclasses import replace as _dc_replace
+            citation = _dc_replace(
+                citation,
+                venue="", year=None,
+                doi="", arxiv_id="", url="", volume="", pages="",
+                publisher="", location="",
+            )
+        elif _relaxed:
+            # Relaxed-fields test mode: mask peripheral fields but keep
+            # venue + year so the cascade can still flag H3/H4.
+            from dataclasses import replace as _dc_replace
+            citation = _dc_replace(
+                citation,
+                doi="", arxiv_id="", url="", volume="", pages="",
+                publisher="", location="",
+            )
+        _t_total = _time.perf_counter()
+        _trace: dict = {
+            "citation_id": citation.citation_id,
+            "cache_hit": False,
+            "phase_0_ms": 0.0,
+            "phase_1a_ms": 0.0,
+            "phase_15_ms": 0.0,
+            "phase_1b_ms": 0.0,
+            "phase_2_ms": 0.0,
+            "exit_at": "?",
+            "total_ms": 0.0,
+            "verdict": "?",
+        }
+        def _record(verdict_obj=None, exit_at: str = "?"):
+            _trace["exit_at"] = exit_at
+            _trace["total_ms"] = (_time.perf_counter() - _t_total) * 1000
+            if verdict_obj is not None:
+                v = getattr(verdict_obj, "verdict", None)
+                _trace["verdict"] = getattr(v, "value", str(v))
+            with self._timing_lock:
+                self._timing_log.append(_trace)
         # Two-tier verified reference cache lookup:
         # Tier 1 (exact): full-field key. If an identically-formatted citation
         #   was verified before, return its verdict as-is — the taxonomy
@@ -514,7 +692,10 @@ class CitationVerifier:
             exact = self.verified_ref_cache.get_exact(citation)
             if exact is not None:
                 from .models import citation_verdict_from_dict
-                return citation_verdict_from_dict(exact, citation.citation_id)
+                _trace["cache_hit"] = True
+                v = citation_verdict_from_dict(exact, citation.citation_id)
+                _record(v, "cache_exact")
+                return v
 
             loose = self.verified_ref_cache.get_loose(citation)
             if loose is not None and loose.get("matched_candidate"):
@@ -534,6 +715,8 @@ class CitationVerifier:
                     author_classifier=getattr(self, "author_classifier", None),
                 )
                 if verdict_or_none is not None:
+                    _trace["cache_hit"] = True
+                    _record(verdict_or_none, "cache_loose")
                     return verdict_or_none
                 # Re-validation failed → fall through to the full pipeline
 
@@ -543,7 +726,9 @@ class CitationVerifier:
         # Phase 0: URL/DOI direct verification (BEFORE orchestrator query).
         # Resolves citation.url and citation.doi via URLDirectConnector + Tavily fallback.
         # Returns status signal AND any fetched records to merge into candidates.
+        _t_p0 = _time.perf_counter()
         url_match_status, url_issues, url_type_triggered, phase0_records = phase0_url_check(citation)
+        _trace["phase_0_ms"] = (_time.perf_counter() - _t_p0) * 1000
 
         # Phase 0 early-exit:
         # - Scholar URL (arxiv/doi) mismatch or not_found → FAKE_REFERENCE
@@ -553,13 +738,17 @@ class CitationVerifier:
             fetched_records=phase0_records,
         )
         if phase0_verdict is not None:
-            return downgrade_non_academic_fake(citation, phase0_verdict)
+            v = downgrade_non_academic_fake(citation, phase0_verdict)
+            _record(v, "phase0_verdict")
+            return v
 
         # If identifiers resolve to a clearly different paper → immediate FAKE
         # (but downgrade to P2 if the citation is non-academic)
         id_mismatch = self._check_identifier_mismatch(citation, phase0_records)
         if id_mismatch:
-            return downgrade_non_academic_fake(citation, id_mismatch)
+            v = downgrade_non_academic_fake(citation, id_mismatch)
+            _record(v, "id_mismatch")
+            return v
 
         # Non-academic short-circuit: skip cascade entirely. Connector cascade
         # against blogs/repos/tools just retrieves unrelated content and the
@@ -568,7 +757,7 @@ class CitationVerifier:
         # always rewrites that to P2 anyway, so save the connector hits and
         # the LLM call.
         if is_non_academic_citation(citation):
-            return CitationVerdict(
+            v = CitationVerdict(
                 citation_id=citation.citation_id,
                 verdict=VerdictLabel.POTENTIAL_REFERENCE,
                 evidence_sources=[],
@@ -587,6 +776,8 @@ class CitationVerifier:
                 extraction_quality=extraction_quality,
                 secondary_evidence=[],
             )
+            _record(v, "non_academic")
+            return v
 
         # Build Phase 0 evaluation record for the report (always included)
         _phase0_eval: dict | None = None
@@ -614,15 +805,25 @@ class CitationVerifier:
                 url_type_triggered=url_type_triggered,
                 extraction_quality=extraction_quality,
                 source_paper_title=source_paper_title,
+                _trace=_trace,
             )
             verdict = downgrade_non_academic_fake(citation, verdict)
             if _phase0_eval:
                 verdict.candidate_evaluations.insert(0, _phase0_eval)
             self._cache_if_valid(citation, verdict)
+            _record(verdict, _trace.get("exit_at", "streaming_end"))
+            if _extreme_enabled():
+                from .extreme_relaxed import apply_filters as _extreme_filter
+                verdict = _extreme_filter(verdict)
             return verdict
 
         # --- Legacy path: collect all connector results then run adjudicate ---
         connector_results = self.orchestrator.query(citation, max_connectors=None)
+        # Filter web_search records by title similarity (same guard as the
+        # streaming path) so far-off Tavily hits never reach the judges.
+        for _r in connector_results:
+            if _r.connector in _WEB_CONNECTOR_NAMES and _r.records:
+                _r.records = _filter_websearch_records_by_title(citation, _r.records)
         records = {result.connector: result.records for result in connector_results}
         if phase0_records:
             existing = records.get("url_direct", [])
@@ -650,6 +851,9 @@ class CitationVerifier:
             if _phase0_eval:
                 verdict.candidate_evaluations.insert(0, _phase0_eval)
             self._cache_if_valid(citation, verdict)
+            if _extreme_enabled():
+                from .extreme_relaxed import apply_filters as _extreme_filter
+                verdict = _extreme_filter(verdict)
             return verdict
 
         # Fallback: legacy single-LLM adjudication
@@ -665,6 +869,9 @@ class CitationVerifier:
         if _phase0_eval:
             verdict.candidate_evaluations.insert(0, _phase0_eval)
         self._cache_if_valid(citation, verdict)
+        if _extreme_enabled():
+            from .extreme_relaxed import apply_filters as _extreme_filter
+            verdict = _extreme_filter(verdict)
         return verdict
 
     def verify_paper(
