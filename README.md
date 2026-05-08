@@ -32,9 +32,6 @@ pip install -r requirements.txt
 cp config.example.json config.json
 ```
 
-Optional: download `DeepSeek-OCR-2` to a local path and point
-`entry_extraction.local.model_path` at it if you want OCR to run on a
-local GPU instead of Bedrock.
 
 ## Configuration
 
