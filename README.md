@@ -1,7 +1,7 @@
 # CITETRACER: Cascading Multi-Agent Citation Hallucination Detection
 
 CITETRACER detects fabricated citations in research papers and routes each
-citation to one of an **11-code taxonomy** (R, P1, P3, H1..H6) so reviewers
+citation to one of a **12-code taxonomy** (R1-R3, P1-P3, H1-H6) so reviewers
 see *which* field is wrong, not just whether the citation is fake. The
 pipeline parses PDF or BibTeX input, retrieves evidence through a four-stage
 cascade (Memory cache, URL Fetch, eight Scholar Connectors in parallel, Web
@@ -214,7 +214,7 @@ Two datasets ship with the repository:
 
 | Path                                       | What it is                                                                                                                | Size  |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `data/synthetic_data/v2/`                  | 2,450 synthetic citations across the 11 evaluated codes (one JSON per subtype: `R1.json`, `R2.json`, `R3.json`, `P1.json`, `P3.json`, `H1.json`..`H6.json`), with `meta.json` carrying the per-citation ground-truth label. Built from real BibTeX seeds with controlled LLM mutations. | 2,450 |
+| `data/synthetic_data/v2/`                  | 2,450 synthetic citations across the 12 codes (one JSON per subtype: `R1.json`, `R2.json`, `R3.json`, `P1.json`, `P3.json`, `H1.json`..`H6.json`; `P2` is reserved for non-academic citations and not in this snapshot), with `meta.json` carrying the per-citation ground-truth label. Built from real BibTeX seeds with controlled LLM mutations. | 2,450 |
 | `data/iclr2026_hallucinated/`              | 957 real-world fabricated citations from ICLR 2026 desk-rejected submissions. `hallucinated_refs.json` is the raw list; `hallucinated_refs_structured.json` is the parsed structured-record version used by the verifier. | 957   |
 
 The synthetic set is the primary benchmark used in every paper table; the
