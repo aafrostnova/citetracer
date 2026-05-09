@@ -214,7 +214,7 @@ Two datasets ship with the repository:
 
 | Path                                       | What it is                                                                                                                | Size  |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `data/synthetic_data/v2/`                  | 2,450 synthetic citations across the 11 evaluated codes (one JSON per subtype: `R1*.json`, `R2*.json`, `R3*.json`, `P1.json`, `P3.json`, `H1.json`..`H6.json`), with `meta.json` carrying the per-citation ground-truth label. Built from real BibTeX seeds with controlled LLM mutations. | 2,450 |
+| `data/synthetic_data/v2/`                  | 2,450 synthetic citations across the 11 evaluated codes (one JSON per subtype: `R1.json`, `R2.json`, `R3.json`, `P1.json`, `P3.json`, `H1.json`..`H6.json`), with `meta.json` carrying the per-citation ground-truth label. Built from real BibTeX seeds with controlled LLM mutations. | 2,450 |
 | `data/iclr2026_hallucinated/`              | 957 real-world fabricated citations from ICLR 2026 desk-rejected submissions. `hallucinated_refs.json` is the raw list; `hallucinated_refs_structured.json` is the parsed structured-record version used by the verifier. | 957   |
 
 The synthetic set is the primary benchmark used in every paper table; the
@@ -226,12 +226,6 @@ real-world set is the out-of-distribution test in Section 4.4.
 # main verification on the 2,450-citation synthetic benchmark
 bash scripts/eval_H_rule_based.sh
 bash scripts/eval_R_rule_based.sh
-python scripts/build_detailed_stats.py    # rolls up per-subtype acc
-
-# wall-clock benchmark
-python scripts/bench_full_pipeline_bib.py \
-  --workers 32 --per-subtype 15 --limit 200 \
-  --out results/bench_full_bib_smoke
 ```
 
 ## Repository layout
