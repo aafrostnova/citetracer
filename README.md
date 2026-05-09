@@ -243,18 +243,3 @@ docs/                     taxonomy, metric guide, render-omission notes
 tests/                    pytest unit tests for parser, normalizer, agents
 ```
 
-## Citing
-
-If you use CITETRACER, please cite:
-
-```bibtex
-@article{citetracer2026,
-  title  = {CITETRACER: Cascading Multi-Agent Citation Hallucination Detection},
-  author = {<authors>},
-  year   = {2026},
-}
-```
-
-## License
-
-See [LICENSE](LICENSE).
