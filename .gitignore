@@ -7,3 +7,10 @@ data/cache/
 data/seed/
 config.json
 *.lock
+data/bib/
+data/bst/
+data/cache/
+data/latex_papers/
+data/non-academic/
+data/pdf_papers/
+data/silver/
