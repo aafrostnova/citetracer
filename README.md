@@ -1,5 +1,7 @@
 # CITETRACER: Cascading Multi-Agent Citation Hallucination Detection
 
+[![Paper](https://img.shields.io/badge/arXiv-2605.08583-b31b1b.svg)](https://arxiv.org/abs/2605.08583) [![Dataset](https://img.shields.io/badge/HuggingFace-Hallucinated__Citation-yellow.svg)](https://huggingface.co/datasets/Afrostnova/Hallucinated_Citation)
+
 CITETRACER detects fabricated citations in research papers and routes each
 citation to one of a **12-code taxonomy** (R1-R3, P1-P3, H1-H6) so reviewers
 see *which* field is wrong, not just whether the citation is fake. The
@@ -219,6 +221,9 @@ Two datasets ship with the repository:
 
 The synthetic set is the primary benchmark used in every paper table; the
 real-world set is the out-of-distribution test in Section 4.4.
+
+A mirror of both datasets is also published on Hugging Face:
+[Afrostnova/Hallucinated_Citation](https://huggingface.co/datasets/Afrostnova/Hallucinated_Citation).
 
 ## Reproduce paper numbers
 
