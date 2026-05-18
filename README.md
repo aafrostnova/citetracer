@@ -248,3 +248,15 @@ docs/                     taxonomy, metric guide, render-omission notes
 tests/                    pytest unit tests for parser, normalizer, agents
 ```
 
+## 📌Citation
+
+If you find this repo helpful, please kindly cite the paper:
+
+```bibtex
+@article{li2026source,
+  title={Source or It Didn't Happen: A Multi-Agent Framework for Citation Hallucination Detection},
+  author={Li, Mingzhe and Lin, Zhiqiang and Ma, Shiqing},
+  journal={arXiv preprint arXiv:2605.08583},
+  year={2026}
+}
+```
