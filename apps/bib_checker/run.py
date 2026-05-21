@@ -170,12 +170,21 @@ def _verify_one_bib(
             cit, extraction_quality=ExtractionQuality.HIGH, source_paper_title="",
         )
 
+    n_total = len(citations)
+    n_done = 0
     with ThreadPoolExecutor(
         max_workers=citation_workers, thread_name_prefix=f"bib-{stem[:30]}"
     ) as pool:
         for fut in as_completed({pool.submit(_do, item): item for item in enumerate(citations)}):
             i, v = fut.result()
             verdict_objs[i] = v
+            n_done += 1
+            cid = citations[i].citation_id
+            tax = "|".join(v.taxonomy_subtype or []) if v.taxonomy_subtype else ""
+            print(
+                f"  [{n_done}/{n_total}] {cid:<40} {v.verdict.value:<22} {tax}",
+                flush=True,
+            )
 
     elapsed = time.perf_counter() - t0
     summary = build_summary(verdict_objs)
